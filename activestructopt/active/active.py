@@ -46,7 +46,7 @@ def active_learning(
     ensemble = Ensemble(k, config, datasets)
     ensemble.train()
     ensemble.set_scalar_calibration(test_data, test_targets)
-    new_structure = basinhop(ensemble, starting_structure, target, 
+    new_structure, xs, ucbs = basinhop(ensemble, starting_structure, target, 
       config['dataset'], nhops = bh_starts, niters = bh_iters_per_start, 
       λ = 0.0 if i == (active_steps - 1) else 1.0, lr = bh_lr, 
       step_size = bh_step_size, rmcσ = bh_σ)
@@ -67,4 +67,4 @@ def active_learning(
     gc.collect()
     torch.cuda.empty_cache()
   return structures, ys, mses, (
-      datasets, kfolds, test_indices, test_data, test_targets, ensemble)
+      datasets, kfolds, test_indices, test_data, test_targets, ensemble, xs, ucbs)

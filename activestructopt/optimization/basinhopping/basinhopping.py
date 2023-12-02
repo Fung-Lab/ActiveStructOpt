@@ -73,4 +73,4 @@ def basinhop(ensemble, starting_structure, target, config,
   new_structure = starting_structure.copy()
   for i in range(len(new_structure)):
     new_structure[i].coords = xs[hop][iteration][(3 * i):(3 * (i + 1))]
-  return new_structure
+  return new_structure, xs, ucbs

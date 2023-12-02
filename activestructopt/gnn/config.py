@@ -8,7 +8,7 @@ torchmd_config = {'trainer': 'property',
   'write_output': [],
   'use_amp': True,
   'run_mode': 'train',
-  'model_save_frequency': 0},
+  'model_save_frequency': 1},
  'model': {
    'name': 'torchmd_etEarly',
    'hidden_channels': 128,
