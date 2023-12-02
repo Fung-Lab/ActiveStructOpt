@@ -48,7 +48,7 @@ class Ensemble:
       self.ensemble[i](self.config, 
         ConfigSetup('train', self.datasets[i][0], self.datasets[i][1]))
       self.ensemble[i].trainer.model.eval()
-      self.ensemble[i].trainer.model = compile(self.ensemble[i].trainer.model)
+      #self.ensemble[i].trainer.model = compile(self.ensemble[i].trainer.model)
     device = next(iter(self.ensemble[0].trainer.model.state_dict().values(
       ))).get_device()
     device = 'cpu' if device == -1 else 'cuda:' + str(device)
