@@ -3,17 +3,30 @@ import numpy as np
 from activestructopt.gnn.dataloader import prepare_data
 from activestructopt.optimization.shared.constraints import lj_rmins, lj_repulsion, lj_reject
 
+def get_cell(x, eps = 1e-6):
+  # adapted to pytorch from https://github.com/materialsproject/pymatgen/blob/v2023.10.4/pymatgen/core/lattice.py#L341
+  αβγ = x[1] * (torch.pi / 180)
+  cosα, cosβ, cosγ = torch.cos(αβγ[0]), torch.cos(αβγ[1]), torch.cos(αβγ[2])
+  sinα, sinβ = torch.sin(αβγ[0]), torch.sin(αβγ[1])
+  val = torch.clamp((cosα * cosβ - cosγ) / (sinα * sinβ), -1 + eps, 1 - eps)
+  mat = torch.reshape(torch.cat((sinβ.reshape(1), (0 * sinβ).reshape(1), cosβ.reshape(1), 
+    (-sinα * val).reshape(1), (sinα * torch.sqrt(1 - torch.square(val))).reshape(1), cosα.reshape(1), 
+    (0 * sinβ).reshape(1), (0 * sinβ).reshape(1), (sinβ / sinβ).reshape(1))), (3, 3))
+  return torch.reshape(x[0], (3, 1)) * mat
+
 def run_adam(ensemble, target, x0, starting_structure, config, ljrmins,
                     niters = 100, λ = 1.0, lr = 0.01, device = 'cpu'):
   ucbs = torch.zeros(niters, device = device)
   xs = torch.zeros((niters, 3 * x0.size()[0]), device = device)
   target = torch.tensor(target, device = device)
   data = prepare_data(starting_structure, config, pos_grad = True).to(device)
-  data.pos = x0
-  optimizer = torch.optim.Adam([data.pos], lr=lr)
+  x = x0
+  optimizer = torch.optim.Adam([x], lr=lr)
   for i in range(niters):
     optimizer.zero_grad(set_to_none=True)
-    data.pos.requires_grad_()
+    x.requires_grad_()
+    data.cell = get_cell(x)
+    data.pos = x[2:]
     prediction = ensemble.ensemble[0].trainer.model._forward(data)
     for j in range(1, ensemble.k):
       prediction = torch.cat((prediction,
@@ -30,7 +43,7 @@ def run_adam(ensemble, target, x0, starting_structure, config, ljrmins,
     if i != niters - 1:
       ucb.backward()
       optimizer.step()
-    xs[i] = data.pos.detach().flatten()
+    xs[i] = x.detach().flatten()
     ucbs[i] = ucb.detach().item()
     yhat, s, mean, std, prediction, ucb = yhat.detach(), s.detach(
       ), mean.detach(), std.detach(), prediction.detach(), ucb.detach()
@@ -42,14 +55,18 @@ def run_adam(ensemble, target, x0, starting_structure, config, ljrmins,
 
 def basinhop(ensemble, starting_structure, target, config,
                   nhops = 10, niters = 100, λ = 1.0, lr = 0.01, 
-                  step_size = 0.1, rmcσ = 0.0025):
+                  step_size = 0.1, rmcσ = 0.0025, lstep_size = 0.05, θstep_size = 1.0):
   device = ensemble.device
   ucbs = np.zeros((nhops, niters))
   xs = np.zeros((nhops, niters, 3 * len(starting_structure)))
   ljrmins = torch.tensor(lj_rmins, device = device)
 
+  lat0 = torch.tensor([[starting_structure.lattice.a, starting_structure.lattice.b, starting_structure.lattice.c],
+    [starting_structure.lattice.alpha, starting_structure.lattice.beta, starting_structure.lattice.gamma]], 
+    device = device, dtype = torch.float)
   x0 = torch.tensor(starting_structure.lattice.get_cartesian_coords(
     starting_structure.frac_coords), device = device, dtype = torch.float)
+  x0 = torch.cat((lat0, x0), 0)
 
   for i in range(nhops):
     new_ucbs, new_xs = run_adam(ensemble, target, x0, starting_structure, 
@@ -64,8 +81,28 @@ def basinhop(ensemble, starting_structure, target, config,
       while rejected:
         hop = starting_structure.copy()
         for j in range(len(hop)):
-          hop[j].coords = accepted[(3 * j):(3 * (j + 1))]
+          hop[j].coords = accepted[(3 * (j + 2)):(3 * (j + 3))]
+        hop.lattice.a = accepted[0]
+        hop.lattice.b = accepted[1]
+        hop.lattice.c = accepted[2]
+        hop.lattice.alpha = accepted[3]
+        hop.lattice.beta = accepted[4]
+        hop.lattice.gamma = accepted[5]
         hop.perturb(step_size)
+        hop.lattice = hop.lattice.from_parameters(
+          max(0.0, hop.lattice.a + np.random.uniform(
+            -lstep_size, lstep_size)),
+          max(0.0, hop.lattice.b + np.random.uniform(
+            -lstep_size, lstep_size)),
+          max(0.0, hop.lattice.c + np.random.uniform(
+            -lstep_size, lstep_size)), 
+          min(180.0, max(0.0, hop.lattice.alpha + np.random.uniform(
+            -θstep_size, θstep_size))), 
+          min(180.0, max(0.0, hop.lattice.beta + np.random.uniform(
+            -θstep_size, θstep_size))), 
+          min(180.0, max(0.0, hop.lattice.gamma + np.random.uniform(
+            -θstep_size, θstep_size)))
+        )
         rejected = lj_reject(hop)
       x0 = torch.tensor(hop.lattice.get_cartesian_coords(hop.frac_coords), 
         device = device, dtype = torch.float)
