@@ -2,17 +2,14 @@ import torch
 import numpy as np
 from activestructopt.gnn.dataloader import prepare_data
 from activestructopt.optimization.shared.constraints import lj_rmins, lj_repulsion, lj_reject
+from pymatgen.core.lattice import Lattice
 
-def get_cell(x, eps = 1e-6):
+def get_cell(x):
+  zero = (0 * x[0][0]).reshape(1)
   # adapted to pytorch from https://github.com/materialsproject/pymatgen/blob/v2023.10.4/pymatgen/core/lattice.py#L341
-  αβγ = x[1] * (torch.pi / 180)
-  cosα, cosβ, cosγ = torch.cos(αβγ[0]), torch.cos(αβγ[1]), torch.cos(αβγ[2])
-  sinα, sinβ = torch.sin(αβγ[0]), torch.sin(αβγ[1])
-  val = torch.clamp((cosα * cosβ - cosγ) / (sinα * sinβ), -1 + eps, 1 - eps)
-  mat = torch.reshape(torch.cat((sinβ.reshape(1), (0 * sinβ).reshape(1), cosβ.reshape(1), 
-    (-sinα * val).reshape(1), (sinα * torch.sqrt(1 - torch.square(val))).reshape(1), cosα.reshape(1), 
-    (0 * sinβ).reshape(1), (0 * sinβ).reshape(1), (sinβ / sinβ).reshape(1))), (3, 3))
-  return torch.reshape(x[0], (3, 1)) * mat
+  return torch.reshape(torch.cat((x[0][0].reshape(1), zero, x[0][1].reshape(1), 
+    x[0][2].reshape(1), x[1][0].reshape(1), x[1][1].reshape(1), 
+    zero, zero, x[1][2].reshape(1))), (3, 3))
 
 def run_adam(ensemble, target, x0, starting_structure, config, ljrmins,
                     niters = 100, λ = 1.0, lr = 0.01, device = 'cpu'):
@@ -61,9 +58,13 @@ def basinhop(ensemble, starting_structure, target, config,
   xs = np.zeros((nhops, niters, 3 * len(starting_structure)))
   ljrmins = torch.tensor(lj_rmins, device = device)
 
-  lat0 = torch.tensor([[starting_structure.lattice.a, starting_structure.lattice.b, starting_structure.lattice.c],
-    [starting_structure.lattice.alpha, starting_structure.lattice.beta, starting_structure.lattice.gamma]], 
-    device = device, dtype = torch.float)
+  lat0 = torch.tensor([[starting_structure.lattice.matrix[0][0], 
+    starting_structure.lattice.matrix[0][2],
+    starting_structure.lattice.matrix[1][0]],
+    [starting_structure.lattice.matrix[1][1],
+    starting_structure.lattice.matrix[1][2],
+    starting_structure.lattice.matrix[2][2]],
+    ], device = device, dtype = torch.float)
   x0 = torch.tensor(starting_structure.lattice.get_cartesian_coords(
     starting_structure.frac_coords), device = device, dtype = torch.float)
   x0 = torch.cat((lat0, x0), 0)
@@ -82,12 +83,9 @@ def basinhop(ensemble, starting_structure, target, config,
         hop = starting_structure.copy()
         for j in range(len(hop)):
           hop[j].coords = accepted[(3 * (j + 2)):(3 * (j + 3))]
-        hop.lattice.a = accepted[0]
-        hop.lattice.b = accepted[1]
-        hop.lattice.c = accepted[2]
-        hop.lattice.alpha = accepted[3]
-        hop.lattice.beta = accepted[4]
-        hop.lattice.gamma = accepted[5]
+        hop.lattice = Lattice([[accepted[0], 0, accepted[1]], 
+          [accepted[2], accepted[3], accepted[4]], 
+          [0, 0, accepted[5]]])
         hop.perturb(step_size)
         hop.lattice = hop.lattice.from_parameters(
           max(0.0, hop.lattice.a + np.random.uniform(
@@ -104,8 +102,13 @@ def basinhop(ensemble, starting_structure, target, config,
             -θstep_size, θstep_size)))
         )
         rejected = lj_reject(hop)
+      lat0 = torch.tensor([[hop.lattice.matrix[0][0], hop.lattice.matrix[0][2],
+        hop.lattice.matrix[1][0]], [hop.lattice.matrix[1][1], 
+        hop.lattice.matrix[1][2], hop.lattice.matrix[2][2]],
+        ], device = device, dtype = torch.float)
       x0 = torch.tensor(hop.lattice.get_cartesian_coords(hop.frac_coords), 
         device = device, dtype = torch.float)
+      x0 = torch.cat((lat0, x0), 0)
   hop, iteration = np.unravel_index(np.argmin(ucbs), ucbs.shape)
   new_structure = starting_structure.copy()
   for i in range(len(new_structure)):
