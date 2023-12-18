@@ -4,8 +4,7 @@ import numpy as np
 
 def make_data_splits(initial_structure, optfunc, args, config, 
                       perturbrmin = 0.1, perturbrmax = 1.0, 
-                      perturblmin = -0.2, perturblmax = 0.2,
-                      perturbθmin = -5, perturbθmax = 5,
+                      perturblmax = 0.2, perturbθmax = 10,
                       N = 100, split = 0.85, k = 5, device = 'cuda'):
   structures = [initial_structure.copy() for _ in range(N)]
   for i in range(1, N):
@@ -15,17 +14,17 @@ def make_data_splits(initial_structure, optfunc, args, config,
       new_structure.perturb(np.random.uniform(perturbrmin, perturbrmax))
       new_structure.lattice = new_structure.lattice.from_parameters(
         max(0.0, new_structure.lattice.a + np.random.uniform(
-          perturblmin, perturblmax)),
+          -perturblmax, perturblmax)),
         max(0.0, new_structure.lattice.b + np.random.uniform(
-          perturblmin, perturblmax)),
+          -perturblmax, perturblmax)),
         max(0.0, new_structure.lattice.c + np.random.uniform(
-          perturblmin, perturblmax)), 
+          -perturblmax, perturblmax)), 
         min(180.0, max(0.0, new_structure.lattice.alpha + np.random.uniform(
-          perturbθmin, perturbθmax))), 
+          -perturbθmax, perturbθmax))), 
         min(180.0, max(0.0, new_structure.lattice.beta + np.random.uniform(
-          perturbθmin, perturbθmax))), 
+          -perturbθmax, perturbθmax))), 
         min(180.0, max(0.0, new_structure.lattice.gamma + np.random.uniform(
-          perturbθmin, perturbθmax)))
+          -perturbθmax, perturbθmax)))
       )
       rejected = lj_reject(new_structure)
     structures[i] = new_structure.copy()

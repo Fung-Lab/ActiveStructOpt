@@ -52,7 +52,8 @@ def run_adam(ensemble, target, x0, starting_structure, config, ljrmins,
 
 def basinhop(ensemble, starting_structure, target, config,
                   nhops = 10, niters = 100, λ = 1.0, lr = 0.01, 
-                  step_size = 0.1, rmcσ = 0.0025, lstep_size = 0.05, θstep_size = 1.0):
+                  step_size = 0.1, rmcσ = 0.0025, lstep_size = 0.05, 
+                  θstep_size = 1.0):
   device = ensemble.device
   ucbs = np.zeros((nhops, niters))
   xs = np.zeros((nhops, niters, 3 * len(starting_structure)))
