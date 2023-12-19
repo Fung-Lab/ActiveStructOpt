@@ -55,11 +55,11 @@ def basinhop(ensemble, starting_structures, target, config,
                   step_size = 0.1, rmcσ = 0.0025, lstep_size = 0.05, 
                   θstep_size = 1.0):
   device = ensemble.device
-  ucbs = np.zeros((nhops, niters))
-  xs = np.zeros((nhops, niters, 6 + 3 * len(starting_structures[0])))
+  ucbs = np.zeros((len(starting_structures), niters))
+  xs = np.zeros((len(starting_structures), niters, 6 + 3 * len(starting_structures[0])))
   ljrmins = torch.tensor(lj_rmins, device = device)
 
-  for i in range(nhops):
+  for i in range(len(starting_structures)):
     lat0 = torch.tensor([[starting_structures[i].lattice.matrix[0][0], 
       starting_structures[i].lattice.matrix[0][2],
       starting_structures[i].lattice.matrix[1][0]],
