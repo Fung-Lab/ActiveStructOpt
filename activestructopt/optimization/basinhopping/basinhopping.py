@@ -9,7 +9,7 @@ def get_cell(x):
   # adapted to pytorch from https://github.com/materialsproject/pymatgen/blob/v2023.10.4/pymatgen/core/lattice.py#L341
   return torch.reshape(torch.cat((x[0][0].reshape(1), zero, x[0][1].reshape(1), 
     x[0][2].reshape(1), x[1][0].reshape(1), x[1][1].reshape(1), 
-    zero, zero, x[1][2].reshape(1))), (3, 3))
+    zero, zero, x[1][2].reshape(1))), (1, 3, 3))
 
 def run_adam(ensemble, target, x0, starting_structure, config, ljrmins,
                     niters = 100, λ = 1.0, lr = 0.01, device = 'cpu'):
