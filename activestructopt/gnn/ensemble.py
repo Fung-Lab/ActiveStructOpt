@@ -53,20 +53,20 @@ class Ensemble:
       self.ensemble[i](self.config, 
         ConfigSetup('train', self.datasets[i][0], self.datasets[i][1]))
     try:
+      start_epoch = int(self.ensemble[0].trainer.epoch)
+
+      end_epoch = (
+        self.ensemble[0].trainer.max_checkpoint_epochs + start_epoch
+        if self.ensemble[0].trainer.max_checkpoint_epochs
+        else self.ensemble[0].trainer.max_epochs
+      )
+
+      if str(self.ensemble[0].trainer.rank) not in ("cpu", "cuda"):
+        dist.barrier()
+      
       for j in range(self.k):
         # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
         # Start training over epochs loop
-        start_epoch = int(self.ensemble[j].trainer.epoch)
-
-        if str(self.ensemble[j].trainer.rank) not in ("cpu", "cuda"):
-          dist.barrier()
-        
-        end_epoch = (
-          self.ensemble[j].trainer.max_checkpoint_epochs + start_epoch
-          if self.ensemble[j].trainer.max_checkpoint_epochs
-          else self.ensemble[j].trainer.max_epochs
-        )
-
         for epoch in range(start_epoch, end_epoch):
           epoch_start_time = time.time()
           if self.ensemble[j].trainer.train_sampler:
