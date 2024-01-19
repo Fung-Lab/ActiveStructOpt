@@ -92,7 +92,7 @@ class Ensemble:
 
             # Compute metrics
             _metrics = self.ensemble[j].trainer._compute_metrics(out_list[0], batch[0], _metrics)
-            self.ensemble[j].trainer.metrics[0] = self.ensemble[j].trainer.evaluator.update("loss", loss[0].item(), out_list[0]["output"].shape[0], _metrics[0])
+            self.ensemble[j].trainer.metrics[0] = self.ensemble[j].trainer.evaluator.update("loss", loss[0].item(), out_list[0]["output"].shape[0], _metrics)
 
           self.ensemble[j].trainer.epoch = epoch + 1
 
