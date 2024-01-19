@@ -49,6 +49,14 @@ class Ensemble:
     for i in range(self.k):
       self.ensemble[i](self.config, 
         ConfigSetup('train', self.datasets[i][0], self.datasets[i][1]))
+    try:
+      for i in range(self.k):
+        self.ensemble[i].trainer.train()     
+    except RuntimeError as e:
+      self.ensemble[0].task._process_error(e)
+      raise e
+    
+    for i in range(self.k):
       self.ensemble[i].trainer.model[0].eval()
       #self.ensemble[i].trainer.model[0] = compile(self.ensemble[i].trainer.model)
     device = next(iter(self.ensemble[0].trainer.model[0].state_dict().values(
