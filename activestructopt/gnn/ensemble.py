@@ -76,14 +76,12 @@ class Ensemble:
             train_loader_iter.append(iter(self.ensemble[j].trainer.data_loader[i]["train_loader"]))
           
           # metrics for every epoch
-          _metrics = [{} for _ in range(len(self.ensemble[j].trainer.model))]
+          _metrics = {}
           
           for i in range(len(self.ensemble[j].trainer.data_loader[0]["train_loader"])):
-            batch = []
-            for n, mod in enumerate(self.ensemble[j].trainer.model):
-              mod.train()
-              batch.append(next(train_loader_iter[n]).to(self.ensemble[j].trainer.rank))
-            
+            self.ensemble[j].trainer.model[0].train()
+            batch = [next(train_loader_iter[0]).to(self.ensemble[j].trainer.rank)]
+
             # Compute forward, loss, backward    
             with autocast(enabled=self.ensemble[j].trainer.use_amp):
               out_list = self.ensemble[j].trainer._forward(batch)                                            
@@ -93,9 +91,8 @@ class Ensemble:
               grad_norm.append(self.ensemble[j].trainer._backward(loss[i], i))
 
             # Compute metrics
-            for n in range(len(self.ensemble[j].trainer.model)):
-              _metrics[n] = self.ensemble[j].trainer._compute_metrics(out_list[n], batch[n], _metrics[n])
-              self.ensemble[j].trainer.metrics[n] = self.ensemble[j].trainer.evaluator.update("loss", loss[n].item(), out_list[n]["output"].shape[0], _metrics[n])
+            _metrics = self.ensemble[j].trainer._compute_metrics(out_list[0], batch[0], _metrics)
+            self.ensemble[j].trainer.metrics[0] = self.ensemble[j].trainer.evaluator.update("loss", loss[0].item(), out_list[0]["output"].shape[0], _metrics[0])
 
           self.ensemble[j].trainer.epoch = epoch + 1
 
@@ -124,29 +121,27 @@ class Ensemble:
                 self.ensemble[j].trainer._log_metrics()
 
             # Update best val metric and model, and save best model and predicted outputs
-            for i in range(len(self.ensemble[j].trainer.model)):
-              if metric[i][type(self.ensemble[j].trainer.loss_fn).__name__]["metric"] < self.ensemble[j].trainer.best_metric[i]:
-                if self.ensemble[j].trainer.output_frequency == 0:
-                  if self.ensemble[j].trainer.model_save_frequency == 1:
-                    self.ensemble[j].trainer.update_best_model(metric[i], i, write_model=True, write_csv=False)
-                  else:
-                    self.ensemble[j].trainer.update_best_model(metric[i], i, write_model=False, write_csv=False)
-                elif self.ensemble[j].trainer.output_frequency == 1:
-                  if self.ensemble[j].trainer.model_save_frequency == 1:
-                    self.ensemble[j].trainer.update_best_model(metric[i], i, write_model=True, write_csv=True)
-                  else:
-                    self.ensemble[j].trainer.update_best_model(metric[i], i, write_model=False, write_csv=True)
+            if metric[0][type(self.ensemble[j].trainer.loss_fn).__name__]["metric"] < self.ensemble[j].trainer.best_metric[0]:
+              if self.ensemble[j].trainer.output_frequency == 0:
+                if self.ensemble[j].trainer.model_save_frequency == 1:
+                  self.ensemble[j].trainer.update_best_model(metric[0], 0, write_model=True, write_csv=False)
+                else:
+                  self.ensemble[j].trainer.update_best_model(metric[0], 0, write_model=False, write_csv=False)
+              elif self.ensemble[j].trainer.output_frequency == 1:
+                if self.ensemble[j].trainer.model_save_frequency == 1:
+                  self.ensemble[j].trainer.update_best_model(metric[0], 0, write_model=True, write_csv=True)
+                else:
+                  self.ensemble[j].trainer.update_best_model(metric[0], 0, write_model=False, write_csv=True)
                 
             self.ensemble[j].trainer._scheduler_step()
 
           torch.cuda.empty_cache()        
         
         if self.ensemble[j].trainer.best_model_state:
-          for i in range(len(self.ensemble[j].trainer.model)):
-            if str(self.ensemble[j].trainer.rank) in "0":
-              self.ensemble[j].trainer.model[i].module.load_state_dict(self.ensemble[j].trainer.best_model_state[i])
-            elif str(self.ensemble[j].trainer.rank) in ("cpu", "cuda"):
-              self.ensemble[j].trainer.model[i].load_state_dict(self.ensemble[j].trainer.best_model_state[i])
+          if str(self.ensemble[j].trainer.rank) in "0":
+            self.ensemble[j].trainer.model[0].module.load_state_dict(self.ensemble[j].trainer.best_model_state[0])
+          elif str(self.ensemble[j].trainer.rank) in ("cpu", "cuda"):
+            self.ensemble[j].trainer.model[0].load_state_dict(self.ensemble[j].trainer.best_model_state[0])
 
           if self.ensemble[j].trainer.model_save_frequency != -1:
             self.ensemble[j].trainer.save_model("best_checkpoint.pt", index=None, metric=metric, training_state=True)
