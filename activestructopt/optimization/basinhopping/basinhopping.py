@@ -14,8 +14,6 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
   best_x = torch.zeros(3 * natoms, device = device)
   target = torch.tensor(target, device = device)
   data = [prepare_data(s, config, pos_grad = True).to(device) for s in starting_structures]
-  combos = torch.combinations(data[0].z - 1, with_replacement=True)
-  rmax = torch.max(ljrmins[combos[:, 0], combos[:, 1]])
   for i in range(nstarts):
     data[i].pos = torch.tensor(starting_structures[i].lattice.get_cartesian_coords(
         starting_structures[i].frac_coords), device = device, dtype = torch.float)
@@ -33,7 +31,7 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
 
       edge_gen_out = calculate_edges_master(
         config['preprocess_params']['edge_calc_method'],
-        rmax,
+        config['preprocess_params']['cutoff_radius'],
         config['preprocess_params']['n_neighbors'],
         config['preprocess_params']['num_offsets'],
         ["_"],
