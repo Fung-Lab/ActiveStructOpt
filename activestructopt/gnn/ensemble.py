@@ -64,10 +64,10 @@ class Ensemble:
       if str(self.ensemble[0].trainer.rank) not in ("cpu", "cuda"):
         dist.barrier()
       
-      for j in range(self.k):
+      for epoch in range(start_epoch, end_epoch):
         # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
         # Start training over epochs loop
-        for epoch in range(start_epoch, end_epoch):
+        for j in range(self.k):
           epoch_start_time = time.time()
           if self.ensemble[j].trainer.train_sampler:
             self.ensemble[j].trainer.train_sampler.set_epoch(epoch)
