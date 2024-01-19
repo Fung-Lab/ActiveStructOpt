@@ -19,7 +19,7 @@ class Runner:
         self.task = ctx.task
         self.trainer = ctx.trainer
         self.task.setup(self.trainer)
-        self.task.run()
+        #self.task.run()
 
   def checkpoint(self, *args, **kwargs):
     self.trainer.save(checkpoint_file="checkpoint.pt", training_state=True)
