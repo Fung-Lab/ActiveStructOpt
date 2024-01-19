@@ -53,110 +53,110 @@ class Ensemble:
       self.ensemble[i](self.config, 
         ConfigSetup('train', self.datasets[i][0], self.datasets[i][1]))
     try:
-      for i in range(self.k):
+      for j in range(self.k):
         # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
         # Start training over epochs loop
-        start_epoch = int(self.ensemble[i].trainer.epoch)
+        start_epoch = int(self.ensemble[j].trainer.epoch)
 
-        if str(self.ensemble[i].trainer.rank) not in ("cpu", "cuda"):
+        if str(self.ensemble[j].trainer.rank) not in ("cpu", "cuda"):
           dist.barrier()
         
         end_epoch = (
-          self.ensemble[i].trainer.max_checkpoint_epochs + start_epoch
-          if self.ensemble[i].trainer.max_checkpoint_epochs
-          else self.ensemble[i].trainer.max_epochs
+          self.ensemble[j].trainer.max_checkpoint_epochs + start_epoch
+          if self.ensemble[j].trainer.max_checkpoint_epochs
+          else self.ensemble[j].trainer.max_epochs
         )
 
         for epoch in range(start_epoch, end_epoch):
           epoch_start_time = time.time()
-          if self.ensemble[i].trainer.train_sampler:
-            self.ensemble[i].trainer.train_sampler.set_epoch(epoch)
+          if self.ensemble[j].trainer.train_sampler:
+            self.ensemble[j].trainer.train_sampler.set_epoch(epoch)
           train_loader_iter = []
-          for i in range(len(self.ensemble[i].trainer.model)):
-            train_loader_iter.append(iter(self.ensemble[i].trainer.data_loader[i]["train_loader"]))
+          for i in range(len(self.ensemble[j].trainer.model)):
+            train_loader_iter.append(iter(self.ensemble[j].trainer.data_loader[i]["train_loader"]))
           
           # metrics for every epoch
-          _metrics = [{} for _ in range(len(self.ensemble[i].trainer.model))]
+          _metrics = [{} for _ in range(len(self.ensemble[j].trainer.model))]
           
-          for i in range(len(self.ensemble[i].trainer.data_loader[0]["train_loader"])):
+          for i in range(len(self.ensemble[j].trainer.data_loader[0]["train_loader"])):
             batch = []
-            for n, mod in enumerate(self.ensemble[i].trainer.model):
+            for n, mod in enumerate(self.ensemble[j].trainer.model):
               mod.train()
-              batch.append(next(train_loader_iter[n]).to(self.ensemble[i].trainer.rank))
+              batch.append(next(train_loader_iter[n]).to(self.ensemble[j].trainer.rank))
             
             # Compute forward, loss, backward    
-            with autocast(enabled=self.ensemble[i].trainer.use_amp):
-              out_list = self.ensemble[i].trainer._forward(batch)                                            
-              loss = self.ensemble[i].trainer._compute_loss(out_list, batch) 
+            with autocast(enabled=self.ensemble[j].trainer.use_amp):
+              out_list = self.ensemble[j].trainer._forward(batch)                                            
+              loss = self.ensemble[j].trainer._compute_loss(out_list, batch) 
             grad_norm = []
-            for i in range(len(self.ensemble[i].trainer.model)):
-              grad_norm.append(self.ensemble[i].trainer._backward(loss[i], i))
+            for i in range(len(self.ensemble[j].trainer.model)):
+              grad_norm.append(self.ensemble[j].trainer._backward(loss[i], i))
 
             # Compute metrics
-            for n in range(len(self.ensemble[i].trainer.model)):
-              _metrics[n] = self.ensemble[i].trainer._compute_metrics(out_list[n], batch[n], _metrics[n])
-              self.ensemble[i].trainer.metrics[n] = self.ensemble[i].trainer.evaluator.update("loss", loss[n].item(), out_list[n]["output"].shape[0], _metrics[n])
+            for n in range(len(self.ensemble[j].trainer.model)):
+              _metrics[n] = self.ensemble[j].trainer._compute_metrics(out_list[n], batch[n], _metrics[n])
+              self.ensemble[j].trainer.metrics[n] = self.ensemble[j].trainer.evaluator.update("loss", loss[n].item(), out_list[n]["output"].shape[0], _metrics[n])
 
-          self.ensemble[i].trainer.epoch = epoch + 1
+          self.ensemble[j].trainer.epoch = epoch + 1
 
-          if str(self.ensemble[i].trainer.rank) not in ("cpu", "cuda"):
+          if str(self.ensemble[j].trainer.rank) not in ("cpu", "cuda"):
             dist.barrier()
 
           # Save current model      
           torch.cuda.empty_cache()                 
-          if str(self.ensemble[i].trainer.rank) in ("0", "cpu", "cuda"):
-            if self.ensemble[i].trainer.model_save_frequency == 1:
-              self.ensemble[i].trainer.save_model(checkpoint_file="checkpoint.pt", training_state=True)
+          if str(self.ensemble[j].trainer.rank) in ("0", "cpu", "cuda"):
+            if self.ensemble[j].trainer.model_save_frequency == 1:
+              self.ensemble[j].trainer.save_model(checkpoint_file="checkpoint.pt", training_state=True)
 
             # Evaluate on validation set if it exists
-            if self.ensemble[i].trainer.data_loader[0].get("val_loader"):
-              metric = self.ensemble[i].trainer.validate("val") 
+            if self.ensemble[j].trainer.data_loader[0].get("val_loader"):
+              metric = self.ensemble[j].trainer.validate("val") 
             else:
-              metric = self.ensemble[i].trainer.metrics
+              metric = self.ensemble[j].trainer.metrics
 
             # Train loop timings
-            self.ensemble[i].trainer.epoch_time = time.time() - epoch_start_time
+            self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
             # Log metrics
-            if epoch % self.ensemble[i].trainer.train_verbosity == 0:
-              if self.ensemble[i].trainer.data_loader[0].get("val_loader"):
-                self.ensemble[i].trainer._log_metrics(metric)
+            if epoch % self.ensemble[j].trainer.train_verbosity == 0:
+              if self.ensemble[j].trainer.data_loader[0].get("val_loader"):
+                self.ensemble[j].trainer._log_metrics(metric)
               else:
-                self.ensemble[i].trainer._log_metrics()
+                self.ensemble[j].trainer._log_metrics()
 
             # Update best val metric and model, and save best model and predicted outputs
-            for i in range(len(self.ensemble[i].trainer.model)):
-              if metric[i][type(self.ensemble[i].trainer.loss_fn).__name__]["metric"] < self.ensemble[i].trainer.best_metric[i]:
-                if self.ensemble[i].trainer.output_frequency == 0:
-                  if self.ensemble[i].trainer.model_save_frequency == 1:
-                    self.ensemble[i].trainer.update_best_model(metric[i], i, write_model=True, write_csv=False)
+            for i in range(len(self.ensemble[j].trainer.model)):
+              if metric[i][type(self.ensemble[j].trainer.loss_fn).__name__]["metric"] < self.ensemble[j].trainer.best_metric[i]:
+                if self.ensemble[j].trainer.output_frequency == 0:
+                  if self.ensemble[j].trainer.model_save_frequency == 1:
+                    self.ensemble[j].trainer.update_best_model(metric[i], i, write_model=True, write_csv=False)
                   else:
-                    self.ensemble[i].trainer.update_best_model(metric[i], i, write_model=False, write_csv=False)
-                elif self.ensemble[i].trainer.output_frequency == 1:
-                  if self.ensemble[i].trainer.model_save_frequency == 1:
-                    self.ensemble[i].trainer.update_best_model(metric[i], i, write_model=True, write_csv=True)
+                    self.ensemble[j].trainer.update_best_model(metric[i], i, write_model=False, write_csv=False)
+                elif self.ensemble[j].trainer.output_frequency == 1:
+                  if self.ensemble[j].trainer.model_save_frequency == 1:
+                    self.ensemble[j].trainer.update_best_model(metric[i], i, write_model=True, write_csv=True)
                   else:
-                    self.ensemble[i].trainer.update_best_model(metric[i], i, write_model=False, write_csv=True)
+                    self.ensemble[j].trainer.update_best_model(metric[i], i, write_model=False, write_csv=True)
                 
-            self.ensemble[i].trainer._scheduler_step()
+            self.ensemble[j].trainer._scheduler_step()
 
           torch.cuda.empty_cache()        
         
-        if self.ensemble[i].trainer.best_model_state:
-          for i in range(len(self.ensemble[i].trainer.model)):
-            if str(self.ensemble[i].trainer.rank) in "0":
-              self.ensemble[i].trainer.model[i].module.load_state_dict(self.ensemble[i].trainer.best_model_state[i])
-            elif str(self.ensemble[i].trainer.rank) in ("cpu", "cuda"):
-              self.ensemble[i].trainer.model[i].load_state_dict(self.ensemble[i].trainer.best_model_state[i])
+        if self.ensemble[j].trainer.best_model_state:
+          for i in range(len(self.ensemble[j].trainer.model)):
+            if str(self.ensemble[j].trainer.rank) in "0":
+              self.ensemble[j].trainer.model[i].module.load_state_dict(self.ensemble[j].trainer.best_model_state[i])
+            elif str(self.ensemble[j].trainer.rank) in ("cpu", "cuda"):
+              self.ensemble[j].trainer.model[i].load_state_dict(self.ensemble[j].trainer.best_model_state[i])
 
-          if self.ensemble[i].trainer.model_save_frequency != -1:
-            self.ensemble[i].trainer.save_model("best_checkpoint.pt", index=None, metric=metric, training_state=True)
+          if self.ensemble[j].trainer.model_save_frequency != -1:
+            self.ensemble[j].trainer.save_model("best_checkpoint.pt", index=None, metric=metric, training_state=True)
               
-          if "train" in self.ensemble[i].trainer.write_output:
-            self.ensemble[i].trainer.predict(self.ensemble[i].trainer.data_loader[0]["train_loader"], "train")
-          if "val" in self.ensemble[i].trainer.write_output and self.ensemble[i].trainer.data_loader[0].get("val_loader"):
-            self.ensemble[i].trainer.predict(self.ensemble[i].trainer.data_loader[0]["val_loader"], "val")
-          if "test" in self.ensemble[i].trainer.write_output and self.ensemble[i].trainer.data_loader[0].get("test_loader"):
-            self.ensemble[i].trainer.predict(self.ensemble[i].trainer.data_loader[0]["test_loader"], "test") 
+          if "train" in self.ensemble[j].trainer.write_output:
+            self.ensemble[j].trainer.predict(self.ensemble[j].trainer.data_loader[0]["train_loader"], "train")
+          if "val" in self.ensemble[j].trainer.write_output and self.ensemble[j].trainer.data_loader[0].get("val_loader"):
+            self.ensemble[j].trainer.predict(self.ensemble[j].trainer.data_loader[0]["val_loader"], "val")
+          if "test" in self.ensemble[j].trainer.write_output and self.ensemble[j].trainer.data_loader[0].get("test_loader"):
+            self.ensemble[j].trainer.predict(self.ensemble[j].trainer.data_loader[0]["test_loader"], "test") 
                
     except RuntimeError as e:
       self.ensemble[0].task._process_error(e)
