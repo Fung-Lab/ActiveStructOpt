@@ -40,7 +40,7 @@ class ConfigSetup:
       }
 
 class Ensemble:
-  def __init__(self, k, config, datasets):
+  def __init__(self, k, config, datasets, starting_data):
     self.k = k
     self.config = config
     self.datasets = datasets
@@ -52,10 +52,19 @@ class Ensemble:
         ConfigSetup('train', self.datasets[i][0], self.datasets[i][1]))
     base_model = copy.deepcopy(self.ensemble[0].trainer.model[0])
     self.base_model = base_model.to('meta')
+    self.starting_data = starting_data
   
   def train(self):
+    def gen_new_data(pos):
+      new_data = self.starting_data.clone()
+      new_data.pos = pos
+      return new_data
     def fmodel(params, buffers, x):
-      return functional_call(self.base_model, (params, buffers), (x,))['output']
+      n = x.size()[0]
+      new_dl = DataLoader([gen_new_data(x[i, :]) for i in range(n)], 
+        batch_size = n) 
+      return functional_call(self.base_model, (params, buffers), 
+        (new_dl,))['output']
     try:
       start_epoch = int(self.ensemble[0].trainer.epoch)
 
@@ -95,9 +104,9 @@ class Ensemble:
           params, buffers = stack_module_state(
             [self.ensemble[j].trainer.model[0] for j in range(self.k)])
           with autocast(enabled = use_amp): # Compute forward  
-            print(batches[0])
+            poses = [[batches[j][d].pos for d in range(len(batches[j]))] for j in range(self.k)]
             new_out_lists = vmap(fmodel, in_dims = (0, 0, None))(
-              params, buffers, torch.tensor(batches).to(rank))
+              params, buffers, torch.tensor(poses).to(rank))
             print(new_out_lists.size())
             print(out_lists)
             out_lists = [self.ensemble[j].trainer._forward(
