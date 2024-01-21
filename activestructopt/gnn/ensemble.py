@@ -108,33 +108,32 @@ class Ensemble:
           dist.barrier()
 
         # Save current model
-        if str(self.ensemble[j].trainer.rank) in ("0", "cpu", "cuda"):
-          if model_save_frequency == 1:
-            for j in range(self.k):
-              self.ensemble[j].trainer.save_model(
-                checkpoint_file = "checkpoint.pt", training_state = True)
-
-          # Evaluate on validation set if it exists
-          metrics = [self.ensemble[j].trainer.validate(
-            "val") for j in range(self.k)]
-
-          for j in range(self.k): # Train loop timings and log metrics
-            self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
-            if epoch % train_verbosity == 0:
-              self.ensemble[j].trainer._log_metrics(metrics[j])
-
-            # Update best val metric and model, and save best model and predicted outputs
-            if metrics[j][0][type(self.ensemble[j].trainer.loss_fn).__name__][
-              "metric"] < self.ensemble[j].trainer.best_metric[0]:
-              if output_frequency == 0:
-                self.ensemble[j].trainer.update_best_model(metrics[j][0], 0, 
-                  write_model = model_save_frequency == 1, write_csv = False)
-              elif output_frequency == 1:
-                self.ensemble[j].trainer.update_best_model(metrics[j][0], 0, 
-                  write_model = model_save_frequency == 1, write_csv = True)
-              
+        if model_save_frequency == 1:
           for j in range(self.k):
-            self.ensemble[j].trainer._scheduler_step()       
+            self.ensemble[j].trainer.save_model(
+              checkpoint_file = "checkpoint.pt", training_state = True)
+
+        # Evaluate on validation set if it exists
+        metrics = [self.ensemble[j].trainer.validate(
+          "val") for j in range(self.k)]
+
+        for j in range(self.k): # Train loop timings and log metrics
+          self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
+          if epoch % train_verbosity == 0:
+            self.ensemble[j].trainer._log_metrics(metrics[j])
+
+          # Update best val metric and model, and save best model and predicted outputs
+          if metrics[j][0][type(self.ensemble[j].trainer.loss_fn).__name__][
+            "metric"] < self.ensemble[j].trainer.best_metric[0]:
+            if output_frequency == 0:
+              self.ensemble[j].trainer.update_best_model(metrics[j][0], 0, 
+                write_model = model_save_frequency == 1, write_csv = False)
+            elif output_frequency == 1:
+              self.ensemble[j].trainer.update_best_model(metrics[j][0], 0, 
+                write_model = model_save_frequency == 1, write_csv = True)
+            
+        for j in range(self.k):
+          self.ensemble[j].trainer._scheduler_step()       
         
         for j in range(self.k):
           if self.ensemble[j].trainer.best_model_state:
