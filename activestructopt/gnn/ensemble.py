@@ -88,16 +88,15 @@ class Ensemble:
           for j in range(self.k):
             self.ensemble[j].trainer.model[0].train()
 
-          # Compute forward  
-          with autocast(enabled = use_amp):
+          with autocast(enabled = use_amp): # Compute forward  
             out_lists = [self.ensemble[j].trainer._forward(
               batches[j]) for j in range(self.k)]                                       
 
-          with autocast(enabled = use_amp):
+          with autocast(enabled = use_amp):  # Compute loss  
             losses = [self.ensemble[j].trainer._compute_loss(
               out_lists[j], batches[j])[0] for j in range(self.k)]
           
-          for j in range(self.k):
+          for j in range(self.k): # Compute backward  
             self.ensemble[j].trainer._backward(losses[j], 0)
 
           for j in range(self.k): # Compute metrics
