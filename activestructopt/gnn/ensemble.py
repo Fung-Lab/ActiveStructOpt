@@ -89,7 +89,9 @@ class Ensemble:
 
             # Compute forward, loss, backward    
             with autocast(enabled=self.ensemble[j].trainer.use_amp):
-              out_list = self.ensemble[j].trainer._forward(batch)                                            
+              out_list = self.ensemble[j].trainer._forward(batch)
+              print(out_list)
+              raise Exception('stop', 'here please')                                             
               loss = self.ensemble[j].trainer._compute_loss(out_list, batch) 
             for i in range(len(self.ensemble[j].trainer.model)):
               self.ensemble[j].trainer._backward(loss[i], i)
