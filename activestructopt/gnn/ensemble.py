@@ -91,7 +91,7 @@ class Ensemble:
             with autocast(enabled=self.ensemble[j].trainer.use_amp):
               out_list = self.ensemble[j].trainer._forward(batch)                                       
               loss = self.ensemble[j].trainer._compute_loss(out_list, batch) 
-            self.ensemble[j].trainer._backward(loss[0], i)
+            self.ensemble[j].trainer._backward(loss[0], 0)
 
             # Compute metrics
             _metrics[j] = self.ensemble[j].trainer._compute_metrics(out_list[0],
