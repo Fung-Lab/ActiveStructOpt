@@ -91,9 +91,8 @@ class Ensemble:
             with autocast(enabled=self.ensemble[j].trainer.use_amp):
               out_list = self.ensemble[j].trainer._forward(batch)                                            
               loss = self.ensemble[j].trainer._compute_loss(out_list, batch) 
-            grad_norm = []
             for i in range(len(self.ensemble[j].trainer.model)):
-              grad_norm.append(self.ensemble[j].trainer._backward(loss[i], i))
+              self.ensemble[j].trainer._backward(loss[i], i)
 
             # Compute metrics
             _metrics[j] = self.ensemble[j].trainer._compute_metrics(out_list[0],
