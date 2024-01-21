@@ -66,6 +66,7 @@ class Ensemble:
       train_verbosity = self.ensemble[0].trainer.train_verbosity
       output_frequency = self.ensemble[0].trainer.output_frequency
       write_output = self.ensemble[0].trainer.write_output
+      use_amp = self.ensemble[j].trainer.use_amp
 
       if str(rank) not in ("cpu", "cuda"):
         dist.barrier()
@@ -81,24 +82,30 @@ class Ensemble:
           "train_loader"]) for j in range(self.k)]
         _metrics = [{} for _ in range(self.k)] # metrics for every epoch
 
-        for i in range(len(self.ensemble[j].trainer.data_loader[
+        for i in range(len(self.ensemble[0].trainer.data_loader[
           0]["train_loader"])):
+          batches = [next(train_loader_iter[j]).to(rank) for j in range(self.k)]
           for j in range(self.k):
             self.ensemble[j].trainer.model[0].train()
-            batch = [next(train_loader_iter[j]).to(rank)]
 
-            # Compute forward, loss, backward    
-            with autocast(enabled=self.ensemble[j].trainer.use_amp):
-              out_list = self.ensemble[j].trainer._forward(batch)                                       
-              loss = self.ensemble[j].trainer._compute_loss(out_list, batch) 
-            self.ensemble[j].trainer._backward(loss[0], 0)
+          # Compute forward  
+          with autocast(enabled = use_amp):
+            out_lists = [self.ensemble[j].trainer._forward(
+              batches[j]) for j in range(self.k)]                                       
 
-            # Compute metrics
-            _metrics[j] = self.ensemble[j].trainer._compute_metrics(out_list[0],
-              batch[0], _metrics[j])
+          with autocast(enabled = use_amp):
+            losses = [self.ensemble[j].trainer._compute_loss(
+              out_lists[j], batches[j])[0] for j in range(self.k)]
+          
+          for j in range(self.k):
+            self.ensemble[j].trainer._backward(losses[j], 0)
+
+          for j in range(self.k): # Compute metrics
+            _metrics[j] = self.ensemble[j].trainer._compute_metrics(
+              out_lists[j][0], batches[j][0], _metrics[j])
             self.ensemble[j].trainer.metrics[0] = self.ensemble[
-              j].trainer.evaluator.update("loss", loss[0].item(), 
-              out_list[0]["output"].shape[0], _metrics[j])
+              j].trainer.evaluator.update("loss", losses[j].item(), 
+              out_lists[j][0]["output"].shape[0], _metrics[j])
 
         for j in range(self.k):
           self.ensemble[j].trainer.epoch = epoch + 1
