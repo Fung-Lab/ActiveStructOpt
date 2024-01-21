@@ -40,7 +40,7 @@ class ConfigSetup:
       }
 
 class Ensemble:
-  def __init__(self, k, config, datasets, starting_data):
+  def __init__(self, k, config, datasets, starting_structure):
     self.k = k
     self.config = config
     self.datasets = datasets
@@ -52,7 +52,8 @@ class Ensemble:
         ConfigSetup('train', self.datasets[i][0], self.datasets[i][1]))
     base_model = copy.deepcopy(self.ensemble[0].trainer.model[0])
     self.base_model = base_model.to('meta')
-    self.starting_data = starting_data
+    rank = self.ensemble[0].trainer.rank
+    self.starting_data = prepare_data(starting_structure, config['dataset']).to(rank)
   
   def train(self):
     def gen_new_data(pos):

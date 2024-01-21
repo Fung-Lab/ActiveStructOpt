@@ -47,7 +47,7 @@ def active_learning(
   for i in range(active_steps):
     starting_structures = [structures[i].copy() for i in np.random.randint(
       0, len(mses) - 1, bh_starts)]
-    ensemble = Ensemble(k, config, datasets)
+    ensemble = Ensemble(k, config, datasets, initial_structure)
     ensemble.train()
     ensemble.set_scalar_calibration(test_data, test_targets)
     new_structure = basinhop(ensemble, starting_structures, target, 
