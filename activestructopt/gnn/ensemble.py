@@ -47,11 +47,15 @@ class Ensemble:
     self.ensemble = [Runner() for _ in range(k)]
     self.scalar = 1.0
     self.device = 'cpu'
-  
-  def train(self):
     for i in range(self.k):
       self.ensemble[i](self.config, 
         ConfigSetup('train', self.datasets[i][0], self.datasets[i][1]))
+    base_model = copy.deepcopy(self.ensemble[0].trainer.model[0])
+    self.base_model = base_model.to('meta')
+  
+  def train(self):
+    def fmodel(params, buffers, x):
+      return functional_call(self.base_model, (params, buffers), (x,))['output']
     try:
       start_epoch = int(self.ensemble[0].trainer.epoch)
 
@@ -66,7 +70,7 @@ class Ensemble:
       train_verbosity = self.ensemble[0].trainer.train_verbosity
       output_frequency = self.ensemble[0].trainer.output_frequency
       write_output = self.ensemble[0].trainer.write_output
-      use_amp = self.ensemble[j].trainer.use_amp
+      use_amp = self.ensemble[0].trainer.use_amp
 
       if str(rank) not in ("cpu", "cuda"):
         dist.barrier()
@@ -83,12 +87,18 @@ class Ensemble:
         _metrics = [{} for _ in range(self.k)] # metrics for every epoch
 
         for i in range(len(self.ensemble[0].trainer.data_loader[
-          0]["train_loader"])):
+          0]["train_loader"])): # note: assumes all have same number of batches
           batches = [next(train_loader_iter[j]).to(rank) for j in range(self.k)]
           for j in range(self.k):
             self.ensemble[j].trainer.model[0].train()
 
+          params, buffers = stack_module_state(
+            [self.ensemble[j].trainer.model[0] for j in range(self.k)])
           with autocast(enabled = use_amp): # Compute forward  
+            new_out_lists = vmap(fmodel, in_dims = (0, 0, 0))(
+              params, buffers, batches)
+            print(new_out_lists.size())
+            print(out_lists)
             out_lists = [self.ensemble[j].trainer._forward(
               batches[j]) for j in range(self.k)]                                       
 
