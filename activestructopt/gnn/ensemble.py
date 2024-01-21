@@ -95,7 +95,8 @@ class Ensemble:
           params, buffers = stack_module_state(
             [self.ensemble[j].trainer.model[0] for j in range(self.k)])
           with autocast(enabled = use_amp): # Compute forward  
-            new_out_lists = vmap(fmodel, in_dims = (0, 0, 0))(
+            print(batches[0])
+            new_out_lists = vmap(fmodel, in_dims = (0, 0, None))(
               params, buffers, torch.tensor(batches).to(rank))
             print(new_out_lists.size())
             print(out_lists)
