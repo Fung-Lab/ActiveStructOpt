@@ -30,32 +30,27 @@ class Runner:
     self.config["timestamp_id"] = self.trainer.timestamp_id
 
 class ConfigSetup:
-  def __init__(self, run_mode, train_data, val_data):
+  def __init__(self, run_mode):
       self.run_mode = run_mode
       self.seed = None
       self.submit = None
-      self.datasets = {
-        'train': train_data, 
-        'val': val_data, 
-      }
 
 class Ensemble:
-  def __init__(self, k, config, datasets, starting_structure):
+  def __init__(self, k, config, starting_structure):
     self.k = k
     self.config = config
-    self.datasets = datasets
     self.ensemble = [Runner() for _ in range(k)]
     self.scalar = 1.0
     self.device = 'cpu'
     for i in range(self.k):
-      self.ensemble[i](self.config, 
-        ConfigSetup('train', self.datasets[i][0], self.datasets[i][1]))
+      self.ensemble[i](self.config, ConfigSetup('train'))
     base_model = copy.deepcopy(self.ensemble[0].trainer.model[0])
     self.base_model = base_model.to('meta')
     rank = self.ensemble[0].trainer.rank
-    self.starting_data = prepare_data(starting_structure, config['dataset']).to(rank)
+    self.starting_data = prepare_data(starting_structure, config['dataset']).to(
+      rank)
   
-  def train(self):
+  def train(self, train, train_targets, val, val_targets):
     def gen_new_data(pos):
       new_data = self.starting_data.clone()
       new_data.pos = pos
@@ -89,29 +84,20 @@ class Ensemble:
         # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
         # Start training over epochs loop
         epoch_start_time = time.time()
-        for j in range(self.k):
-          if self.ensemble[j].trainer.train_sampler:
-            self.ensemble[j].trainer.train_sampler.set_epoch(epoch)
-        train_loader_iter = [iter(self.ensemble[j].trainer.data_loader[0][
-          "train_loader"]) for j in range(self.k)]
         _metrics = [{} for _ in range(self.k)] # metrics for every epoch
 
-        for i in range(len(self.ensemble[0].trainer.data_loader[
-          0]["train_loader"])): # note: assumes all have same number of batches
-          batches = [next(train_loader_iter[j]).to(rank) for j in range(self.k)]
-          for j in range(self.k):
-            self.ensemble[j].trainer.model[0].train()
+        for j in range(self.k):
+          self.ensemble[j].trainer.model[0].train()
 
-          params, buffers = stack_module_state(
-            [self.ensemble[j].trainer.model[0] for j in range(self.k)])
-          with autocast(enabled = use_amp): # Compute forward  
-            poses = [[batches[j][d].pos for d in range(len(batches[j]))] for j in range(self.k)]
-            new_out_lists = vmap(fmodel, in_dims = (0, 0, None))(
-              params, buffers, torch.tensor(poses).to(rank))
-            print(new_out_lists.size())
-            print(out_lists)
-            out_lists = [self.ensemble[j].trainer._forward(
-              batches[j]) for j in range(self.k)]                                       
+        params, buffers = stack_module_state(
+          [self.ensemble[j].trainer.model[0] for j in range(self.k)])
+        with autocast(enabled = use_amp): # Compute forward  
+          new_out_lists = vmap(fmodel, in_dims = (0, 0, 0))(
+            params, buffers, train)
+          print(new_out_lists.size())
+          print(new_out_lists)
+          out_lists = [self.ensemble[j].trainer._forward(
+            batches[j]) for j in range(self.k)]
 
           with autocast(enabled = use_amp):  # Compute loss  
             losses = [self.ensemble[j].trainer._compute_loss(

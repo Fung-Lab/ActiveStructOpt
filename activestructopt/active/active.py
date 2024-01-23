@@ -28,7 +28,8 @@ def active_learning(
     print_mses = True,
     save_progress_dir = None,
     ):
-  structures, ys, datasets, kfolds, test_indices, test_data, test_targets = make_data_splits(
+  (structures, ys, kfolds, test_indices, train, train_targets, val, 
+    val_targets, test, test_targets) = make_data_splits(
     initial_structure,
     optfunc,
     args,
@@ -47,24 +48,27 @@ def active_learning(
   for i in range(active_steps):
     starting_structures = [structures[i].copy() for i in np.random.randint(
       0, len(mses) - 1, bh_starts)]
-    ensemble = Ensemble(k, config, datasets, initial_structure)
-    ensemble.train()
-    ensemble.set_scalar_calibration(test_data, test_targets)
+    ensemble = Ensemble(k, config, initial_structure)
+    ensemble.train(train, train_targets, val, val_targets)
+    ensemble.set_scalar_calibration(test, test_targets)
     new_structure = basinhop(ensemble, starting_structures, target, 
       config['dataset'], nhops = bh_starts, niters = bh_iters_per_start, 
       λ = 0.0 if i == (active_steps - 1) else 1.0, lr = bh_lr, 
       step_size = bh_step_size, rmcσ = bh_σ)
     structures.append(new_structure)
-    datasets, y = update_datasets(
-      datasets,
+    train, train_targets, val, val_targets, new_y = update_datasets(
+      train, 
+      train_targets, 
+      val, 
+      val_targets,
       new_structure,
       config['dataset'],
       optfunc,
       args,
       device,
     )
-    ys.append(y)
-    new_mse = np.mean((y - target) ** 2)
+    ys = torch.cat([ys, torch.tensor(new_y, device = ensemble.device)], 0)
+    new_mse = np.mean((new_y - target) ** 2)
     mses.append(new_mse)
     if print_mses:
       print(new_mse)
