@@ -41,7 +41,7 @@ def active_learning(
     split = split,
     device = device,
   )
-  mses = [np.mean((ys[i][:].cpu().numpy() - target) ** 2) for i in ys.size()[0]]
+  mses = [np.mean((ys[i, :].cpu().numpy() - target) ** 2) for i in ys.size()[0]]
   if print_mses:
     print(mses)
   active_steps = max_forward_calls - N
@@ -85,4 +85,5 @@ def active_learning(
           pickle.dump(res, file)
 
   return structures, ys, mses, (
-      datasets, kfolds, test_indices, test_data, test_targets, ensemble)
+      ensemble, kfolds, test_indices, train, train_targets, val, 
+    val_targets, test, test_targets, ensemble)

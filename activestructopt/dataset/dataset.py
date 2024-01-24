@@ -49,13 +49,13 @@ def update_datasets(train, train_targets, val, val_targets, new_structure,
   out_dim = val.size[2]
 
   for i in range(1, nfolds):
-    if torch.max(val[i][nstructs - 1][:]) == 0:
-      val[i][nstructs - 1][:] = new_pos
-      val_targets[i][nstructs - 1][:] = new_y
+    if torch.max(val[i, nstructs - 1, :]) == 0:
+      val[i, nstructs - 1, :] = new_pos
+      val_targets[i, nstructs - 1, :] = new_y
       for j in range(nfolds):
         if i != j:
-          train[j][nstructs - 1][:] = new_pos
-          train_targets[j][nstructs - 1][:] = new_y
+          train[j, nstructs - 1, :] = new_pos
+          train_targets[j, nstructs - 1, :] = new_y
       updated = True
   
   if not updated:
@@ -64,10 +64,10 @@ def update_datasets(train, train_targets, val, val_targets, new_structure,
     train_targets = torch.cat([train_targets, torch.zeros(nfolds, 1, out_dim)], 1)
     val = torch.cat([val, torch.zeros(nfolds, 1, out_dim)], 1)
     val_targets = torch.cat([val_targets, torch.zeros(nfolds, 1, out_dim)], 1)
-    val[0][nstructs - 1][:] = new_pos
-    val_targets[0][nstructs - 1][:] = new_y
+    val[0, nstructs - 1, :] = new_pos
+    val_targets[0, nstructs - 1, :] = new_y
     for j in range(1, nfolds):
-      train[j][nstructs - 1][:] = new_pos
-      train_targets[j][nstructs - 1][:] = new_y
+      train[j, nstructs - 1, :] = new_pos
+      train_targets[j, nstructs - 1, :] = new_y
 
   return train, train_targets, val, val_targets, new_y
