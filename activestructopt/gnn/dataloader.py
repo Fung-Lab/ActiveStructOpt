@@ -76,6 +76,6 @@ def prepare_data(
             delattr(data, "edge_descriptor")
 
     if y is not None:
-        data.y = torch.tensor(np.array([y]))
+        data.y = y
 
     return data
