@@ -36,7 +36,7 @@ class ConfigSetup:
       self.submit = None
 
 class Ensemble:
-  def __init__(self, k, config, starting_structure):
+  def __init__(self, k, config):
     self.k = k
     self.config = config
     self.ensemble = [Runner() for _ in range(k)]
@@ -47,20 +47,11 @@ class Ensemble:
     base_model = copy.deepcopy(self.ensemble[0].trainer.model[0])
     self.base_model = base_model.to('meta')
     rank = self.ensemble[0].trainer.rank
-    self.starting_data = prepare_data(starting_structure, config['dataset']).to(
-      rank)
   
-  def train(self, train, train_targets, val, val_targets):
-    def gen_new_data(pos):
-      new_data = self.starting_data.clone()
-      new_data.pos = pos
-      return new_data
+  def train(self, kfolds, trainval, trainval_targets):
     def fmodel(params, buffers, x):
-      n = x.size()[0]
-      new_dl = DataLoader([gen_new_data(x[i, :]) for i in range(n)], 
-        batch_size = n) 
       return functional_call(self.base_model, (params, buffers), 
-        (next(iter(new_dl)),))['output']
+        (x,))['output']
     try:
       start_epoch = int(self.ensemble[0].trainer.epoch)
 
@@ -92,8 +83,9 @@ class Ensemble:
         params, buffers = stack_module_state(
           [self.ensemble[j].trainer.model[0] for j in range(self.k)])
         with autocast(enabled = use_amp): # Compute forward  
-          new_out_lists = vmap(fmodel, in_dims = (0, 0, 0), randomness = 'same')(
-            params, buffers, train)
+          new_out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
+            params, buffers, next(iter(DataLoader(trainval, 
+            batch_size = len(trainval)))))
           print(new_out_lists.size())
           print(new_out_lists)
           out_lists = [self.ensemble[j].trainer._forward(
