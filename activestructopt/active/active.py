@@ -41,7 +41,8 @@ def active_learning(
     split = split,
     device = device,
   )
-  mses = [np.mean((ys[i, :].cpu().numpy() - target) ** 2) for i in ys.size()[0]]
+  mses = [np.mean((ys[i, :].cpu().numpy() - target) ** 2
+    ) for i in range(ys.size()[0])]
   if print_mses:
     print(mses)
   active_steps = max_forward_calls - N
