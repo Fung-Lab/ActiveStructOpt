@@ -14,10 +14,10 @@ def make_data_splits(initial_structure, optfunc, args, config,
       new_structure.perturb(np.random.uniform(perturbrmin, perturbrmax))
       rejected = lj_reject(new_structure)
     structures[i] = new_structure.copy()
-  ys = torch.tensor([optfunc(structures[i], **(args)) for i in range(N)], 
-    device = device)
-  pos = torch.tensor([structures[i].lattice.get_cartesian_coords(
-    structures[i].frac_coords) for i in range(N)], device = device)      
+  ys = torch.tensor(np.array([optfunc(structures[i], **(args)
+    ) for i in range(N)]), device = device)
+  pos = torch.tensor(np.array([structures[i].lattice.get_cartesian_coords(
+    structures[i].frac_coords) for i in range(N)]), device = device)      
   structure_indices = np.random.permutation(np.arange(1, N))
   trainval_indices = structure_indices[:int(np.floor(split * N) - 1)]
   trainval_indices = np.append(trainval_indices, [0])
