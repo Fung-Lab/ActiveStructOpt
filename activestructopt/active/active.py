@@ -28,8 +28,8 @@ def active_learning(
     print_mses = True,
     save_progress_dir = None,
     ):
-  (structures, ys, kfolds, test_indices, train, train_targets, val, 
-    val_targets, test, test_targets) = make_data_splits(
+  (structures, ys, kfolds, test_indices, 
+    trainval, trainval_targets, test, test_targets) = make_data_splits(
     initial_structure,
     optfunc,
     args,
