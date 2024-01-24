@@ -41,6 +41,7 @@ def active_learning(
     split = split,
     device = device,
   )
+  config['dataset']['preprocess_params']['output_dim'] = ys.size()[1]
   mses = [np.mean((ys[i, :].cpu().numpy() - target) ** 2
     ) for i in range(ys.size()[0])]
   if print_mses:
