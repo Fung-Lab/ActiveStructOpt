@@ -60,7 +60,7 @@ class Ensemble:
       new_dl = DataLoader([gen_new_data(x[i, :]) for i in range(n)], 
         batch_size = n) 
       return functional_call(self.base_model, (params, buffers), 
-        (new_dl,))['output']
+        (next(iter(new_dl)),))['output']
     try:
       start_epoch = int(self.ensemble[0].trainer.epoch)
 
