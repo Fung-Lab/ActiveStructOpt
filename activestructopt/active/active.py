@@ -67,8 +67,8 @@ def active_learning(
       args,
       device,
     )
-    ys = torch.cat([ys, torch.tensor(new_y, device = ensemble.device)], 0)
-    new_mse = np.mean((new_y - target) ** 2)
+    ys = torch.cat([ys, new_y], 0)
+    new_mse = np.mean((new_y.cpu().numpy() - target) ** 2)
     mses.append(new_mse)
     if print_mses:
       print(new_mse)

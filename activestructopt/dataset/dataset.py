@@ -39,9 +39,9 @@ def make_data_splits(initial_structure, optfunc, args, config,
 def update_datasets(train, train_targets, val, val_targets, new_structure, 
   optfunc, args, device):
   
-  new_y = optfunc(new_structure, **(args))
+  new_y = torch.tensor(optfunc(new_structure, **(args)), device = device)
   new_pos = torch.tensor(new_structure.lattice.get_cartesian_coords(
-    new_structure.frac_coords)).to(device)
+    new_structure.frac_coords), device = device)
   updated = False
 
   nfolds = val.size()[0]
