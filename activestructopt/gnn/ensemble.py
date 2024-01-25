@@ -93,6 +93,10 @@ class Ensemble:
           losses = [self.loss_fn(out_lists[j, train_inds[j], :], trainval_targets[train_inds[j], :]) for j in range(self.k)]
           print(losses)
         
+        grad_norm = []
+        for j in range(self.k):
+          grad_norm.append(self.ensemble[j].trainer._backward(losses[j], 0))
+
         for j in range(self.k): # Compute backward 
           print(j)
           self.ensemble[j].trainer.optimizer[0].zero_grad(set_to_none=True)
