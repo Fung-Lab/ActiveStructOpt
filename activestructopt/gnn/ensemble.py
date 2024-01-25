@@ -91,8 +91,8 @@ class Ensemble:
           batch_size = len(trainval)))))
         train_inds = [torch.cat([kfolds_tensors[j] for i in range(
           self.k) if i != j]) for j in range(self.k)]
-        losses = [self.loss_fn(out_lists[j, train_inds[j], :], 
-          trainval_targets[train_inds[j], :]) for j in range(self.k)]
+        losses = [self.loss_fn(out_lists[j, :, :], 
+          trainval_targets[:, :]) for j in range(self.k)]
         print(losses)
         
         for j in range(self.k): # Compute backward 
