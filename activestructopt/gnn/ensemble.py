@@ -91,14 +91,15 @@ class Ensemble:
           batch_size = len(trainval)))))
         train_inds = [torch.cat([kfolds_tensors[j] for i in range(
           self.k) if i != j]) for j in range(self.k)]
-        losses = [self.loss_fn(out_lists[j, :, :], 
-          trainval_targets[:, :]) for j in range(self.k)]
-        print(losses)
+        loss = torch.mean(out_lists)
+        #losses = [self.loss_fn(out_lists[j, :, :], 
+        #  trainval_targets[:, :]) for j in range(self.k)]
+        #print(losses)
         
         for j in range(self.k): # Compute backward 
           print(j)
           self.ensemble[j].trainer.optimizer[0].zero_grad(set_to_none=True)
-          losses[j].backward(retain_graph = True)
+          loss.backward(retain_graph = True)
           #self.ensemble[j].trainer.scaler.scale(losses[j]).backward()
           if self.ensemble[j].trainer.clip_grad_norm:
             grad_norm = torch.nn.utils.clip_grad_norm_(
