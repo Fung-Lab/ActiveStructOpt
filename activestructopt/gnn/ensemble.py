@@ -98,7 +98,7 @@ class Ensemble:
           if self.ensemble[j].trainer.clip_grad_norm:
               grad_norm = torch.nn.utils.clip_grad_norm_(
                   self.ensemble[j].trainer.model[0].parameters(),
-                  max_norm=self.clip_grad_norm,
+                  max_norm=self.ensemble[j].trainer.clip_grad_norm,
               )
           self.ensemble[j].trainer.scaler.step(self.optimizer[0])
           self.ensemble[j].trainer.scaler.update()
