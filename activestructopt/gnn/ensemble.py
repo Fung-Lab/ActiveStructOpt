@@ -90,7 +90,7 @@ class Ensemble:
             params, buffers, next(iter(DataLoader(trainval, 
             batch_size = len(trainval)))))
           train_inds = [torch.cat([kfolds_tensors[j] for i in range(self.k) if i != j]) for j in range(self.k)]
-          losses = [self.loss_fn(out_lists[j, train_inds, :], trainval_targets[train_inds, :]) for j in range(self.k)]
+          losses = [self.loss_fn(out_lists[j, train_inds[j], :], trainval_targets[train_inds[j], :]) for j in range(self.k)]
         
         for j in range(self.k): # Compute backward 
           self.ensemble[j].trainer.optimizer[0].zero_grad(set_to_none=True)
