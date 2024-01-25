@@ -19,13 +19,14 @@ def make_data_splits(initial_structure, optfunc, args, config,
   structure_indices = np.random.permutation(np.arange(1, N))
   trainval_indices = structure_indices[:int(np.floor(split * N) - 1)]
   trainval_indices = np.append(trainval_indices, [0])
-  kfolds = np.array_split(trainval_indices, k)
   test_indices = structure_indices[int(np.floor(split * N) - 1):]
 
   trainval = [prepare_data(structures[i], config, y = ys[i]).to(device) for i in trainval_indices]
   trainval_targets = ys[trainval_indices]
   test = [prepare_data(structures[i], config, y = ys[i]).to(device) for i in test_indices]
   test_targets = ys[test_indices].detach().cpu().numpy()
+
+  kfolds = np.array_split(np.random.permutation(np.arange(1, len(trainval_indices))), k)
 
   return (structures, ys, kfolds, test_indices, 
     trainval, trainval_targets, test, test_targets)
