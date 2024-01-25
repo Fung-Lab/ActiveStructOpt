@@ -101,8 +101,8 @@ class Ensemble:
           print(j)
           self.ensemble[j].trainer.optimizer[0].zero_grad(set_to_none=True)
           loss.backward(retain_graph = True)
-          print(params['attention_layers.0.dv_proj.weight'])
-          print(params.grad)
+          print(params['attention_layers.0.dv_proj.weight'].grad)
+          #print(params.grad)
           #self.ensemble[j].trainer.scaler.scale(losses[j]).backward()
           print(self.ensemble[j].trainer.clip_grad_norm)
           if self.ensemble[j].trainer.clip_grad_norm:
