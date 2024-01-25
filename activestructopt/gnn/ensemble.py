@@ -98,13 +98,14 @@ class Ensemble:
         for j in range(self.k): # Compute backward 
           print(j)
           self.ensemble[j].trainer.optimizer[0].zero_grad(set_to_none=True)
-          losses[j].backward()
+          losses[j].backward(retain_graph = True)
           self.ensemble[j].trainer.scaler.scale(losses[j]).backward()
           if self.ensemble[j].trainer.clip_grad_norm:
             grad_norm = torch.nn.utils.clip_grad_norm_(
               self.ensemble[j].trainer.model[0].parameters(),
               max_norm=self.ensemble[j].trainer.clip_grad_norm,
             )
+            print(grad_norm)
           self.ensemble[j].trainer.optimizer[0].step()
           #self.ensemble[j].trainer.scaler.step(self.ensemble[j].trainer.optimizer[0])
           #self.ensemble[j].trainer.scaler.update()
