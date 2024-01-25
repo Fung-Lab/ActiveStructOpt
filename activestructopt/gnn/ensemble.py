@@ -85,6 +85,7 @@ class Ensemble:
 
         params, buffers = stack_module_state(
           [self.ensemble[j].trainer.model[0] for j in range(self.k)])
+
         #with autocast(enabled = use_amp): # Compute forward  
         out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
           params, buffers, next(iter(DataLoader(trainval, 
@@ -100,6 +101,7 @@ class Ensemble:
           print(j)
           self.ensemble[j].trainer.optimizer[0].zero_grad(set_to_none=True)
           loss.backward(retain_graph = True)
+          print(params.grad)
           #self.ensemble[j].trainer.scaler.scale(losses[j]).backward()
           print(self.ensemble[j].trainer.clip_grad_norm)
           if self.ensemble[j].trainer.clip_grad_norm:
