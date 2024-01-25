@@ -100,7 +100,7 @@ class Ensemble:
                   self.ensemble[j].trainer.model[0].parameters(),
                   max_norm=self.ensemble[j].trainer.clip_grad_norm,
               )
-          self.ensemble[j].trainer.scaler.step(self.optimizer[0])
+          self.ensemble[j].trainer.scaler.step(self.ensemble[j].trainer.optimizer[0])
           self.ensemble[j].trainer.scaler.update()
 
         for j in range(self.k): # Compute metrics
