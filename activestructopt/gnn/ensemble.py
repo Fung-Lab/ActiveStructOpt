@@ -55,7 +55,7 @@ class Ensemble:
       return functional_call(self.base_model, (params, buffers), 
         (x,))['output']
     try:
-      kfolds_tensors = [torch.tensor(kfolds[i], device = self.device) for i in len(kfolds)]
+      kfolds_tensors = [torch.tensor(kfolds[i], device = self.device) for i in range(len(kfolds))]
       start_epoch = int(self.ensemble[0].trainer.epoch)
 
       end_epoch = (
