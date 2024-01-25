@@ -85,15 +85,15 @@ class Ensemble:
 
         params, buffers = stack_module_state(
           [self.ensemble[j].trainer.model[0] for j in range(self.k)])
-        with autocast(enabled = use_amp): # Compute forward  
-          out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
-            params, buffers, next(iter(DataLoader(trainval, 
-            batch_size = len(trainval)))))
-          train_inds = [torch.cat([kfolds_tensors[j] for i in range(
-            self.k) if i != j]) for j in range(self.k)]
-          losses = [self.loss_fn(out_lists[j, train_inds[j], :], 
-            trainval_targets[train_inds[j], :]) for j in range(self.k)]
-          print(losses)
+        #with autocast(enabled = use_amp): # Compute forward  
+        out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
+          params, buffers, next(iter(DataLoader(trainval, 
+          batch_size = len(trainval)))))
+        train_inds = [torch.cat([kfolds_tensors[j] for i in range(
+          self.k) if i != j]) for j in range(self.k)]
+        losses = [self.loss_fn(out_lists[j, train_inds[j], :], 
+          trainval_targets[train_inds[j], :]) for j in range(self.k)]
+        print(losses)
         
         for j in range(self.k): # Compute backward 
           print(j)
