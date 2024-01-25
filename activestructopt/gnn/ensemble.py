@@ -8,6 +8,7 @@ from torch_geometric import compile
 import torch
 from torch.func import stack_module_state, functional_call, vmap
 from torch.cuda.amp import autocast
+import torch.nn.functional as F
 from torch import distributed as dist
 import copy
 from torch_geometric.loader import DataLoader
@@ -42,6 +43,7 @@ class Ensemble:
     self.ensemble = [Runner() for _ in range(k)]
     self.scalar = 1.0
     self.device = 'cpu'
+    self.loss_fn = getattr(F, config['optim']['loss']['loss_args']['loss_fn'])
     for i in range(self.k):
       self.ensemble[i](self.config, ConfigSetup('train'))
     base_model = copy.deepcopy(self.ensemble[0].trainer.model[0])
@@ -53,6 +55,7 @@ class Ensemble:
       return functional_call(self.base_model, (params, buffers), 
         (x,))['output']
     try:
+      kfolds_tensors = [torch.tensor(kfolds[i], device = self.device) for i in len(kfolds)]
       start_epoch = int(self.ensemble[0].trainer.epoch)
 
       end_epoch = (
@@ -83,27 +86,21 @@ class Ensemble:
         params, buffers = stack_module_state(
           [self.ensemble[j].trainer.model[0] for j in range(self.k)])
         with autocast(enabled = use_amp): # Compute forward  
-          new_out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
+          out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
             params, buffers, next(iter(DataLoader(trainval, 
             batch_size = len(trainval)))))
-          print(new_out_lists.size())
-          print(new_out_lists)
-          out_lists = [self.ensemble[j].trainer._forward(
-            batches[j]) for j in range(self.k)]
+          train_inds = [torch.cat([kfolds_tensors[j] for i in range(self.k) if i != j]) for j in range(self.k)]
+          losses = [self.loss_fn(out_lists[j, train_inds, :], trainval_targets[train_inds, :]) for j in range(self.k)]
+        
+        for j in range(self.k): # Compute backward  
+          self.ensemble[j].trainer._backward(losses[j], 0)
 
-          with autocast(enabled = use_amp):  # Compute loss  
-            losses = [self.ensemble[j].trainer._compute_loss(
-              out_lists[j], batches[j])[0] for j in range(self.k)]
-          
-          for j in range(self.k): # Compute backward  
-            self.ensemble[j].trainer._backward(losses[j], 0)
-
-          for j in range(self.k): # Compute metrics
-            _metrics[j] = self.ensemble[j].trainer._compute_metrics(
-              out_lists[j][0], batches[j][0], _metrics[j])
-            self.ensemble[j].trainer.metrics[0] = self.ensemble[
-              j].trainer.evaluator.update("loss", losses[j].item(), 
-              out_lists[j][0]["output"].shape[0], _metrics[j])
+        for j in range(self.k): # Compute metrics
+          _metrics[j] = self.ensemble[j].trainer._compute_metrics(
+            out_lists[j][0], batches[j][0], _metrics[j])
+          self.ensemble[j].trainer.metrics[0] = self.ensemble[
+            j].trainer.evaluator.update("loss", losses[j].item(), 
+            out_lists[j][0]["output"].shape[0], _metrics[j])
 
         for j in range(self.k):
           self.ensemble[j].trainer.epoch = epoch + 1
