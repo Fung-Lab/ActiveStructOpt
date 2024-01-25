@@ -99,6 +99,7 @@ class Ensemble:
           print(j)
           self.ensemble[j].trainer.optimizer[0].zero_grad(set_to_none=True)
           losses[j].backward(retain_graph = True)
+          print(self.ensemble[j].trainer.model[0].parameters().grad)
           #self.ensemble[j].trainer.scaler.scale(losses[j]).backward()
           if self.ensemble[j].trainer.clip_grad_norm:
             grad_norm = torch.nn.utils.clip_grad_norm_(
