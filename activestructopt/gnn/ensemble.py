@@ -153,14 +153,12 @@ class Ensemble:
                 self.params[key][j] = params[key][j]
               for key in buffers.keys():
                 self.buffers[key][j] = buffers[key][j]
-        
-              print(best_vals)
-
-        torch.cuda.empty_cache()
                
     except RuntimeError as e:
       self.ensemble[0].task._process_error(e)
       raise e
+    
+    torch.cuda.empty_cache()
 
 
   def predict(self, structure, prepared = False):
