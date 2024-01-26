@@ -50,40 +50,21 @@ class Ensemble:
       self.ensemble[i](self.config, ConfigSetup('train'))
     base_model = copy.deepcopy(self.ensemble[0].trainer.model[0])
     self.base_model = base_model.to('meta')
-    rank = self.ensemble[0].trainer.rank
-  
+    params, buffers = stack_module_state(
+        [self.ensemble[j].trainer.model[0] for j in range(self.k)])
+    self.params = params
+    self.buffers = buffers
+    world_size = int(os.environ.get("LOCAL_WORLD_SIZE", None)
+      ) if self.config["task"]["parallel"] else 1
+    if world_size > 1:
+      self.config["optim"]["lr"] = self.config["optim"]["lr"] * world_size
+
   def train(self, kfolds, trainval, trainval_targets):
     def fmodel(params, buffers, x):
       return functional_call(self.base_model, (params, buffers), 
         (x,))['output']
     try:
       kfolds_tensors = [torch.tensor(kfolds[i], device = self.device) for i in range(len(kfolds))]
-      
-      params1, buffers1 = stack_module_state(
-        [self.ensemble[0].trainer.model[0]])
-
-      #print(buffers1.keys())
-      #assert False
-
-      params, buffers = stack_module_state(
-        [self.ensemble[j].trainer.model[0] for j in range(self.k)])
-
-      print(buffers)
-      assert False
-      #print(params['attention_layers.0.dv_proj.weight'])
-
-      world_size = int(os.environ.get("LOCAL_WORLD_SIZE", None)
-        ) if self.config["task"]["parallel"] else 1
-
-      if world_size > 1:
-        self.config["optim"]["lr"] = self.config["optim"]["lr"] * world_size
-
-      optimizer = getattr(optim, 
-        self.config["optim"]["optimizer"]["optimizer_type"])(
-        list(params.values()) + list(buffers.values()),
-        lr = self.config["optim"]["lr"],
-        **self.config["optim"]["optimizer"].get("optimizer_args", {}),
-      )
 
       start_epoch = int(self.ensemble[0].trainer.epoch)
       end_epoch = (
@@ -93,20 +74,32 @@ class Ensemble:
       )
 
       rank = self.ensemble[0].trainer.rank
-      model_save_frequency = self.ensemble[0].trainer.model_save_frequency
-      train_verbosity = self.ensemble[0].trainer.train_verbosity
-      output_frequency = self.ensemble[0].trainer.output_frequency
-      write_output = self.ensemble[0].trainer.write_output
-      use_amp = self.ensemble[0].trainer.use_amp
+      # model_save_frequency = self.ensemble[0].trainer.model_save_frequency
+      # train_verbosity = self.ensemble[0].trainer.train_verbosity
+      # output_frequency = self.ensemble[0].trainer.output_frequency
+      # write_output = self.ensemble[0].trainer.write_output
+      # use_amp = self.ensemble[0].trainer.use_amp
 
       if str(rank) not in ("cpu", "cuda"):
         dist.barrier()
+
+      best_vals = [torch.inf for _ in range(self.k)]
 
       for epoch in range(start_epoch, end_epoch):
         # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
         # Start training over epochs loop
         epoch_start_time = time.time()
         # _metrics = [{} for _ in range(self.k)] # metrics for every epoch
+
+        params = copy.deepcopy(self.params)
+        buffers = copy.deepcopy(self.buffers)
+
+        optimizer = getattr(optim, 
+          self.config["optim"]["optimizer"]["optimizer_type"])(
+          list(params.values()) + list(buffers.values()),
+          lr = self.config["optim"]["lr"],
+          **self.config["optim"]["optimizer"].get("optimizer_args", {}),
+        )
 
         for j in range(self.k):
           self.ensemble[j].trainer.model[0].train()
@@ -117,13 +110,13 @@ class Ensemble:
           batch_size = len(trainval)))))
         train_inds = [torch.cat([kfolds_tensors[i] for i in range(
           self.k) if i != j]) for j in range(self.k)]
-        losses = [self.loss_fn(out_lists[j, train_inds[j], :], 
+        train_losses = [self.loss_fn(out_lists[j, train_inds[j], :], 
           trainval_targets[train_inds[j], :]) for j in range(self.k)]
-        print(losses)
+        print(train_losses)
         
         for j in range(self.k): # Compute backward 
           optimizer.zero_grad(set_to_none=True)
-          losses[j].backward(retain_graph = True)
+          train_losses[j].backward(retain_graph = True)
           if self.ensemble[j].trainer.clip_grad_norm:
             torch.nn.utils.clip_grad_norm_(
               list(params.values()) + list(buffers.values()),
@@ -143,17 +136,31 @@ class Ensemble:
         if str(rank) not in ("cpu", "cuda"):
           dist.barrier()
 
-        for j in range(self.k):
-          self.ensemble[j].trainer.model[0].eval()
+        for j in range(self.k):        buffers = copy.deepcopy(self.buffers)
 
+        optimizer = getattr(optim, 
+          self.config["optim"]["optimizer"]["optimizer_type"])(
+          list(params.values()) + list(buffers.values()),
+          lr = self.config["optim"]["lr"],
+          **self.config["optim"]["optimizer"].get("optimizer_args", {}),
+        )
         with torch.no_grad():
           out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
             params, buffers, next(iter(DataLoader(trainval, 
             batch_size = len(trainval)))))
           val_inds = [kfolds_tensors[j] for j in range(self.k)]
-          losses = [self.loss_fn(out_lists[j, val_inds[j], :], 
+          val_losses = [self.loss_fn(out_lists[j, val_inds[j], :], 
             trainval_targets[val_inds[j], :]) for j in range(self.k)]
-          print(losses)
+          print(val_losses)
+
+          for j in range(self.k): # update if beats evals
+            vloss = val_losses[j].item()
+            if vloss < best_vals[j]:
+              best_vals[j] = vloss
+            for key in params.keys():
+              self.params[key][j] = params[key][j]
+            for key in buffers.keys():
+              self.buffers[key][j] = buffers[key][j]
 
         # Save current model
         # if model_save_frequency == 1:
