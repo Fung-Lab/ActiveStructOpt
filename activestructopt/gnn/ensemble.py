@@ -1,5 +1,5 @@
 from matdeeplearn.common.trainer_context import new_trainer_context
-from matdeeplearn.trainers.base_trainer import _load_scheduler
+from matdeeplearn.modules.scheduler import LRScheduler
 from activestructopt.gnn.dataloader import prepare_data
 import numpy as np
 import time
@@ -95,8 +95,13 @@ class Ensemble:
         **self.config["optim"]["optimizer"].get("optimizer_args", {}),
       ) for _ in range(self.k)]
 
-      scheduler = _load_scheduler(self.config["optim"]["scheduler"], optimizers)
 
+      scheduler = [LRScheduler(optimizers[j], 
+        self.config["optim"]["scheduler"]["scheduler_type"], 
+        self.config["optim"]["scheduler"]["scheduler_args"]) for j in range(
+        self.k)]
+      
+     
       for epoch in range(start_epoch, end_epoch):
         # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
         # Start training over epochs loop
