@@ -88,18 +88,25 @@ class Ensemble:
       params = copy.deepcopy(self.params)
       buffers = copy.deepcopy(self.buffers)
 
-      optimizers = [getattr(optim, 
+      optimizer = getattr(optim, 
         self.config["optim"]["optimizer"]["optimizer_type"])(
         list(params.values()) + list(buffers.values()),
         lr = self.config["optim"]["lr"],
         **self.config["optim"]["optimizer"].get("optimizer_args", {}),
-      ) for _ in range(self.k)]
+      )
+
+      # optimizers = [getattr(optim, 
+      #   self.config["optim"]["optimizer"]["optimizer_type"])(
+      #   list(params.values()) + list(buffers.values()),
+      #   lr = self.config["optim"]["lr"],
+      #   **self.config["optim"]["optimizer"].get("optimizer_args", {}),
+      # ) for _ in range(self.k)]
 
 
-      scheduler = [LRScheduler(optimizers[j], 
-        self.config["optim"]["scheduler"]["scheduler_type"], 
-        self.config["optim"]["scheduler"]["scheduler_args"]) for j in range(
-        self.k)]
+      # scheduler = [LRScheduler(optimizers[j], 
+      #   self.config["optim"]["scheduler"]["scheduler_type"], 
+      #   self.config["optim"]["scheduler"]["scheduler_args"]) for j in range(
+      #   self.k)]
       
      
       for epoch in range(start_epoch, end_epoch):
@@ -116,15 +123,28 @@ class Ensemble:
         train_losses = [self.loss_fn(out_lists[j, train_inds[j], :], 
           trainval_targets[train_inds[j], :]) for j in range(self.k)]
         
-        for j in range(self.k): # Compute backward 
-          optimizers[j].zero_grad(set_to_none=True)
-          train_losses[j].backward(retain_graph = True)
-          if clip_grad_norm:
-            torch.nn.utils.clip_grad_norm_(
-              list(params.values()) + list(buffers.values()),
-              max_norm = clip_grad_norm,
-            )
-          optimizers[j].step()
+        train_loss_total = torch.tensor([0.0], device = self.device)
+        for j in range(self.k):
+          train_loss_total += train_losses[j]
+
+        optimizer.zero_grad(set_to_none=True)
+        train_loss_total.backward()
+        if clip_grad_norm:
+          torch.nn.utils.clip_grad_norm_(
+            list(params.values()) + list(buffers.values()),
+            max_norm = clip_grad_norm,
+          )
+        optimizer.step()
+
+        # for j in range(self.k): # Compute backward 
+        #   optimizer.zero_grad(set_to_none=True)
+        #   train_losses[j].backward(retain_graph = True)
+        #   if clip_grad_norm:
+        #     torch.nn.utils.clip_grad_norm_(
+        #       list(params.values()) + list(buffers.values()),
+        #       max_norm = clip_grad_norm,
+        #     )
+        #   optimizers[j].step()
 
         for j in range(self.k):
           self.ensemble[j].trainer.epoch = epoch + 1
@@ -140,10 +160,10 @@ class Ensemble:
             batch_size = len(trainval)))))
           
           for j in range(self.k): # update prediction model if beats val losses
-            if scheduler[j].scheduler_type == "ReduceLROnPlateau":
-              scheduler[j].step(metrics = train_losses[j])
-            else:
-              scheduler[j].step()
+            # if scheduler[j].scheduler_type == "ReduceLROnPlateau":
+            #   scheduler[j].step(metrics = train_losses[j])
+            # else:
+            #   scheduler[j].step()
             self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
             vloss = self.loss_fn(out_lists[j, val_inds[j], :], 
               trainval_targets[val_inds[j], :]).item()
