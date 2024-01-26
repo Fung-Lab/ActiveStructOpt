@@ -1,4 +1,5 @@
 from matdeeplearn.common.trainer_context import new_trainer_context
+from matdeeplearn.trainers.base_trainer import _load_scheduler
 from activestructopt.gnn.dataloader import prepare_data
 import numpy as np
 import time
@@ -95,6 +96,8 @@ class Ensemble:
         **self.config["optim"]["optimizer"].get("optimizer_args", {}),
       ) for _ in range(self.k)]
 
+      scheduler = _load_scheduler(self.config["optim"]["scheduler"], optimizers)
+
       for epoch in range(start_epoch, end_epoch):
         # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
         # Start training over epochs loop
@@ -132,11 +135,14 @@ class Ensemble:
             params, buffers, next(iter(DataLoader(trainval, 
             batch_size = len(trainval)))))
           
-          val_losses = [self.loss_fn(out_lists[j, val_inds[j], :], 
-            trainval_targets[val_inds[j], :]) for j in range(self.k)]
-
           for j in range(self.k): # update prediction model if beats val losses
-            vloss = val_losses[j].item()
+            if self.scheduler[j].scheduler_type == "ReduceLROnPlateau":
+              self.scheduler[j].step(metrics = train_losses[j])
+            else:
+              self.scheduler[j].step()
+            self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
+            vloss = self.loss_fn(out_lists[j, val_inds[j], :], 
+              trainval_targets[val_inds[j], :]).item()
             if vloss < best_vals[j]:
               best_vals[j] = vloss
               for key in params.keys():
@@ -145,9 +151,6 @@ class Ensemble:
                 self.buffers[key][j] = buffers[key][j]
         
               print(best_vals)
-
-        for j in range(self.k): # Train loop timings and log metrics
-          self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
 
         torch.cuda.empty_cache()
                
