@@ -99,10 +99,10 @@ class Ensemble:
 
       optimizers = [getattr(optim, 
         self.config["optim"]["optimizer"]["optimizer_type"])(
-        [p[j] for p in params[j].values()] + [b[j] for b in buffers[j].values()],
+        list(params.values()) + list(buffers.values()),
         lr = self.config["optim"]["lr"],
         **self.config["optim"]["optimizer"].get("optimizer_args", {}),
-      ) for j in range(self.k)]
+      ) for _ in range(self.k)]
 
       for epoch in range(start_epoch, end_epoch):
         # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
