@@ -44,7 +44,7 @@ class Ensemble:
     self.config = config
     self.ensemble = [Runner() for _ in range(k)]
     self.scalar = 1.0
-    self.device = 'cpu'
+    self.device = self.ensemble[0].trainer.rank
     self.loss_fn = getattr(F, config['optim']['loss']['loss_args']['loss_fn'])
     for i in range(self.k):
       self.ensemble[i](self.config, ConfigSetup('train'))
@@ -78,10 +78,9 @@ class Ensemble:
         else self.ensemble[0].trainer.max_epochs
       )
 
-      rank = self.ensemble[0].trainer.rank
       clip_grad_norm = self.ensemble[0].trainer.clip_grad_norm
 
-      if str(rank) not in ("cpu", "cuda"):
+      if str(self.device) not in ("cpu", "cuda"):
         dist.barrier()
 
       best_vals = [torch.inf for _ in range(self.k)]
@@ -123,7 +122,7 @@ class Ensemble:
         for j in range(self.k):
           self.ensemble[j].trainer.epoch = epoch + 1
 
-        if str(rank) not in ("cpu", "cuda"):
+        if str(self.device) not in ("cpu", "cuda"):
           dist.barrier()
 
         self.base_model.eval()
@@ -154,23 +153,11 @@ class Ensemble:
       self.ensemble[0].task._process_error(e)
       raise e
     
-    for i in range(self.k):
-      self.ensemble[i].trainer.model[0].eval()
-      #self.ensemble[i].trainer.model[0] = compile(self.ensemble[i].trainer.model)
-    device = next(iter(self.ensemble[0].trainer.model[0].state_dict().values(
-      ))).get_device()
-    device = 'cpu' if device == -1 else 'cuda:' + str(device)
-    self.device = device
-    #https://pytorch.org/tutorials/intermediate/ensembling.html
-    models = [self.ensemble[i].trainer.model[0] for i in range(self.k)]
-    self.params, self.buffers = stack_module_state(models)
-    base_model = copy.deepcopy(models[0])
-    self.base_model = base_model.to('meta')
+    self.base_model.eval()
 
   def predict(self, structure, prepared = False):
     def fmodel(params, buffers, x):
       return functional_call(self.base_model, (params, buffers), (x,))['output']
-    self.base_model.eval()
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
     prediction = vmap(fmodel, in_dims = (0, 0, None))(
