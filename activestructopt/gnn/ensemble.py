@@ -101,8 +101,10 @@ class Ensemble:
       for j in range(self.k):
         for key in params.keys():
           split_params[j][key] = params[key][j]
+          split_params[j][key].requires_grad_()
         for key in buffers.keys():
           split_buffers[j][key] = buffers[key][j]
+          split_buffers[j][key].requires_grad_()
 
       optimizers = [getattr(optim, 
         self.config["optim"]["optimizer"]["optimizer_type"])(
