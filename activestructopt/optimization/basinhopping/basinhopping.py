@@ -24,6 +24,7 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
       data[j].pos.requires_grad_()
     predictions = ensemble.predict(data, prepared = True)
     ucbs = torch.zeros(nstarts)
+    ucb_total = torch.tensor([0], device = device)
     for j in range(nstarts):
       yhat = torch.mean((predictions[1][j] ** 2) + ((target - predictions[0][j]) ** 2))
       s = torch.sqrt(2 * torch.sum((predictions[1][j] ** 4) + 2 * (predictions[1][j] ** 2) * (
@@ -44,14 +45,9 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
       data[j].edge_weight = edge_gen_out["edge_weights"].to(device)
 
       ucb = yhat - λ * s + lj_repulsion(data[j], ljrmins)
-      ucb.backward(retain_graph = True)
-
-      predictions[0][j] = torch.zeros(predictions[0][j].size())
-      predictions[1][j] = torch.zeros(predictions[1][j].size())
-      data[j].pos = data[j].pos.detach()
+      ucb_total += ucb
       ucbs[j] = ucb.detach()
-      yhat, s = yhat.detach(), s.detach()
-      del ucb, yhat, s, edge_gen_out
+    ucb_total.backward()
     if i != niters - 1:
       optimizer.step()
     if (torch.min(ucbs) < best_ucb).item():
