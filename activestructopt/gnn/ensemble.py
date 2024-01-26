@@ -144,7 +144,7 @@ class Ensemble:
               for key in buffers.keys():
                 self.buffers[key][j] = buffers[key][j]
         
-        print(best_vals)
+              print(best_vals)
 
         for j in range(self.k): # Train loop timings and log metrics
           self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
