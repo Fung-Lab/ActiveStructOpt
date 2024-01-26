@@ -71,7 +71,6 @@ class Ensemble:
         self.k) if i != j]) for j in range(self.k)]
       val_inds = [kfolds_tensors[j] for j in range(self.k)]
 
-
       start_epoch = int(self.ensemble[0].trainer.epoch)
       end_epoch = (
         self.ensemble[0].trainer.max_checkpoint_epochs + start_epoch
@@ -136,10 +135,10 @@ class Ensemble:
             batch_size = len(trainval)))))
           
           for j in range(self.k): # update prediction model if beats val losses
-            if self.scheduler[j].scheduler_type == "ReduceLROnPlateau":
-              self.scheduler[j].step(metrics = train_losses[j])
+            if scheduler[j].scheduler_type == "ReduceLROnPlateau":
+              scheduler[j].step(metrics = train_losses[j])
             else:
-              self.scheduler[j].step()
+              scheduler[j].step()
             self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
             vloss = self.loss_fn(out_lists[j, val_inds[j], :], 
               trainval_targets[val_inds[j], :]).item()
@@ -157,8 +156,7 @@ class Ensemble:
     except RuntimeError as e:
       self.ensemble[0].task._process_error(e)
       raise e
-    
-    self.base_model.eval()
+
 
   def predict(self, structure, prepared = False):
     def fmodel(params, buffers, x):
