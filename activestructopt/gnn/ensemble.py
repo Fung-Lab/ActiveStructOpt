@@ -38,13 +38,21 @@ class ConfigSetup:
       self.seed = None
       self.submit = None
 
+def split_module_state(params, buffers, k):
+  split_params = [{} for _ in range(k)]
+  split_buffer = [{} for _ in range(k)]
+  for j in range(k):
+    for key in params.keys():
+      split_params[j][key] = params[key][j]
+    for key in buffers.keys():
+      split_buffer[j][key] = buffers[key][j]
+
 class Ensemble:
   def __init__(self, k, config):
     self.k = k
     self.config = config
     self.ensemble = [Runner() for _ in range(k)]
     self.scalar = 1.0
-    self.device = self.ensemble[0].trainer.rank
     self.loss_fn = getattr(F, config['optim']['loss']['loss_args']['loss_fn'])
     for i in range(self.k):
       self.ensemble[i](self.config, ConfigSetup('train'))
@@ -58,6 +66,7 @@ class Ensemble:
       ) if self.config["task"]["parallel"] else 1
     if world_size > 1:
       self.config["optim"]["lr"] = self.config["optim"]["lr"] * world_size
+    self.device = self.ensemble[0].trainer.rank
 
   def train(self, kfolds, trainval, trainval_targets):
     def fmodel(params, buffers, x):
@@ -87,13 +96,20 @@ class Ensemble:
 
       params = copy.deepcopy(self.params)
       buffers = copy.deepcopy(self.buffers)
+      split_params = [{} for _ in range(k)]
+      split_buffer = [{} for _ in range(k)]
+      for j in range(self.k):
+        for key in params.keys():
+          split_params[j][key] = params[key][j]
+        for key in buffers.keys():
+          split_buffer[j][key] = buffers[key][j]
 
-      optimizer = getattr(optim, 
+      optimizers = [getattr(optim, 
         self.config["optim"]["optimizer"]["optimizer_type"])(
-        list(params.values()) + list(buffers.values()),
+        list(split_params[j].values()) + list(split_buffer[j].values()),
         lr = self.config["optim"]["lr"],
         **self.config["optim"]["optimizer"].get("optimizer_args", {}),
-      )
+      ) for j in range(self.k)]
 
       for epoch in range(start_epoch, end_epoch):
         # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
@@ -110,14 +126,14 @@ class Ensemble:
           trainval_targets[train_inds[j], :]) for j in range(self.k)]
         
         for j in range(self.k): # Compute backward 
-          optimizer.zero_grad(set_to_none=True)
+          optimizers[j].zero_grad(set_to_none=True)
           train_losses[j].backward(retain_graph = True)
           if clip_grad_norm:
             torch.nn.utils.clip_grad_norm_(
               list(params.values()) + list(buffers.values()),
               max_norm = clip_grad_norm,
             )
-          optimizer.step()
+          optimizers[j].step()
 
         for j in range(self.k):
           self.ensemble[j].trainer.epoch = epoch + 1
@@ -143,6 +159,8 @@ class Ensemble:
                 self.params[key][j] = params[key][j]
               for key in buffers.keys():
                 self.buffers[key][j] = buffers[key][j]
+        
+        print(best_vals)
 
         for j in range(self.k): # Train loop timings and log metrics
           self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
