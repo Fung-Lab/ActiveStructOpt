@@ -24,7 +24,7 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
       data[j].pos.requires_grad_()
     predictions = ensemble.predict(data, prepared = True)
     ucbs = torch.zeros(nstarts)
-    ucb_total = torch.tensor([0], device = device)
+    ucb_total = torch.tensor([0.0], device = device)
     for j in range(nstarts):
       yhat = torch.mean((predictions[1][j] ** 2) + ((target - predictions[0][j]) ** 2))
       s = torch.sqrt(2 * torch.sum((predictions[1][j] ** 4) + 2 * (predictions[1][j] ** 2) * (
