@@ -66,7 +66,7 @@ class Ensemble:
     try:
       kfolds_tensors = [torch.tensor(np.array(kfolds[i]), device = self.device
         ) for i in range(len(kfolds))]
-      train_inds = [torch.cat([np.array(kfolds_tensors[i]) for i in range(
+      train_inds = [torch.cat([kfolds_tensors[i] for i in range(
         self.k) if i != j]) for j in range(self.k)]
       val_inds = [kfolds_tensors[j] for j in range(self.k)]
 
