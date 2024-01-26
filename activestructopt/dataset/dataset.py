@@ -42,6 +42,6 @@ def update_datasets(kfolds, trainval, trainval_targets, new_structure,
 
   kfolds[np.argmin([len(fold) for fold in kfolds])].append(len(trainval))
   trainval.append(new_data)
-  trainval_targets = torch.cat([trainval_targets, new_y], 1)
+  trainval_targets = torch.cat([trainval_targets, new_y], 0)
 
   return kfolds, trainval, trainval_targets, new_y
