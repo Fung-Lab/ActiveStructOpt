@@ -101,8 +101,7 @@ class Ensemble:
         # Start training over epochs loop
         epoch_start_time = time.time()
 
-        for j in range(self.k):
-          self.ensemble[j].trainer.model[0].train()
+        self.base_model.train()
 
         out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
           params, buffers, next(iter(DataLoader(trainval, 
@@ -127,8 +126,7 @@ class Ensemble:
         if str(rank) not in ("cpu", "cuda"):
           dist.barrier()
 
-        for j in range(self.k):
-          self.ensemble[j].trainer.model[0].eval()
+        self.base_model.eval()
 
         with torch.no_grad():
           out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
