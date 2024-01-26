@@ -85,20 +85,20 @@ class Ensemble:
 
       best_vals = [torch.inf for _ in range(self.k)]
 
+      params = copy.deepcopy(self.params)
+      buffers = copy.deepcopy(self.buffers)
+
+      optimizer = getattr(optim, 
+        self.config["optim"]["optimizer"]["optimizer_type"])(
+        list(params.values()) + list(buffers.values()),
+        lr = self.config["optim"]["lr"],
+        **self.config["optim"]["optimizer"].get("optimizer_args", {}),
+      )
+
       for epoch in range(start_epoch, end_epoch):
         # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
         # Start training over epochs loop
         epoch_start_time = time.time()
-
-        params = copy.deepcopy(self.params)
-        buffers = copy.deepcopy(self.buffers)
-
-        optimizer = getattr(optim, 
-          self.config["optim"]["optimizer"]["optimizer_type"])(
-          list(params.values()) + list(buffers.values()),
-          lr = self.config["optim"]["lr"],
-          **self.config["optim"]["optimizer"].get("optimizer_args", {}),
-        )
 
         for j in range(self.k):
           self.ensemble[j].trainer.model[0].train()
