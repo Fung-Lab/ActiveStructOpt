@@ -140,10 +140,10 @@ class Ensemble:
             vloss = val_losses[j].item()
             if vloss < best_vals[j]:
               best_vals[j] = vloss
-            for key in params.keys():
-              self.params[key][j] = params[key][j]
-            for key in buffers.keys():
-              self.buffers[key][j] = buffers[key][j]
+              for key in params.keys():
+                self.params[key][j] = params[key][j]
+              for key in buffers.keys():
+                self.buffers[key][j] = buffers[key][j]
 
         for j in range(self.k): # Train loop timings and log metrics
           self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
