@@ -96,8 +96,8 @@ class Ensemble:
 
       params = copy.deepcopy(self.params)
       buffers = copy.deepcopy(self.buffers)
-      split_params = [{} for _ in range(k)]
-      split_buffer = [{} for _ in range(k)]
+      split_params = [{} for _ in range(self.k)]
+      split_buffer = [{} for _ in range(self.k)]
       for j in range(self.k):
         for key in params.keys():
           split_params[j][key] = params[key][j]
