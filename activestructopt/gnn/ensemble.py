@@ -170,6 +170,7 @@ class Ensemble:
   def predict(self, structure, prepared = False):
     def fmodel(params, buffers, x):
       return functional_call(self.base_model, (params, buffers), (x,))['output']
+    self.base_model.eval()
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
     prediction = vmap(fmodel, in_dims = (0, 0, None))(
