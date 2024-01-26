@@ -97,16 +97,16 @@ class Ensemble:
       params = copy.deepcopy(self.params)
       buffers = copy.deepcopy(self.buffers)
       split_params = [{} for _ in range(self.k)]
-      split_buffer = [{} for _ in range(self.k)]
+      split_buffers = [{} for _ in range(self.k)]
       for j in range(self.k):
         for key in params.keys():
           split_params[j][key] = params[key][j]
         for key in buffers.keys():
-          split_buffer[j][key] = buffers[key][j]
+          split_buffers[j][key] = buffers[key][j]
 
       optimizers = [getattr(optim, 
         self.config["optim"]["optimizer"]["optimizer_type"])(
-        list(split_params[j].values()) + list(split_buffer[j].values()),
+        list(split_params[j].values()) + list(split_buffers[j].values()),
         lr = self.config["optim"]["lr"],
         **self.config["optim"]["optimizer"].get("optimizer_args", {}),
       ) for j in range(self.k)]
@@ -117,6 +117,14 @@ class Ensemble:
         epoch_start_time = time.time()
 
         self.base_model.train()
+
+        params, buffers = {}, {}
+        for key in split_params[0].keys():
+          params[key] = torch.stack([split_params[j][key] for j in range(
+            self.k)])
+        for key in split_buffers[0].keys():
+          buffers[key] = torch.stack([split_buffers[j][key] for j in range(
+            self.k)])
 
         out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
           params, buffers, next(iter(DataLoader(trainval, 
