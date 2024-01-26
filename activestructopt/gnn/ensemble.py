@@ -70,7 +70,7 @@ class Ensemble:
 
       optimizer = getattr(optim, 
         self.config["optim"]["optimizer"]["optimizer_type"])(
-        params.values() + buffers.values(),
+        list(params.values()) + list(buffers.values()),
         lr = self.config["optim"]["lr"],
         **self.config["optim"]["optimizer"].get("optimizer_args", {}),
       )
