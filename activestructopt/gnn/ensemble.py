@@ -21,11 +21,11 @@ class Runner:
 
   def __call__(self, config, args):
     with new_trainer_context(args = args, config = config) as ctx:
-        self.config = ctx.config
-        self.task = ctx.task
-        self.trainer = ctx.trainer
-        self.task.setup(self.trainer)
-        #self.task.run()
+      self.config = ctx.config
+      self.task = ctx.task
+      self.trainer = ctx.trainer
+      self.task.setup(self.trainer)
+      #self.task.run()
 
   def checkpoint(self, *args, **kwargs):
     self.trainer.save(checkpoint_file="checkpoint.pt", training_state=True)
@@ -34,18 +34,9 @@ class Runner:
 
 class ConfigSetup:
   def __init__(self, run_mode):
-      self.run_mode = run_mode
-      self.seed = None
-      self.submit = None
-
-def split_module_state(params, buffers, k):
-  split_params = [{} for _ in range(k)]
-  split_buffer = [{} for _ in range(k)]
-  for j in range(k):
-    for key in params.keys():
-      split_params[j][key] = params[key][j]
-    for key in buffers.keys():
-      split_buffer[j][key] = buffers[key][j]
+    self.run_mode = run_mode
+    self.seed = None
+    self.submit = None
 
 class Ensemble:
   def __init__(self, k, config):
@@ -73,9 +64,9 @@ class Ensemble:
       return functional_call(self.base_model, (params, buffers), 
         (x,))['output']
     try:
-      kfolds_tensors = [torch.tensor(kfolds[i], device = self.device
+      kfolds_tensors = [torch.tensor(np.array(kfolds[i]), device = self.device
         ) for i in range(len(kfolds))]
-      train_inds = [torch.cat([kfolds_tensors[i] for i in range(
+      train_inds = [torch.cat([np.array(kfolds_tensors[i]) for i in range(
         self.k) if i != j]) for j in range(self.k)]
       val_inds = [kfolds_tensors[j] for j in range(self.k)]
 
