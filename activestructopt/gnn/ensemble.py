@@ -62,13 +62,15 @@ class Ensemble:
       params1, buffers1 = stack_module_state(
         [self.ensemble[0].trainer.model[0]])
 
-      print(buffers1.keys())
-      assert False
+      #print(buffers1.keys())
+      #assert False
 
       params, buffers = stack_module_state(
         [self.ensemble[j].trainer.model[0] for j in range(self.k)])
 
-      print(params['attention_layers.0.dv_proj.weight'])
+      print(buffers)
+      assert False
+      #print(params['attention_layers.0.dv_proj.weight'])
 
       world_size = int(os.environ.get("LOCAL_WORLD_SIZE", None)
         ) if self.config["task"]["parallel"] else 1
