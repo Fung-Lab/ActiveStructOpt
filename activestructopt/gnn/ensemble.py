@@ -7,10 +7,12 @@ from scipy.optimize import minimize
 from torch_geometric import compile
 import torch
 from torch.func import stack_module_state, functional_call, vmap
+import torch.optim as optim
 from torch.cuda.amp import autocast
 import torch.nn.functional as F
 from torch import distributed as dist
 import copy
+import os
 from torch_geometric.loader import DataLoader
 
 class Runner:
@@ -56,8 +58,25 @@ class Ensemble:
         (x,))['output']
     try:
       kfolds_tensors = [torch.tensor(kfolds[i], device = self.device) for i in range(len(kfolds))]
-      start_epoch = int(self.ensemble[0].trainer.epoch)
+      
+      params, buffers = stack_module_state(
+          [self.ensemble[j].trainer.model[0] for j in range(self.k)])
 
+      world_size = int(os.environ.get("LOCAL_WORLD_SIZE", None)
+        ) if self.config["task"]["parallel"] else 1
+
+      if world_size > 1:
+        self.config["optim"]["lr"] = self.config["optim"]["lr"] * world_size
+
+      optimizer = getattr(optim, 
+        self.config["optim"]["optimizer"]["optimizer_type"])(
+        params,
+        lr = self.config["optim"]["lr"],
+        **self.config["optim"]["optimizer"].get("optimizer_args", {}),
+      )
+      optimizer.add_param_group(buffers)
+
+      start_epoch = int(self.ensemble[0].trainer.epoch)
       end_epoch = (
         self.ensemble[0].trainer.max_checkpoint_epochs + start_epoch
         if self.ensemble[0].trainer.max_checkpoint_epochs
@@ -83,9 +102,6 @@ class Ensemble:
         for j in range(self.k):
           self.ensemble[j].trainer.model[0].train()
 
-        params, buffers = stack_module_state(
-          [self.ensemble[j].trainer.model[0] for j in range(self.k)])
-
         #with autocast(enabled = use_amp): # Compute forward  
         out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
           params, buffers, next(iter(DataLoader(trainval, 
@@ -99,19 +115,17 @@ class Ensemble:
         
         for j in range(self.k): # Compute backward 
           print(j)
-          self.ensemble[j].trainer.optimizer[0].zero_grad(set_to_none=True)
+          optimizer.zero_grad(set_to_none=True)
           loss.backward(retain_graph = True)
-          print(params['attention_layers.0.dv_proj.weight'].grad)
           #print(params.grad)
           #self.ensemble[j].trainer.scaler.scale(losses[j]).backward()
-          print(self.ensemble[j].trainer.clip_grad_norm)
           if self.ensemble[j].trainer.clip_grad_norm:
             grad_norm = torch.nn.utils.clip_grad_norm_(
-              self.ensemble[j].trainer.model[0].parameters(),
+              params,
               max_norm=self.ensemble[j].trainer.clip_grad_norm,
             )
             print(grad_norm)
-          self.ensemble[j].trainer.optimizer[0].step()
+          optimizer.step()
           #self.ensemble[j].trainer.scaler.step(self.ensemble[j].trainer.optimizer[0])
           #self.ensemble[j].trainer.scaler.update()
 
