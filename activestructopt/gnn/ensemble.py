@@ -105,28 +105,21 @@ class Ensemble:
         out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
           params, buffers, next(iter(DataLoader(trainval, 
           batch_size = len(trainval)))))
-        train_inds = [torch.cat([kfolds_tensors[j] for i in range(
+        train_inds = [torch.cat([kfolds_tensors[i] for i in range(
           self.k) if i != j]) for j in range(self.k)]
         losses = [self.loss_fn(out_lists[j, train_inds[j], :], 
           trainval_targets[train_inds[j], :]) for j in range(self.k)]
         print(losses)
         
         for j in range(self.k): # Compute backward 
-          print(j)
           optimizer.zero_grad(set_to_none=True)
           losses[j].backward(retain_graph = True)
-          #print(params.grad)
-          #self.ensemble[j].trainer.scaler.scale(losses[j]).backward()
           if self.ensemble[j].trainer.clip_grad_norm:
-            grad_norm = torch.nn.utils.clip_grad_norm_(
+            torch.nn.utils.clip_grad_norm_(
               list(params.values()) + list(buffers.values()),
               max_norm=self.ensemble[j].trainer.clip_grad_norm,
             )
-            print(grad_norm)
           optimizer.step()
-          #self.ensemble[j].trainer.scaler.step(self.ensemble[j].trainer.optimizer[0])
-          #self.ensemble[j].trainer.scaler.update()
-
         # for j in range(self.k): # Compute metrics
         #   _metrics[j] = self.ensemble[j].trainer._compute_metrics(
         #     out_lists[j][0], batches[j][0], _metrics[j])
@@ -139,6 +132,18 @@ class Ensemble:
 
         if str(rank) not in ("cpu", "cuda"):
           dist.barrier()
+
+        for j in range(self.k):
+          self.ensemble[j].trainer.model[0].eval()
+
+        with torch.no_grad():
+          out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
+            params, buffers, next(iter(DataLoader(trainval, 
+            batch_size = len(trainval)))))
+          val_inds = [kfolds_tensors[j] for j in range(self.k)]
+          losses = [self.loss_fn(out_lists[j, val_inds[j], :], 
+            trainval_targets[val_inds[j], :]) for j in range(self.k)]
+          print(losses)
 
         # Save current model
         # if model_save_frequency == 1:
