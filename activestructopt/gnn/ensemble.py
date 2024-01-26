@@ -89,7 +89,6 @@ class Ensemble:
         # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
         # Start training over epochs loop
         epoch_start_time = time.time()
-        # _metrics = [{} for _ in range(self.k)] # metrics for every epoch
 
         params = copy.deepcopy(self.params)
         buffers = copy.deepcopy(self.buffers)
@@ -104,7 +103,6 @@ class Ensemble:
         for j in range(self.k):
           self.ensemble[j].trainer.model[0].train()
 
-        #with autocast(enabled = use_amp): # Compute forward  
         out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
           params, buffers, next(iter(DataLoader(trainval, 
           batch_size = len(trainval)))))
@@ -112,7 +110,6 @@ class Ensemble:
           self.k) if i != j]) for j in range(self.k)]
         train_losses = [self.loss_fn(out_lists[j, train_inds[j], :], 
           trainval_targets[train_inds[j], :]) for j in range(self.k)]
-        print(train_losses)
         
         for j in range(self.k): # Compute backward 
           optimizer.zero_grad(set_to_none=True)
@@ -123,12 +120,6 @@ class Ensemble:
               max_norm=self.ensemble[j].trainer.clip_grad_norm,
             )
           optimizer.step()
-        # for j in range(self.k): # Compute metrics
-        #   _metrics[j] = self.ensemble[j].trainer._compute_metrics(
-        #     out_lists[j][0], batches[j][0], _metrics[j])
-        #   self.ensemble[j].trainer.metrics[0] = self.ensemble[
-        #     j].trainer.evaluator.update("loss", losses[j].item(), 
-        #     out_lists[j][0]["output"].shape[0], _metrics[j])
 
         for j in range(self.k):
           self.ensemble[j].trainer.epoch = epoch + 1
@@ -136,14 +127,9 @@ class Ensemble:
         if str(rank) not in ("cpu", "cuda"):
           dist.barrier()
 
-        for j in range(self.k):        buffers = copy.deepcopy(self.buffers)
+        for j in range(self.k):
+          self.ensemble[j].trainer.model[0].eval()
 
-        optimizer = getattr(optim, 
-          self.config["optim"]["optimizer"]["optimizer_type"])(
-          list(params.values()) + list(buffers.values()),
-          lr = self.config["optim"]["lr"],
-          **self.config["optim"]["optimizer"].get("optimizer_args", {}),
-        )
         with torch.no_grad():
           out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
             params, buffers, next(iter(DataLoader(trainval, 
@@ -151,7 +137,6 @@ class Ensemble:
           val_inds = [kfolds_tensors[j] for j in range(self.k)]
           val_losses = [self.loss_fn(out_lists[j, val_inds[j], :], 
             trainval_targets[val_inds[j], :]) for j in range(self.k)]
-          print(val_losses)
 
           for j in range(self.k): # update if beats evals
             vloss = val_losses[j].item()
@@ -162,47 +147,11 @@ class Ensemble:
             for key in buffers.keys():
               self.buffers[key][j] = buffers[key][j]
 
-        # Save current model
-        # if model_save_frequency == 1:
-        #   for j in range(self.k):
-        #     self.ensemble[j].trainer.save_model(
-        #       checkpoint_file = "checkpoint.pt", training_state = True)
-
         for j in range(self.k): # Train loop timings and log metrics
           self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
-          # if epoch % train_verbosity == 0:
-          #   self.ensemble[j].trainer._log_metrics(metrics[j])
 
-          # Update best val metric and model, and save best model and predicted outputs
-          # if metrics[j][0][type(self.ensemble[j].trainer.loss_fn).__name__][
-          #   "metric"] < self.ensemble[j].trainer.best_metric[0]:
-          #   if output_frequency == 0:
-          #     self.ensemble[j].trainer.update_best_model(metrics[j][0], 0, 
-          #       write_model = model_save_frequency == 1, write_csv = False)
-          #   elif output_frequency == 1:
-          #     self.ensemble[j].trainer.update_best_model(metrics[j][0], 0, 
-          #       write_model = model_save_frequency == 1, write_csv = True)
-            
-        # for j in range(self.k):
-        #   self.ensemble[j].trainer._scheduler_step()       
-        
-        # for j in range(self.k):
-        #   if self.ensemble[j].trainer.best_model_state:
-        #     if str(self.ensemble[j].trainer.rank) in "0":
-        #       self.ensemble[j].trainer.model[0].module.load_state_dict(self.ensemble[j].trainer.best_model_state[0])
-        #     elif str(self.ensemble[j].trainer.rank) in ("cpu", "cuda"):
-        #       self.ensemble[j].trainer.model[0].load_state_dict(self.ensemble[j].trainer.best_model_state[0])
+        print(best_vals)
 
-        #     if model_save_frequency != -1:
-        #       self.ensemble[j].trainer.save_model("best_checkpoint.pt", index=None, metric=metrics[j], training_state=True)
-                
-        #     if "train" in write_output:
-        #       self.ensemble[j].trainer.predict(self.ensemble[j].trainer.data_loader[0]["train_loader"], "train")
-        #     if "val" in write_output:
-        #       self.ensemble[j].trainer.predict(self.ensemble[j].trainer.data_loader[0]["val_loader"], "val")
-        #     if "test" in write_output and self.ensemble[j].trainer.data_loader[0].get("test_loader"):
-        #       self.ensemble[j].trainer.predict(self.ensemble[j].trainer.data_loader[0]["test_loader"], "test") 
-        assert False
         torch.cuda.empty_cache()
                
     except RuntimeError as e:
