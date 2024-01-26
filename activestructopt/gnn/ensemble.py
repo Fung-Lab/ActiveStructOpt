@@ -62,7 +62,8 @@ class Ensemble:
       params1, buffers1 = stack_module_state(
         [self.ensemble[0].trainer.model[0]])
 
-      print(params1['attention_layers.0.dv_proj.weight'])
+      print(buffers1.keys())
+      assert False
 
       params, buffers = stack_module_state(
         [self.ensemble[j].trainer.model[0] for j in range(self.k)])
