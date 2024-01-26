@@ -199,7 +199,8 @@ class Ensemble:
 
   def set_scalar_calibration(self, test_data, test_targets):
     self.scalar = 1.0
-    test_res = self.predict(test_data, prepared = True)
+    with torch.no_grad():
+      test_res = self.predict(test_data, prepared = True)
     zscores = []
     for i in range(len(test_targets)):
       for j in range(len(test_targets[0])):
