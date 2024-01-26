@@ -70,11 +70,10 @@ class Ensemble:
 
       optimizer = getattr(optim, 
         self.config["optim"]["optimizer"]["optimizer_type"])(
-        params,
+        [params, buffers],
         lr = self.config["optim"]["lr"],
         **self.config["optim"]["optimizer"].get("optimizer_args", {}),
       )
-      optimizer.add_param_group(buffers)
 
       start_epoch = int(self.ensemble[0].trainer.epoch)
       end_epoch = (
