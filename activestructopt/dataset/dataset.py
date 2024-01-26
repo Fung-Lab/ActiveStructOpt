@@ -26,7 +26,7 @@ def make_data_splits(initial_structure, optfunc, args, config,
   test = [prepare_data(structures[i], config, y = ys[i]).to(device) for i in test_indices]
   test_targets = ys[test_indices].detach().cpu().numpy()
 
-  kfolds = np.array_split(np.random.permutation(np.arange(1, len(trainval_indices))), k)
+  kfolds = np.array_split(np.arange(1, len(trainval_indices)), k)
 
   return (structures, ys, kfolds, test_indices, 
     trainval, trainval_targets, test, test_targets)
