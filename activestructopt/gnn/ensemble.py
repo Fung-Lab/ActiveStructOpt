@@ -120,7 +120,7 @@ class Ensemble:
           #self.ensemble[j].trainer.scaler.scale(losses[j]).backward()
           if self.ensemble[j].trainer.clip_grad_norm:
             grad_norm = torch.nn.utils.clip_grad_norm_(
-              params,
+              list(params.values()) + list(buffers.values()),
               max_norm=self.ensemble[j].trainer.clip_grad_norm,
             )
             print(grad_norm)
