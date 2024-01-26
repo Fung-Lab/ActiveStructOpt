@@ -36,7 +36,8 @@ def make_data_splits(initial_structure, optfunc, args, config,
 def update_datasets(kfolds, trainval, trainval_targets, new_structure, 
   config, optfunc, args, device):
   
-  new_y = torch.tensor(optfunc(new_structure, **(args)), device = device)
+  new_y = torch.unsqueeze(torch.tensor(optfunc(new_structure, **(args)), 
+    device = device), 0)
   new_data = prepare_data(new_structure, config, y = new_y).to(device)
 
   kfolds[np.argmin([len(fold) for fold in kfolds])].append(len(trainval))

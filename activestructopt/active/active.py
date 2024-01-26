@@ -68,7 +68,7 @@ def active_learning(
       args,
       device,
     )
-    ys = torch.cat([ys, new_y], 0)
+    ys = torch.cat([ys, new_y], 1)
     new_mse = np.mean((new_y.cpu().numpy() - target) ** 2)
     mses.append(new_mse)
     if print_mses:
@@ -85,6 +85,5 @@ def active_learning(
       with open(save_progress_dir + "/" + str(sys.argv[1]) + "_" + str(i) + ".pkl", "wb") as file:
           pickle.dump(res, file)
 
-  return structures, ys, mses, (
-      ensemble, kfolds, test_indices, train, train_targets, val, 
-    val_targets, test, test_targets, ensemble)
+  return structures, ys, mses, (ensemble, kfolds, test_indices, 
+    trainval, trainval_targets, test, test_targets)
