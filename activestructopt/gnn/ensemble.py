@@ -64,7 +64,12 @@ class Ensemble:
       return functional_call(self.base_model, (params, buffers), 
         (x,))['output']
     try:
-      kfolds_tensors = [torch.tensor(kfolds[i], device = self.device) for i in range(len(kfolds))]
+      kfolds_tensors = [torch.tensor(kfolds[i], device = self.device
+        ) for i in range(len(kfolds))]
+      train_inds = [torch.cat([kfolds_tensors[i] for i in range(
+        self.k) if i != j]) for j in range(self.k)]
+      val_inds = [kfolds_tensors[j] for j in range(self.k)]
+
 
       start_epoch = int(self.ensemble[0].trainer.epoch)
       end_epoch = (
@@ -74,11 +79,7 @@ class Ensemble:
       )
 
       rank = self.ensemble[0].trainer.rank
-      # model_save_frequency = self.ensemble[0].trainer.model_save_frequency
-      # train_verbosity = self.ensemble[0].trainer.train_verbosity
-      # output_frequency = self.ensemble[0].trainer.output_frequency
-      # write_output = self.ensemble[0].trainer.write_output
-      # use_amp = self.ensemble[0].trainer.use_amp
+      clip_grad_norm = self.ensemble[0].trainer.clip_grad_norm
 
       if str(rank) not in ("cpu", "cuda"):
         dist.barrier()
@@ -106,18 +107,17 @@ class Ensemble:
         out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
           params, buffers, next(iter(DataLoader(trainval, 
           batch_size = len(trainval)))))
-        train_inds = [torch.cat([kfolds_tensors[i] for i in range(
-          self.k) if i != j]) for j in range(self.k)]
+        
         train_losses = [self.loss_fn(out_lists[j, train_inds[j], :], 
           trainval_targets[train_inds[j], :]) for j in range(self.k)]
         
         for j in range(self.k): # Compute backward 
           optimizer.zero_grad(set_to_none=True)
           train_losses[j].backward(retain_graph = True)
-          if self.ensemble[j].trainer.clip_grad_norm:
+          if clip_grad_norm:
             torch.nn.utils.clip_grad_norm_(
               list(params.values()) + list(buffers.values()),
-              max_norm=self.ensemble[j].trainer.clip_grad_norm,
+              max_norm = clip_grad_norm,
             )
           optimizer.step()
 
@@ -134,11 +134,11 @@ class Ensemble:
           out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
             params, buffers, next(iter(DataLoader(trainval, 
             batch_size = len(trainval)))))
-          val_inds = [kfolds_tensors[j] for j in range(self.k)]
+          
           val_losses = [self.loss_fn(out_lists[j, val_inds[j], :], 
             trainval_targets[val_inds[j], :]) for j in range(self.k)]
 
-          for j in range(self.k): # update if beats evals
+          for j in range(self.k): # update prediction model if beats val losses
             vloss = val_losses[j].item()
             if vloss < best_vals[j]:
               best_vals[j] = vloss
@@ -149,8 +149,6 @@ class Ensemble:
 
         for j in range(self.k): # Train loop timings and log metrics
           self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
-
-        print(best_vals)
 
         torch.cuda.empty_cache()
                
