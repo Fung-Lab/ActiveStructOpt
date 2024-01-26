@@ -107,15 +107,14 @@ class Ensemble:
           batch_size = len(trainval)))))
         train_inds = [torch.cat([kfolds_tensors[j] for i in range(
           self.k) if i != j]) for j in range(self.k)]
-        loss = torch.mean(out_lists)
-        #losses = [self.loss_fn(out_lists[j, :, :], 
-        #  trainval_targets[:, :]) for j in range(self.k)]
-        #print(losses)
+        losses = [self.loss_fn(out_lists[j, train_inds, :], 
+          trainval_targets[train_inds, :]) for j in range(self.k)]
+        print(losses)
         
         for j in range(self.k): # Compute backward 
           print(j)
           optimizer.zero_grad(set_to_none=True)
-          loss.backward(retain_graph = True)
+          losses[j].backward(retain_graph = True)
           #print(params.grad)
           #self.ensemble[j].trainer.scaler.scale(losses[j]).backward()
           if self.ensemble[j].trainer.clip_grad_norm:
@@ -128,12 +127,12 @@ class Ensemble:
           #self.ensemble[j].trainer.scaler.step(self.ensemble[j].trainer.optimizer[0])
           #self.ensemble[j].trainer.scaler.update()
 
-        for j in range(self.k): # Compute metrics
-          _metrics[j] = self.ensemble[j].trainer._compute_metrics(
-            out_lists[j][0], batches[j][0], _metrics[j])
-          self.ensemble[j].trainer.metrics[0] = self.ensemble[
-            j].trainer.evaluator.update("loss", losses[j].item(), 
-            out_lists[j][0]["output"].shape[0], _metrics[j])
+        # for j in range(self.k): # Compute metrics
+        #   _metrics[j] = self.ensemble[j].trainer._compute_metrics(
+        #     out_lists[j][0], batches[j][0], _metrics[j])
+        #   self.ensemble[j].trainer.metrics[0] = self.ensemble[
+        #     j].trainer.evaluator.update("loss", losses[j].item(), 
+        #     out_lists[j][0]["output"].shape[0], _metrics[j])
 
         for j in range(self.k):
           self.ensemble[j].trainer.epoch = epoch + 1
@@ -142,10 +141,10 @@ class Ensemble:
           dist.barrier()
 
         # Save current model
-        if model_save_frequency == 1:
-          for j in range(self.k):
-            self.ensemble[j].trainer.save_model(
-              checkpoint_file = "checkpoint.pt", training_state = True)
+        # if model_save_frequency == 1:
+        #   for j in range(self.k):
+        #     self.ensemble[j].trainer.save_model(
+        #       checkpoint_file = "checkpoint.pt", training_state = True)
 
         # Evaluate on validation set if it exists
         metrics = [self.ensemble[j].trainer.validate(
