@@ -222,7 +222,7 @@ class Ensemble:
       test_targets2 = test_targets.cpu().numpy()
       for i in range(len(test_targets2)):
         for j in range(len(test_targets2[0])):
-          zscores.append((
+          zscores2.append((
             test_res[0][i][j].item() - test_targets2[i][j]
             ) / test_res[1][i][j].item())
       zscores2 = np.sort(zscores2)
