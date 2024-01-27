@@ -197,26 +197,16 @@ class Ensemble:
 
     return torch.stack((mean, std))
 
-  def set_scalar_calibration(self, test_data, test_targets, lr = 0.0001, 
+  def set_scalar_calibration(self, test_data, test_targets, lr = 0.001, 
     n_iters = 1000):
     self.scalar = 1.0
     with torch.no_grad():
       test_res = self.predict(test_data, prepared = True)
-    test_targets2 = test_targets.cpu().numpy()
     zscores = ((test_res[0, :, :] - test_targets) / 
       test_res[1, :, :]).flatten()
     zscores, _ = torch.sort(zscores)
-    zscores2 = []
-    for i in range(len(test_targets2)):
-      for j in range(len(test_targets2[0])):
-        zscores2.append((
-          test_res[0][i][j].item() - test_targets2[i][j]
-          ) / test_res[1][i][j].item())
-    zscores2 = np.sort(zscores2)
     observed = torch.cumsum(torch.ones(zscores.size(), dtype = zscores.dtype, 
       device = self.device), 0) / zscores.size()[0]
-    observed2 = np.cumsum(np.ones(len(zscores2))) / len(zscores2)
-    normdist = norm()
 
     scalar = torch.tensor([1.0], device = self.device)
     optimizer = torch.optim.Adam([scalar], lr = lr)
