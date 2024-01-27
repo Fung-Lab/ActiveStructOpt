@@ -202,12 +202,22 @@ class Ensemble:
     self.scalar = 1.0
     with torch.no_grad():
       test_res = self.predict(test_data, prepared = True)
+    test_targets2 = test_targets.cpu().numpy()
     zscores = ((test_res[0, :, :] - test_targets) / 
       test_res[1, :, :]).flatten()
     zscores, _ = torch.sort(zscores)
+    zscores2 = []
+    for i in range(len(test_targets2)):
+      for j in range(len(test_targets2[0])):
+        zscores2.append((
+          test_res[0][i][j].item() - test_targets2[i][j]
+          ) / test_res[1][i][j].item())
+    zscores2 = np.sort(zscores2)
     observed = torch.cumsum(torch.ones(zscores.size(), dtype = zscores.dtype, 
-      device = self.device), 0)
-    
+      device = self.device), 0) / zscores.size()[0]
+    observed2 = np.cumsum(np.ones(len(zscores2))) / len(zscores2)
+    normdist = norm()
+
     scalar = torch.tensor([1.0], device = self.device)
     optimizer = torch.optim.Adam([scalar], lr = lr)
     for _ in range(n_iters):
@@ -218,23 +228,19 @@ class Ensemble:
       area_diff.backward()
       optimizer.step()
 
-      zscores2 = []
-      test_targets2 = test_targets.cpu().numpy()
-      for i in range(len(test_targets2)):
-        for j in range(len(test_targets2[0])):
-          zscores2.append((
-            test_res[0][i][j].item() - test_targets2[i][j]
-            ) / test_res[1][i][j].item())
-      zscores2 = np.sort(zscores2)
-      normdist = norm()
-      val = np.trapz(np.abs(np.cumsum(np.ones(len(zscores2))) / len(
-        zscores2) - normdist.cdf(zscores2 / scalar.item())), normdist.cdf(zscores2 / scalar.item()))
-
+      
+      expected2 = normdist.cdf(zscores2 / scalar.item())
+      val = np.trapz(np.abs(observed2 - expected2), expected2)
 
       print(scalar)
+      print(expected)
+      print(expected2)
+      print(observed)
+      print(observed2)
       print(area_diff)
       print(val)
       print(scalar.grad)
+      assert False
     
     print(scalar.grad)
 
