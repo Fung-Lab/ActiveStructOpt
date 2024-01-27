@@ -197,7 +197,8 @@ class Ensemble:
 
     return torch.stack((mean, std))
 
-  def set_scalar_calibration(self, test_data, test_targets, n_iters = 1000):
+  def set_scalar_calibration(self, test_data, test_targets, lr = 0.001, 
+    n_iters = 1000):
     self.scalar = 1.0
     with torch.no_grad():
       test_res = self.predict(test_data, prepared = True)
