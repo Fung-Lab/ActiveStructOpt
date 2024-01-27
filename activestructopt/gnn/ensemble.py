@@ -227,20 +227,6 @@ class Ensemble:
       area_diff = torch.trapezoid(torch.abs(observed - expected), expected)
       area_diff.backward()
       optimizer.step()
-
-      
-      expected2 = normdist.cdf(zscores2 / scalar.item())
-      val = np.trapz(np.abs(observed2 - expected2), expected2)
-
-      print(scalar)
-      print(expected)
-      print(expected2)
-      print(observed)
-      print(observed2)
-      print(area_diff)
-      print(val)
-      print(scalar.grad)
-      assert False
     
     print(scalar.grad)
 
