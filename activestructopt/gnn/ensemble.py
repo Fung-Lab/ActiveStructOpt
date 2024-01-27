@@ -208,8 +208,9 @@ class Ensemble:
       device = self.device), 0) / zscores.size()[0]
 
     scalar = torch.tensor([1.0], device = self.device)
-    optimizer = torch.optim.LBFGS([scalar], max_iter = n_iters)
+    optimizer = torch.optim.Adam([scalar], lr = lr)
     for _ in range(n_iters):
+      optimizer.zero_grad(set_to_none=True)
       scalar.requires_grad_()
       # https://pytorch.org/docs/master/_modules/torch/distributions/normal.html#Normal.cdf
       expected = 0.5 * (1 + torch.erf((zscores / scalar) / np.sqrt(2)))
