@@ -197,20 +197,27 @@ class Ensemble:
 
     return torch.stack((mean, std))
 
-  def set_scalar_calibration(self, test_data, test_targets):
+  def set_scalar_calibration(self, test_data, test_targets, lr = 0.01, 
+    n_iters = 1000):
     self.scalar = 1.0
     with torch.no_grad():
       test_res = self.predict(test_data, prepared = True)
-    zscores = []
-    for i in range(len(test_targets)):
-      for j in range(len(test_targets[0])):
-        zscores.append((
-          test_res[0][i][j].item() - test_targets[i][j]
-          ) / test_res[1][i][j].item())
-    zscores = np.sort(zscores)
-    normdist = norm()
-    f = lambda x: np.trapz(np.abs(np.cumsum(np.ones(len(zscores))) / len(
-      zscores) - normdist.cdf(zscores / x[0])), normdist.cdf(zscores / x[0]))
-    self.scalar = minimize(f, [1.0]).x[0]
-    return normdist.cdf(np.sort(zscores) / self.scalar), np.cumsum(
-      np.ones(len(zscores))) / len(zscores)
+    zscores = torch.sort(((test_res[0, :, :] - test_targets) / 
+      test_res[1, :, :]).flatten())
+    observed = torch.cumsum(torch.ones(zscores.size(), dtype = zscores.dtype, 
+      device = self.device))
+    
+    scalar = torch.tensor([1.0], device = self.device)
+    optimizer = torch.optim.Adam([scalar], lr = lr)
+    for _ in range(n_iters):
+      scalar.requires_grad_()
+      # https://pytorch.org/docs/master/_modules/torch/distributions/normal.html#Normal.cdf
+      expected = 0.5 * (1 + torch.erf((zscores / scalar) / np.sqrt(2)))
+      area_diff = torch.trapezoid(torch.abs(observed - expected), expected)
+      area_diff.backward()
+      optimizer.step()
+    
+    print(scalar.grad)
+
+    self.scalar = scalar.item()
+    return expected, observed
