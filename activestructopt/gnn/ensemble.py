@@ -220,4 +220,7 @@ class Ensemble:
       optimizer.step()
 
     self.scalar = scalar.item()
+    print(self.scalar)
+    print(torch.std(zscores))
+    print(torch.std(zscores, correction = 0))
     return expected, observed
