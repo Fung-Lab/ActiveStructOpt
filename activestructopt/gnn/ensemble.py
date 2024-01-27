@@ -65,8 +65,8 @@ class Ensemble:
       return functional_call(self.base_model, (params, buffers), 
         (x,))['output']
     try:
-      kfolds_tensors = [torch.tensor(np.array(kfolds[i]), device = self.device
-        ) for i in range(len(kfolds))]
+      kfolds_tensors = [torch.tensor(np.array(kfolds[i]), device = self.device,
+        dtype = torch.int) for i in range(len(kfolds))]
       train_inds = [torch.cat([kfolds_tensors[i] for i in range(
         self.k) if i != j]) for j in range(self.k)]
       print(train_inds)
