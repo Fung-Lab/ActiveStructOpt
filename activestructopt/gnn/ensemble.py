@@ -202,8 +202,9 @@ class Ensemble:
     self.scalar = 1.0
     with torch.no_grad():
       test_res = self.predict(test_data, prepared = True)
-    zscores = torch.sort(((test_res[0, :, :] - test_targets) / 
-      test_res[1, :, :]).flatten())
+    zscores = ((test_res[0, :, :] - test_targets) / 
+      test_res[1, :, :]).flatten()
+    zscores, _ = torch.sort(zscores)
     observed = torch.cumsum(torch.ones(zscores.size(), dtype = zscores.dtype, 
       device = self.device))
     
