@@ -217,7 +217,24 @@ class Ensemble:
       area_diff = torch.trapezoid(torch.abs(observed - expected), expected)
       area_diff.backward()
       optimizer.step()
+
+      zscores2 = []
+      test_targets2 = test_targets.cpu().numpy()
+      for i in range(len(test_targets2)):
+        for j in range(len(test_targets2[0])):
+          zscores.append((
+            test_res[0][i][j].item() - test_targets2[i][j]
+            ) / test_res[1][i][j].item())
+      zscores2 = np.sort(zscores2)
+      normdist = norm()
+      val = np.trapz(np.abs(np.cumsum(np.ones(len(zscores2))) / len(
+        zscores2) - normdist.cdf(zscores2 / scalar.item())), normdist.cdf(zscores2 / scalar.item()))
+
+
       print(scalar)
+      print(area_diff)
+      print(val)
+      print(scalar.grad)
     
     print(scalar.grad)
 
