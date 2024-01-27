@@ -218,8 +218,6 @@ class Ensemble:
       area_diff = torch.trapezoid(torch.abs(observed - expected), expected)
       area_diff.backward()
       optimizer.step()
-    
-    print(scalar.grad)
 
     self.scalar = scalar.item()
     return expected, observed
