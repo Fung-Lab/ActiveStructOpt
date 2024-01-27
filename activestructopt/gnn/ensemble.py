@@ -69,6 +69,7 @@ class Ensemble:
         ) for i in range(len(kfolds))]
       train_inds = [torch.cat([kfolds_tensors[i] for i in range(
         self.k) if i != j]) for j in range(self.k)]
+      print(train_inds)
       val_inds = [kfolds_tensors[j] for j in range(self.k)]
 
       start_epoch = int(self.ensemble[0].trainer.epoch)
