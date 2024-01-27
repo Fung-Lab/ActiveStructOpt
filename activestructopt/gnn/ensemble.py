@@ -197,8 +197,7 @@ class Ensemble:
 
     return torch.stack((mean, std))
 
-  def set_scalar_calibration(self, test_data, test_targets, lr = 0.001, 
-    n_iters = 1000):
+  def set_scalar_calibration(self, test_data, test_targets, n_iters = 1000):
     self.scalar = 1.0
     with torch.no_grad():
       test_res = self.predict(test_data, prepared = True)
@@ -209,7 +208,7 @@ class Ensemble:
       device = self.device), 0) / zscores.size()[0]
 
     scalar = torch.tensor([1.0], device = self.device)
-    optimizer = torch.optim.Adam([scalar], lr = lr)
+    optimizer = torch.optim.LBFGS([scalar], max_iter = n_iters)
     for _ in range(n_iters):
       scalar.requires_grad_()
       # https://pytorch.org/docs/master/_modules/torch/distributions/normal.html#Normal.cdf
