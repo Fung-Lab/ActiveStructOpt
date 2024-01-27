@@ -206,7 +206,7 @@ class Ensemble:
       test_res[1, :, :]).flatten()
     zscores, _ = torch.sort(zscores)
     observed = torch.cumsum(torch.ones(zscores.size(), dtype = zscores.dtype, 
-      device = self.device))
+      device = self.device), 0)
     
     scalar = torch.tensor([1.0], device = self.device)
     optimizer = torch.optim.Adam([scalar], lr = lr)
