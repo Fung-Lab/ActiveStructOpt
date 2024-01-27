@@ -95,18 +95,9 @@ class Ensemble:
         **self.config["optim"]["optimizer"].get("optimizer_args", {}),
       )
 
-      # optimizers = [getattr(optim, 
-      #   self.config["optim"]["optimizer"]["optimizer_type"])(
-      #   list(params.values()) + list(buffers.values()),
-      #   lr = self.config["optim"]["lr"],
-      #   **self.config["optim"]["optimizer"].get("optimizer_args", {}),
-      # ) for _ in range(self.k)]
-
-
-      # scheduler = [LRScheduler(optimizers[j], 
-      #   self.config["optim"]["scheduler"]["scheduler_type"], 
-      #   self.config["optim"]["scheduler"]["scheduler_args"]) for j in range(
-      #   self.k)]
+      scheduler = LRScheduler(optimizer, 
+        self.config["optim"]["scheduler"]["scheduler_type"], 
+        self.config["optim"]["scheduler"]["scheduler_args"])
       
      
       for epoch in range(start_epoch, end_epoch):
@@ -120,12 +111,10 @@ class Ensemble:
           params, buffers, next(iter(DataLoader(trainval, 
           batch_size = len(trainval)))))
         
-        train_losses = [self.loss_fn(out_lists[j, train_inds[j], :], 
-          trainval_targets[train_inds[j], :]) for j in range(self.k)]
-        
         train_loss_total = torch.tensor([0.0], device = self.device)
         for j in range(self.k):
-          train_loss_total += train_losses[j]
+          train_loss_total += self.loss_fn(out_lists[j, train_inds[j], :], 
+            trainval_targets[train_inds[j], :])
 
         optimizer.zero_grad(set_to_none=True)
         train_loss_total.backward()
@@ -135,16 +124,6 @@ class Ensemble:
             max_norm = clip_grad_norm,
           )
         optimizer.step()
-
-        # for j in range(self.k): # Compute backward 
-        #   optimizer.zero_grad(set_to_none=True)
-        #   train_losses[j].backward(retain_graph = True)
-        #   if clip_grad_norm:
-        #     torch.nn.utils.clip_grad_norm_(
-        #       list(params.values()) + list(buffers.values()),
-        #       max_norm = clip_grad_norm,
-        #     )
-        #   optimizers[j].step()
 
         for j in range(self.k):
           self.ensemble[j].trainer.epoch = epoch + 1
@@ -158,12 +137,12 @@ class Ensemble:
           out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
             params, buffers, next(iter(DataLoader(trainval, 
             batch_size = len(trainval)))))
+          if scheduler.scheduler_type == "ReduceLROnPlateau":
+            scheduler.step(metrics = train_loss_total)
+          else:
+            scheduler.step()
           
           for j in range(self.k): # update prediction model if beats val losses
-            # if scheduler[j].scheduler_type == "ReduceLROnPlateau":
-            #   scheduler[j].step(metrics = train_losses[j])
-            # else:
-            #   scheduler[j].step()
             self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
             vloss = self.loss_fn(out_lists[j, val_inds[j], :], 
               trainval_targets[val_inds[j], :]).item()
