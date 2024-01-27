@@ -26,7 +26,7 @@ def make_data_splits(initial_structure, optfunc, args, config,
   test = [prepare_data(structures[i], config, y = ys[i]).to(device) for i in test_indices]
   test_targets = ys[test_indices]
 
-  kfolds = np.array_split(np.arange(1, len(trainval_indices)), k)
+  kfolds = np.array_split(np.arange(1, len(trainval_indices), dtype = int), k)
   for i in range(k):
     kfolds[i] = kfolds[i].tolist()
 
