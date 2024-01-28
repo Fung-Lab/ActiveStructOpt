@@ -155,7 +155,10 @@ class Ensemble:
       return functional_call(self.base_model, (params, buffers), (x,))['output']
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
-    prediction = vmap(fmodel, in_dims = (0, 0, None))(
+    total_size = self.config['dataset']['preprocess_params'][
+      'output_dim'] * len(data) * self.k
+    prediction = vmap(fmodel, in_dims = (0, 0, None), 
+      chunk_size = int(total_size // 5) + 1)(
       self.params, self.buffers, next(iter(DataLoader(data, 
       batch_size = len(data)))))
 
