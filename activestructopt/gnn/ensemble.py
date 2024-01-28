@@ -59,6 +59,11 @@ class Ensemble:
     def fmodel(params, buffers, x):
       return functional_call(self.base_model, (params, buffers), 
         (x,))['output']
+
+    print(trainval)
+    trainval_batch = next(iter(DataLoader(trainval, 
+          batch_size = len(trainval))))
+
     try:
       kfolds_tensors = [torch.tensor(np.array(kfolds[i]), device = self.device,
         dtype = torch.int) for i in range(len(kfolds))]
@@ -92,9 +97,6 @@ class Ensemble:
         # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
         # Start training over epochs loop
         self.base_model.train()
-
-        trainval_batch = next(iter(DataLoader(trainval, 
-          batch_size = len(trainval))))
 
         out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
           params, buffers, trainval_batch)
