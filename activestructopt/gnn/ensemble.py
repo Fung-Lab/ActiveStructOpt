@@ -39,22 +39,21 @@ class Ensemble:
   def __init__(self, k, config):
     self.k = k
     self.config = config
-    self.ensemble = [Runner() for _ in range(k)]
+    self.runner = Runner()
     self.scalar = 1.0
     self.loss_fn = getattr(F, config['optim']['loss']['loss_args']['loss_fn'])
-    for i in range(self.k):
-      self.ensemble[i](self.config, ConfigSetup('train'))
-    base_model = copy.deepcopy(self.ensemble[0].trainer.model[0])
+    self.runner(self.config, ConfigSetup('train'))
+    base_model = copy.deepcopy(self.runner.trainer.model[0])
     self.base_model = base_model.to('meta')
     params, buffers = stack_module_state(
-        [self.ensemble[j].trainer.model[0] for j in range(self.k)])
+        [self.runner.trainer.model[0] for _ in range(self.k)])
     self.params = params
     self.buffers = buffers
     world_size = int(os.environ.get("LOCAL_WORLD_SIZE", None)
       ) if self.config["task"]["parallel"] else 1
     if world_size > 1:
       self.config["optim"]["lr"] = self.config["optim"]["lr"] * world_size
-    self.device = self.ensemble[0].trainer.rank
+    self.device = self.runner.trainer.rank
 
   def train(self, kfolds, trainval, trainval_targets):
     def fmodel(params, buffers, x):
@@ -67,14 +66,7 @@ class Ensemble:
         self.k) if i != j]) for j in range(self.k)]
       val_inds = [kfolds_tensors[j] for j in range(self.k)]
 
-      start_epoch = int(self.ensemble[0].trainer.epoch)
-      end_epoch = (
-        self.ensemble[0].trainer.max_checkpoint_epochs + start_epoch
-        if self.ensemble[0].trainer.max_checkpoint_epochs
-        else self.ensemble[0].trainer.max_epochs
-      )
-
-      clip_grad_norm = self.ensemble[0].trainer.clip_grad_norm
+      clip_grad_norm = self.config["optim"]["clip_grad_norm"]
 
       if str(self.device) not in ("cpu", "cuda"):
         dist.barrier()
@@ -96,11 +88,9 @@ class Ensemble:
         self.config["optim"]["scheduler"]["scheduler_args"])
       
      
-      for epoch in range(start_epoch, end_epoch):
+      for _ in range(self.config["optim"]["max_epochs"]):
         # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
         # Start training over epochs loop
-        epoch_start_time = time.time()
-
         self.base_model.train()
 
         trainval_batch = next(iter(DataLoader(trainval, 
@@ -123,9 +113,6 @@ class Ensemble:
           )
         optimizer.step()
 
-        for j in range(self.k):
-          self.ensemble[j].trainer.epoch = epoch + 1
-
         if str(self.device) not in ("cpu", "cuda"):
           dist.barrier()
 
@@ -140,7 +127,6 @@ class Ensemble:
             scheduler.step()
           
           for j in range(self.k): # update prediction model if beats val losses
-            self.ensemble[j].trainer.epoch_time = time.time() - epoch_start_time
             vloss = self.loss_fn(out_lists[j, val_inds[j], :], 
               trainval_targets[val_inds[j], :]).item()
             if vloss < best_vals[j]:
@@ -151,7 +137,7 @@ class Ensemble:
                 self.buffers[key][j] = buffers[key][j]
                
     except RuntimeError as e:
-      self.ensemble[0].task._process_error(e)
+      self.runner.task._process_error(e)
       raise e
     
     torch.cuda.empty_cache()

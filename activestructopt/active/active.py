@@ -47,8 +47,8 @@ def active_learning(
   if print_mses:
     print(mses)
   active_steps = max_forward_calls - N
+  ensemble = Ensemble(k, config)
   for i in range(active_steps):
-    ensemble = Ensemble(k, config)
     ensemble.train(kfolds, trainval, trainval_targets)
     ensemble.set_scalar_calibration(test, test_targets)
     new_structure = basinhop(ensemble, structures, target, 
