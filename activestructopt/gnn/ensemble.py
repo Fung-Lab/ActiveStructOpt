@@ -60,7 +60,6 @@ class Ensemble:
       return functional_call(self.base_model, (params, buffers), 
         (x,))['output']
 
-    print(trainval)
     trainval_batch = next(iter(DataLoader(trainval, 
           batch_size = len(trainval))))
 

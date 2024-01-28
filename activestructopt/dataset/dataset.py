@@ -21,9 +21,9 @@ def make_data_splits(initial_structure, optfunc, args, config,
   trainval_indices = np.append(trainval_indices, [0])
   test_indices = structure_indices[int(np.floor(split * N) - 1):]
 
-  trainval = [prepare_data(structures[i], config, y = ys[i]).to(device) for i in trainval_indices]
+  trainval = [prepare_data(structures[i], config).to(device) for i in trainval_indices]
   trainval_targets = ys[trainval_indices]
-  test = [prepare_data(structures[i], config, y = ys[i]).to(device) for i in test_indices]
+  test = [prepare_data(structures[i], config).to(device) for i in test_indices]
   test_targets = ys[test_indices]
 
   kfolds = np.array_split(np.arange(1, len(trainval_indices), dtype = int), k)
@@ -38,7 +38,7 @@ def update_datasets(kfolds, trainval, trainval_targets, new_structure,
   
   new_y = torch.unsqueeze(torch.tensor(optfunc(new_structure, **(args)), 
     device = device), 0)
-  new_data = prepare_data(new_structure, config, y = new_y).to(device)
+  new_data = prepare_data(new_structure, config).to(device)
 
   kfolds[np.argmin([len(fold) for fold in kfolds])].append(len(trainval))
   trainval.append(new_data)
