@@ -39,21 +39,21 @@ class Ensemble:
   def __init__(self, k, config):
     self.k = k
     self.config = config
-    self.runner = Runner()
+    runner = Runner()
     self.scalar = 1.0
     self.loss_fn = getattr(F, config['optim']['loss']['loss_args']['loss_fn'])
-    self.runner(self.config, ConfigSetup('train'))
-    base_model = copy.deepcopy(self.runner.trainer.model[0])
+    runner(self.config, ConfigSetup('train'))
+    base_model = copy.deepcopy(runner.trainer.model[0])
     self.base_model = base_model.to('meta')
     params, buffers = stack_module_state(
-        [self.runner.trainer.model[0] for _ in range(self.k)])
+        [runner.trainer.model[0] for _ in range(self.k)])
     self.params = params
     self.buffers = buffers
     world_size = int(os.environ.get("LOCAL_WORLD_SIZE", None)
       ) if self.config["task"]["parallel"] else 1
     if world_size > 1:
       self.config["optim"]["lr"] = self.config["optim"]["lr"] * world_size
-    self.device = self.runner.trainer.rank
+    self.device = runner.trainer.rank
 
   def train(self, kfolds, trainval, trainval_targets):
     def fmodel(params, buffers, x):
@@ -114,6 +114,8 @@ class Ensemble:
           )
         optimizer.step()
 
+        del out_lists, train_loss_total
+
         if str(self.device) not in ("cpu", "cuda"):
           dist.barrier()
 
@@ -136,11 +138,15 @@ class Ensemble:
                 self.params[key][j] = params[key][j]
               for key in buffers.keys():
                 self.buffers[key][j] = buffers[key][j]
+
+          del out_lists, vloss
                
     except RuntimeError as e:
       self.runner.task._process_error(e)
       raise e
     
+    del kfolds_tensors, train_inds, val_inds
+
     torch.cuda.empty_cache()
 
 
