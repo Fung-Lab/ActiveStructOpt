@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from torch import distributed as dist
 import copy
 import os
+from torch_geometric.data import Batch
 from torch_geometric.loader import DataLoader
 
 class Runner:
@@ -107,9 +108,10 @@ class Ensemble:
 
         self.base_model.train()
 
+        trainval_batch = Batch(trainval)
+
         out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
-          params, buffers, next(iter(DataLoader(trainval, 
-          batch_size = len(trainval)))))
+          params, buffers, trainval_batch)
         
         train_loss_total = torch.tensor([0.0], device = self.device)
         for j in range(self.k):
@@ -135,8 +137,7 @@ class Ensemble:
 
         with torch.no_grad():
           out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
-            params, buffers, next(iter(DataLoader(trainval, 
-            batch_size = len(trainval)))))
+            params, buffers, trainval_batch)
           if scheduler.scheduler_type == "ReduceLROnPlateau":
             scheduler.step(metrics = train_loss_total)
           else:
@@ -166,7 +167,7 @@ class Ensemble:
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
     prediction = vmap(fmodel, in_dims = (0, 0, None))(
-      self.params, self.buffers, next(iter(DataLoader(data, batch_size = len(data)))))
+      self.params, self.buffers, Batch(data))
 
     mean = torch.mean(prediction, dim = 0)
     # last term to remove Bessel correction and match numpy behavior
