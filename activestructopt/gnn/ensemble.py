@@ -62,20 +62,20 @@ class Ensemble:
 
     trainval_batch = next(iter(DataLoader(trainval, 
           batch_size = len(trainval))))
+        
+    kfolds_tensors = [torch.tensor(np.array(kfolds[i]), device = self.device,
+        dtype = torch.int) for i in range(len(kfolds))]
+    train_inds = [torch.cat([kfolds_tensors[i] for i in range(
+      self.k) if i != j]) for j in range(self.k)]
+    val_inds = [kfolds_tensors[j] for j in range(self.k)]
+
+    clip_grad_norm = self.config["optim"]["clip_grad_norm"]
+
+    best_vals = [torch.inf for _ in range(self.k)]
 
     try:
-      kfolds_tensors = [torch.tensor(np.array(kfolds[i]), device = self.device,
-        dtype = torch.int) for i in range(len(kfolds))]
-      train_inds = [torch.cat([kfolds_tensors[i] for i in range(
-        self.k) if i != j]) for j in range(self.k)]
-      val_inds = [kfolds_tensors[j] for j in range(self.k)]
-
-      clip_grad_norm = self.config["optim"]["clip_grad_norm"]
-
       if str(self.device) not in ("cpu", "cuda"):
         dist.barrier()
-
-      best_vals = [torch.inf for _ in range(self.k)]
 
       params = copy.deepcopy(self.params)
       buffers = copy.deepcopy(self.buffers)
@@ -140,12 +140,13 @@ class Ensemble:
                 self.buffers[key][j] = buffers[key][j]
 
           del out_lists, vloss
+      del params, buffers
                
     except RuntimeError as e:
       self.runner.task._process_error(e)
       raise e
     
-    del kfolds_tensors, train_inds, val_inds
+    del kfolds_tensors, train_inds, val_inds, best_vals
 
     torch.cuda.empty_cache()
 
