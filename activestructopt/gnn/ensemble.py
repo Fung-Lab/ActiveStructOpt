@@ -114,7 +114,7 @@ class Ensemble:
           )
         optimizer.step()
 
-        del out_lists, train_loss_total
+        del out_lists
 
         if str(self.device) not in ("cpu", "cuda"):
           dist.barrier()
@@ -139,7 +139,7 @@ class Ensemble:
               for key in buffers.keys():
                 self.buffers[key][j] = buffers[key][j]
 
-          del out_lists, vloss
+          del out_lists, vloss, train_loss_total
       del params, buffers
                
     except RuntimeError as e:
