@@ -3,18 +3,13 @@ from matdeeplearn.modules.scheduler import LRScheduler
 from activestructopt.gnn.dataloader import prepare_data
 import numpy as np
 import time
-from scipy.stats import norm
-from scipy.optimize import minimize
-from torch_geometric import compile
 import torch
 from torch.func import stack_module_state, functional_call, vmap
 import torch.optim as optim
-from torch.cuda.amp import autocast
 import torch.nn.functional as F
 from torch import distributed as dist
 import copy
 import os
-from torch_geometric.data import Batch
 from torch_geometric.loader import DataLoader
 
 class Runner:
@@ -108,7 +103,8 @@ class Ensemble:
 
         self.base_model.train()
 
-        trainval_batch = Batch(trainval)
+        trainval_batch = next(iter(DataLoader(trainval, 
+          batch_size = len(trainval))))
 
         out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
           params, buffers, trainval_batch)
@@ -167,7 +163,8 @@ class Ensemble:
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
     prediction = vmap(fmodel, in_dims = (0, 0, None))(
-      self.params, self.buffers, Batch(data))
+      self.params, self.buffers, next(iter(DataLoader(data, 
+      batch_size = len(data)))))
 
     mean = torch.mean(prediction, dim = 0)
     # last term to remove Bessel correction and match numpy behavior
