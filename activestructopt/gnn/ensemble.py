@@ -159,7 +159,7 @@ class Ensemble:
     total_size = self.config['dataset']['preprocess_params'][
       'output_dim'] * len(data) * self.k
     prediction = vmap(fmodel, in_dims = (0, 0, None), 
-      chunk_size = int(total_size // 5) + 1)(
+      chunk_size = 1000)(
       self.params, self.buffers, next(iter(DataLoader(data, 
       batch_size = len(data)))))
 
