@@ -138,8 +138,6 @@ class Ensemble:
       return functional_call(self.base_model, (params, buffers), (x,))['output']
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
-    total_size = self.config['dataset']['preprocess_params'][
-      'output_dim'] * len(data) * self.k
     prediction = vmap(fmodel, in_dims = (0, 0, None), 
       chunk_size = 1000)(
       self.params, self.buffers, next(iter(DataLoader(data, 
@@ -150,6 +148,9 @@ class Ensemble:
     # https://github.com/pytorch/pytorch/issues/1082
     std = self.scalar * torch.std(prediction, dim = 0) * np.sqrt(
       (self.k - 1) / self.k)
+
+    del prediction
+    torch.cuda.empty_cache()
 
     return torch.stack((mean, std))
 
