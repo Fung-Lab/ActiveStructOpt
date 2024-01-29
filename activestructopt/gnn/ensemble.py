@@ -176,5 +176,12 @@ class Ensemble:
       area_diff.backward()
       optimizer.step()
 
+    # new scalar by MLE
+    new_scalar = torch.sqrt(torch.mean(((test_res[0, :, :] - test_targets) / 
+      torch.pow(test_res[1, :, :], 2)).flatten()))
+
+    print(scalar)
+    print(new_scalar)
+      
     self.scalar = scalar.item()
     return expected, observed
