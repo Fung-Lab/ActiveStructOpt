@@ -11,6 +11,8 @@ from torch import distributed as dist
 import copy
 import os
 from torch_geometric.loader import DataLoader
+from scipy.stats import norm
+from scipy.optimize import minimize
 
 class Ensemble:
   def __init__(self, k, config):
@@ -179,8 +181,22 @@ class Ensemble:
     # new scalar by MLE
     new_scalar = torch.sqrt(torch.mean(torch.pow(zscores, 2)))
 
+    test_res2 = test_res.cpu().numpy()
+    zscores2 = []
+    for i in range(test_targets.size()[0]):
+      for j in range(test_targets.size()[1]):
+        zscores2.append((
+          test_res2[0][i][j].item() - test_targets[i][j].item()
+          ) / test_res2[1][i][j].item())
+    zscores2 = np.sort(zscores2)
+    normdist = norm()
+    f = lambda x: np.trapz(np.abs(np.cumsum(np.ones(len(zscores2))) / len(
+      zscores2) - normdist.cdf(zscores2 / x[0])), normdist.cdf(zscores2 / x[0]))
+    scalar3 = minimize(f, [1.0]).x[0]
+    
     print(scalar)
     print(new_scalar)
+    print(scalar3)
       
     self.scalar = scalar.item()
     return expected, observed
