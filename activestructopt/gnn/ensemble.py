@@ -30,7 +30,7 @@ class Ensemble:
     else:
       world_size = 1
       self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = BaseTrainer._load_model(config['model'], config['dataset']['preprocess_params'], None, world_size, self.device)
+    model = BaseTrainer._load_model(config['model'], config['dataset']['preprocess_params'], None, world_size, self.device)[0]
     params, buffers = stack_module_state([model for _ in range(self.k)])
     self.base_model = model.to('meta')
     self.params = params
