@@ -177,8 +177,7 @@ class Ensemble:
       optimizer.step()
 
     # new scalar by MLE
-    new_scalar = torch.sqrt(torch.mean(((test_res[0, :, :] - test_targets) / 
-      torch.pow(test_res[1, :, :], 2)).flatten()))
+    new_scalar = torch.sum(zscores) / np.sqrt(zscores.size()[0])
 
     print(scalar)
     print(new_scalar)
