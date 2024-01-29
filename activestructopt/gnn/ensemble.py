@@ -1,4 +1,4 @@
-from matdeeplearn.common.trainer_context import new_trainer_context
+from matdeeplearn.trainers.base_trainer import BaseTrainer
 from matdeeplearn.modules.scheduler import LRScheduler
 from activestructopt.gnn.dataloader import prepare_data
 import numpy as np
@@ -12,49 +12,31 @@ import copy
 import os
 from torch_geometric.loader import DataLoader
 
-class Runner:
-  def __init__(self):
-    self.config = None
-
-  def __call__(self, config, args):
-    with new_trainer_context(args = args, config = config) as ctx:
-      self.config = ctx.config
-      self.task = ctx.task
-      self.trainer = ctx.trainer
-      self.task.setup(self.trainer)
-      #self.task.run()
-
-  def checkpoint(self, *args, **kwargs):
-    self.trainer.save(checkpoint_file="checkpoint.pt", training_state=True)
-    self.config["checkpoint"] = self.task.chkpt_path
-    self.config["timestamp_id"] = self.trainer.timestamp_id
-
-class ConfigSetup:
-  def __init__(self, run_mode):
-    self.run_mode = run_mode
-    self.seed = None
-    self.submit = None
-
 class Ensemble:
   def __init__(self, k, config):
     self.k = k
     self.config = config
-    runner = Runner()
     self.scalar = 1.0
     self.loss_fn = getattr(F, config['optim']['loss']['loss_args']['loss_fn'])
-    runner(self.config, ConfigSetup('train'))
-    base_model = copy.deepcopy(runner.trainer.model[0])
-    self.base_model = base_model.to('meta')
-    params, buffers = stack_module_state(
-        [runner.trainer.model[0] for _ in range(self.k)])
+    # https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/base_trainer.py#L136
+    if config["task"]["parallel"] == True:
+      world_size = os.environ.get("LOCAL_WORLD_SIZE", None)
+      world_size = int(world_size)
+      self.config["optim"]["lr"] = config["optim"]["lr"] * world_size
+      dist.init_process_group(
+          "nccl", world_size=world_size, init_method="env://"
+      )
+      self.device = int(dist.get_rank())
+    else:
+      world_size = 1
+      self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = BaseTrainer._load_model(config['model'], config['dataset']['preprocess_params'], None, world_size, self.device)
+    params, buffers = stack_module_state([model for _ in range(self.k)])
+    self.base_model = model.to('meta')
     self.params = params
     self.buffers = buffers
-    world_size = int(os.environ.get("LOCAL_WORLD_SIZE", None)
-      ) if self.config["task"]["parallel"] else 1
-    if world_size > 1:
-      self.config["optim"]["lr"] = self.config["optim"]["lr"] * world_size
-    self.device = runner.trainer.rank
 
+  
   def train(self, kfolds, trainval, trainval_targets):
     def fmodel(params, buffers, x):
       return functional_call(self.base_model, (params, buffers), 
@@ -143,7 +125,7 @@ class Ensemble:
       del params, buffers
                
     except RuntimeError as e:
-      self.runner.task._process_error(e)
+      # TODO: re-implement error processing checking the model as this uses it
       raise e
     
     del kfolds_tensors, train_inds, val_inds, best_vals
