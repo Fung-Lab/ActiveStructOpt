@@ -161,8 +161,8 @@ class Ensemble:
     self.scalar = 1.0
     with torch.no_grad():
       test_res = self.predict(test_data, prepared = True)
-    print((test_res[0, :, :] - test_targets))
-    print(test_res[1, :, :])
+    print((test_res[0, :, :] - test_targets).flatten())
+    print(test_res[1, :, :].flatten())
     zscores = ((test_res[0, :, :] - test_targets) / 
       test_res[1, :, :]).flatten()
     zscores, _ = torch.sort(zscores)
