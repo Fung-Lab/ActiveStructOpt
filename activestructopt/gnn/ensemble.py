@@ -161,8 +161,6 @@ class Ensemble:
     self.scalar = 1.0
     with torch.no_grad():
       test_res = self.predict(test_data, prepared = True)
-    print((test_res[0, :, :] - test_targets).flatten().cpu().numpy().tolist())
-    print(test_res[1, :, :].flatten().cpu().numpy().tolist())
     zscores = ((test_res[0, :, :] - test_targets) / 
       test_res[1, :, :]).flatten()
     zscores, _ = torch.sort(zscores)
@@ -180,25 +178,5 @@ class Ensemble:
       area_diff.backward()
       optimizer.step()
 
-    # new scalar by MLE
-    new_scalar = torch.sqrt(torch.mean(torch.pow(zscores, 2)))
-
-    test_res2 = test_res.cpu().numpy()
-    zscores2 = []
-    for i in range(test_targets.size()[0]):
-      for j in range(test_targets.size()[1]):
-        zscores2.append((
-          test_res2[0][i][j].item() - test_targets[i][j].item()
-          ) / test_res2[1][i][j].item())
-    zscores2 = np.sort(zscores2)
-    normdist = norm()
-    f = lambda x: np.trapz(np.abs(np.cumsum(np.ones(len(zscores2))) / len(
-      zscores2) - normdist.cdf(zscores2 / x[0])), normdist.cdf(zscores2 / x[0]))
-    scalar3 = minimize(f, [1.0]).x[0]
-    
-    print(scalar)
-    print(new_scalar)
-    print(scalar3)
-      
     self.scalar = scalar.item()
     return expected, observed
