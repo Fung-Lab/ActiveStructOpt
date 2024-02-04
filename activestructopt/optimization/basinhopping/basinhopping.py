@@ -19,6 +19,8 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
         starting_structures[i].frac_coords), device = device, dtype = torch.float)
   optimizer = torch.optim.Adam([d.pos for d in data], lr=lr)
   for i in range(niters):
+    # https://discuss.pytorch.org/t/how-to-check-the-gpu-memory-being-used/131220
+    print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
     optimizer.zero_grad(set_to_none=True)
     for j in range(nstarts):
       data[j].pos.requires_grad_()
