@@ -141,7 +141,7 @@ class Ensemble:
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
     prediction = vmap(fmodel, in_dims = (0, 0, None), 
-      chunk_size = 1000)(
+      chunk_size = 1)(
       self.params, self.buffers, next(iter(DataLoader(data, 
       batch_size = len(data)))))
 
