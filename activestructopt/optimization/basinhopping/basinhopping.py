@@ -23,7 +23,7 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
     for j in range(nstarts):
       data[j].pos.requires_grad_()
     # https://discuss.pytorch.org/t/how-to-check-the-gpu-memory-being-used/131220
-    print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
+    #print("torch.cuda.memory_allocated: %fGB"%(torch.cuda.memory_allocated(0)/1024/1024/1024))
     predictions = ensemble.predict(data, prepared = True)
     ucbs = torch.zeros(nstarts)
     ucb_total = torch.tensor([0.0], device = device)
