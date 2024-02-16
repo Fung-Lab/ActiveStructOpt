@@ -3,7 +3,8 @@ from activestructopt.optimization.shared.constraints import lj_reject
 import numpy as np
 
 def make_data_splits(initial_structure, optfunc, args, config, 
-                      perturbrmin = 0.1, perturbrmax = 1.0, 
+                      perturbrmin = 0.1, perturbrmax = 1.0,
+                      perturblmax = 0.2, perturbθmax = 10,
                       N = 100, split = 0.85, k = 5, device = 'cuda'):
   structures = [initial_structure.copy() for _ in range(N)]
   for i in range(1, N):
@@ -11,6 +12,20 @@ def make_data_splits(initial_structure, optfunc, args, config,
     while rejected:
       new_structure = initial_structure.copy()
       new_structure.perturb(np.random.uniform(perturbrmin, perturbrmax))
+      new_structure.lattice = new_structure.lattice.from_parameters(
+        max(0.0, new_structure.lattice.a + np.random.uniform(
+          -perturblmax, perturblmax)),
+        max(0.0, new_structure.lattice.b + np.random.uniform(
+          -perturblmax, perturblmax)),
+        max(0.0, new_structure.lattice.c + np.random.uniform(
+          -perturblmax, perturblmax)), 
+        min(180.0, max(0.0, new_structure.lattice.alpha + np.random.uniform(
+          -perturbθmax, perturbθmax))), 
+        min(180.0, max(0.0, new_structure.lattice.beta + np.random.uniform(
+          -perturbθmax, perturbθmax))), 
+        min(180.0, max(0.0, new_structure.lattice.gamma + np.random.uniform(
+          -perturbθmax, perturbθmax)))
+      )
       rejected = lj_reject(new_structure)
     structures[i] = new_structure.copy()
   ys = [optfunc(structures[i], **(args)) for i in range(N)]
