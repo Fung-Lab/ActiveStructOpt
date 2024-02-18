@@ -99,7 +99,7 @@ class Ensemble:
 
   def set_scalar_calibration(self, test_data, test_targets):
     self.scalar = 1.0
-    with torch.inference_mode()
+    with torch.inference_mode():
       test_res = self.predict(test_data, prepared = True)
     zscores = []
     for i in range(len(test_targets)):

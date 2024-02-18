@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from activestructopt.gnn.dataloader import prepare_data
+from activestructopt.gnn.dataloader import prepare_data, reprocess_data
 from activestructopt.optimization.shared.constraints import lj_rmins, lj_repulsion
 from matdeeplearn.preprocessor.helpers import (
     calculate_edges_master,
@@ -15,7 +15,7 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
   best_x = torch.zeros(3 * natoms, device = device)
   best_cell = torch.zeros((3, 3), device = device) 
   target = torch.tensor(target, device = device)
-  data = [prepare_data(s, config, pos_grad = True).to(device) for s in starting_structures]
+  data = [prepare_data(s, config, pos_grad = True, device = device) for s in starting_structures]
   for i in range(nstarts):
     data[i].pos = torch.tensor(starting_structures[i].lattice.get_cartesian_coords(
         starting_structures[i].frac_coords), device = device, dtype = torch.float)
@@ -26,6 +26,7 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
     optimizer.zero_grad(set_to_none=True)
     for j in range(nstarts):
       data[j].pos.requires_grad_()
+      reprocess_data(data[j], config, device)
     predictions = ensemble.predict(data, prepared = True)
     ucbs = torch.zeros(nstarts)
     ucb_total = torch.tensor([0.0], device = device)
@@ -33,21 +34,6 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
       yhat = torch.mean((predictions[1][j] ** 2) + ((target - predictions[0][j]) ** 2))
       s = torch.sqrt(2 * torch.sum((predictions[1][j] ** 4) + 2 * (predictions[1][j] ** 2) * (
         (target - predictions[0][j]) ** 2))) / (len(target))
-
-      edge_gen_out = calculate_edges_master(
-        config['preprocess_params']['edge_calc_method'],
-        config['preprocess_params']['cutoff_radius'],
-        config['preprocess_params']['n_neighbors'],
-        config['preprocess_params']['num_offsets'],
-        ["_"],
-        data[j].cell,
-        data[j].pos,
-        data[j].z,
-        device = device,
-      )
-      data[j].edge_index = edge_gen_out["edge_index"].to(device)
-      data[j].edge_weight = edge_gen_out["edge_weights"].to(device)
-
       ucb = yhat - λ * s + lj_repulsion(data[j], ljrmins)
       ucb_total += ucb
       ucbs[j] = ucb.detach()
@@ -63,7 +49,7 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
     ucb = ucb.detach()
     yhat = yhat.detach()
     s = s.detach()
-    del predictions, ucbs, ucb, yhat, s, edge_gen_out
+    del predictions, ucbs, ucb, yhat, s
     
   to_return = best_x.detach().cpu().numpy(), best_cell.detach().cpu().numpy()
   del best_ucb, best_x, best_cell, target, data
