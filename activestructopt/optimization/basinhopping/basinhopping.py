@@ -21,7 +21,7 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
         starting_structures[i].frac_coords), device = device, dtype = torch.float)
     data[i].cell = torch.tensor(starting_structures[i].lattice.matrix, 
                                 device = device, dtype = torch.float).unsqueeze(0)
-  optimizer = torch.optim.Adam([d.pos for d in data], [d.cell for d in data], lr=lr)
+  optimizer = torch.optim.Adam([d.pos for d in data] + [d.cell for d in data], lr=lr)
   for i in range(niters):
     optimizer.zero_grad(set_to_none=True)
     for j in range(nstarts):
