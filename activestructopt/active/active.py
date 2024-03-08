@@ -86,5 +86,5 @@ def active_learning(
         i) + ".pkl", "wb") as file:
           pickle.dump(res, file)
 
-  return structures, ys, mses, structures, ys, mses, (ensemble, 
+  return structures, ys, mses, (ensemble, 
     kfolds, test_indices, trainval, trainval_targets, test, test_targets)
