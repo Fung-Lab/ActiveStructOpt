@@ -28,7 +28,8 @@ def active_learning(
     print_mses = True,
     save_progress_dir = None,
     ):
-  structures, ys, datasets, kfolds, test_indices, test_data, test_targets = make_data_splits(
+  (structures, ys, kfolds, test_indices, 
+    trainval, trainval_targets, test, test_targets) = make_data_splits(
     initial_structure,
     optfunc,
     args,
@@ -41,31 +42,34 @@ def active_learning(
     device = device,
   )
   config['dataset']['preprocess_params']['output_dim'] = len(ys[0])
-  mses = [np.mean((y - target) ** 2) for y in ys]
+  mses = [np.mean((ys[i, :].cpu().numpy() - target) ** 2
+    ) for i in range(ys.size()[0])]
   if print_mses:
     print(mses)
   active_steps = max_forward_calls - N
   for i in range(active_steps):
     starting_structures = [structures[i].copy() for i in np.random.randint(
       0, len(mses) - 1, bh_starts)]
-    ensemble = Ensemble(k, config, datasets)
-    ensemble.train()
-    ensemble.set_scalar_calibration(test_data, test_targets)
+    ensemble = Ensemble(k, config)
+    ensemble.train(kfolds, trainval, trainval_targets)
+    ensemble.set_scalar_calibration(test, test_targets)
     new_structure = basinhop(ensemble, starting_structures, target, 
       config['dataset'], nhops = bh_starts, niters = bh_iters_per_start, 
       λ = 0.0 if i == (active_steps - 1) else 1.0, lr = bh_lr, 
       step_size = bh_step_size, rmcσ = bh_σ)
     structures.append(new_structure)
-    datasets, y = update_datasets(
-      datasets,
-      new_structure,
+    kfolds, trainval, trainval_targets, new_y = update_datasets(
+      kfolds, 
+      trainval, 
+      trainval_targets, 
+      new_structure, 
       config['dataset'],
       optfunc,
       args,
       device,
     )
-    ys.append(y)
-    new_mse = np.mean((y - target) ** 2)
+    ys = torch.cat([ys, new_y], 0)
+    new_mse = np.mean((new_y.cpu().numpy() - target) ** 2)
     mses.append(new_mse)
     if print_mses:
       print(new_mse)
@@ -78,8 +82,9 @@ def active_learning(
             'ys': ys,
             'mses': mses}
 
-      with open(save_progress_dir + "/" + str(sys.argv[1]) + "_" + str(i) + ".pkl", "wb") as file:
+      with open(save_progress_dir + "/" + str(sys.argv[1]) + "_" + str(
+        i) + ".pkl", "wb") as file:
           pickle.dump(res, file)
 
-  return structures, ys, mses, (
-      datasets, kfolds, test_indices, test_data, test_targets, ensemble)
+  return structures, ys, mses, structures, ys, mses, (ensemble, 
+    kfolds, test_indices, trainval, trainval_targets, test, test_targets)

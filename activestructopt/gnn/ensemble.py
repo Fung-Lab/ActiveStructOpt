@@ -1,85 +1,138 @@
-from matdeeplearn.common.trainer_context import new_trainer_context
+from matdeeplearn.trainers.base_trainer import BaseTrainer
+from matdeeplearn.modules.scheduler import LRScheduler
 from activestructopt.gnn.dataloader import prepare_data
 import numpy as np
-from scipy.stats import norm
-from scipy.optimize import minimize
-from torch_geometric import compile
 import torch
 from torch.func import stack_module_state, functional_call, vmap
+import torch.optim as optim
+import torch.nn.functional as F
+from torch import distributed as dist
 import copy
+import os
 from torch_geometric.loader import DataLoader
-from matdeeplearn.trainers.base_trainer import BaseTrainer
-
-class Runner:
-  def __init__(self):
-    self.config = None
-
-  def __call__(self, config, args, train_data, val_data):
-    with new_trainer_context(args = args, config = config) as ctx:
-      if config["task"]["parallel"] == True:
-        local_world_size = os.environ.get("LOCAL_WORLD_SIZE", None)
-        local_world_size = int(local_world_size)
-        dist.init_process_group(
-          "nccl", world_size=local_world_size, init_method="env://"
-        )
-        rank = int(dist.get_rank())
-      else:
-        rank = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        local_world_size = 1
-      self.config = ctx.config
-      self.task = ctx.task
-      self.trainer = ctx.trainer
-      self.trainer.dataset = {
-        'train': train_data, 
-        'val': val_data, 
-      }
-      self.trainer.sampler = BaseTrainer._load_sampler(config["optim"], self.trainer.dataset, local_world_size, rank)
-      self.trainer.data_loader = BaseTrainer._load_dataloader(
-        config["optim"],
-        config["dataset"],
-        self.trainer.dataset,
-        self.trainer.sampler,
-        config["task"]["run_mode"],
-        config["model"]
-      )
-      self.task.setup(self.trainer)
-      self.task.run()
-
-  def checkpoint(self, *args, **kwargs):
-    self.trainer.save(checkpoint_file="checkpoint.pt", training_state=True)
-    self.config["checkpoint"] = self.task.chkpt_path
-    self.config["timestamp_id"] = self.trainer.timestamp_id
-
-class ConfigSetup:
-  def __init__(self, run_mode):
-      self.run_mode = run_mode
-      self.seed = None
-      self.submit = None
+from scipy.stats import norm
+from scipy.optimize import minimize
 
 class Ensemble:
-  def __init__(self, k, config, datasets):
+  def __init__(self, k, config):
     self.k = k
     self.config = config
-    self.datasets = datasets
-    self.ensemble = [Runner() for _ in range(k)]
     self.scalar = 1.0
-    self.device = 'cpu'
+    self.loss_fn = getattr(F, config['optim']['loss']['loss_args']['loss_fn'])
+    # https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/base_trainer.py#L136
+    if config["task"]["parallel"] == True:
+      world_size = os.environ.get("LOCAL_WORLD_SIZE", None)
+      world_size = int(world_size)
+      self.config["optim"]["lr"] = config["optim"]["lr"] * world_size
+      dist.init_process_group(
+          "nccl", world_size=world_size, init_method="env://"
+      )
+      self.device = int(dist.get_rank())
+    else:
+      world_size = 1
+      self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    models = [BaseTrainer._load_model(
+      config['model'], config['dataset']['preprocess_params'], 
+      None, world_size, self.device)[0] for _ in range(self.k)]
+    params, buffers = stack_module_state(models)
+    self.base_model = models[0].to('meta')
+    self.params = params
+    self.buffers = buffers
   
-  def train(self):
-    for i in range(self.k):
-      self.ensemble[i](self.config, 
-        ConfigSetup('train'), self.datasets[i][0], self.datasets[i][1])
-      self.ensemble[i].trainer.model[0].eval()
-      #self.ensemble[i].trainer.model[0] = compile(self.ensemble[i].trainer.model)
-    device = next(iter(self.ensemble[0].trainer.model[0].state_dict().values(
-      ))).get_device()
-    device = 'cpu' if device == -1 else 'cuda:' + str(device)
-    self.device = device
-    #https://pytorch.org/tutorials/intermediate/ensembling.html
-    models = [self.ensemble[i].trainer.model[0] for i in range(self.k)]
-    self.params, self.buffers = stack_module_state(models)
-    base_model = copy.deepcopy(models[0])
-    self.base_model = base_model.to('meta')
+  def train(self, kfolds, trainval, trainval_targets):
+    def fmodel(params, buffers, x):
+      return functional_call(self.base_model, (params, buffers), 
+        (x,))['output']
+
+    trainval_batch = next(iter(DataLoader(trainval, 
+          batch_size = len(trainval))))
+        
+    kfolds_tensors = [torch.tensor(np.array(kfolds[i]), device = self.device,
+        dtype = torch.int) for i in range(len(kfolds))]
+    train_inds = [torch.cat([kfolds_tensors[i] for i in range(
+      self.k) if i != j]) for j in range(self.k)]
+    val_inds = [kfolds_tensors[j] for j in range(self.k)]
+
+    clip_grad_norm = self.config["optim"]["clip_grad_norm"]
+
+    best_vals = [torch.inf for _ in range(self.k)]
+
+    try:
+      if str(self.device) not in ("cpu", "cuda"):
+        dist.barrier()
+
+      params = copy.deepcopy(self.params)
+      buffers = copy.deepcopy(self.buffers)
+
+      optimizer = getattr(optim, 
+        self.config["optim"]["optimizer"]["optimizer_type"])(
+        list(params.values()) + list(buffers.values()),
+        lr = self.config["optim"]["lr"],
+        **self.config["optim"]["optimizer"].get("optimizer_args", {}),
+      )
+
+      scheduler = LRScheduler(optimizer, 
+        self.config["optim"]["scheduler"]["scheduler_type"], 
+        self.config["optim"]["scheduler"]["scheduler_args"])
+      
+     
+      for _ in range(self.config["optim"]["max_epochs"]):
+        # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
+        # Start training over epochs loop
+        self.base_model.train()
+
+        out_lists = vmap(fmodel, in_dims = (0, 0, None), 
+          randomness = 'different')(params, buffers, trainval_batch)
+        
+        train_loss_total = torch.tensor([0.0], device = self.device)
+        for j in range(self.k):
+          train_loss_total += self.loss_fn(out_lists[j, train_inds[j], :], 
+            trainval_targets[train_inds[j], :])
+
+        optimizer.zero_grad(set_to_none=True)
+        train_loss_total.backward()
+        if clip_grad_norm:
+          torch.nn.utils.clip_grad_norm_(
+            list(params.values()) + list(buffers.values()),
+            max_norm = clip_grad_norm,
+          )
+        optimizer.step()
+
+        del out_lists
+
+        if str(self.device) not in ("cpu", "cuda"):
+          dist.barrier()
+
+        self.base_model.eval()
+
+        with torch.no_grad():
+          out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
+            params, buffers, trainval_batch)
+          if scheduler.scheduler_type == "ReduceLROnPlateau":
+            scheduler.step(metrics = train_loss_total)
+          else:
+            scheduler.step()
+          
+          for j in range(self.k): # update prediction model if beats val losses
+            vloss = self.loss_fn(out_lists[j, val_inds[j], :], 
+              trainval_targets[val_inds[j], :]).item()
+            if vloss < best_vals[j]:
+              best_vals[j] = vloss
+              for key in params.keys():
+                self.params[key][j] = params[key][j]
+              for key in buffers.keys():
+                self.buffers[key][j] = buffers[key][j]
+
+          del out_lists, vloss, train_loss_total
+      del params, buffers
+               
+    except RuntimeError as e:
+      # TODO: re-implement error processing checking the model as this uses it
+      raise e
+    
+    del kfolds_tensors, train_inds, val_inds, best_vals
+
+    torch.cuda.empty_cache()
 
   def predict(self, structure, prepared = False):
     def fmodel(params, buffers, x):
