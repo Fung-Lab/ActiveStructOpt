@@ -105,7 +105,7 @@ class Ensemble:
 
         self.base_model.eval()
 
-        with torch.no_grad():
+        with torch.inference_mode():
           out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
             params, buffers, trainval_batch)
           if scheduler.scheduler_type == "ReduceLROnPlateau":
