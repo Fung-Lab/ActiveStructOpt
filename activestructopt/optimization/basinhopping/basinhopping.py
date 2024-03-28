@@ -54,7 +54,7 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
         predicted = True
       except torch.cuda.OutOfMemoryError:
         split -= 1
-        assert split >= 0
+        assert split >= 0, "Out of memory with only one structure"
     
     if i != niters - 1:
       optimizer.step()
