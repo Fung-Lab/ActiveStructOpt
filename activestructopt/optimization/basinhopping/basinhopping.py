@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from activestructopt.gnn.dataloader import prepare_data, reprocess_data
 from activestructopt.optimization.shared.constraints import lj_rmins, lj_repulsion
 
@@ -16,7 +17,8 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
                       
   optimizer = torch.optim.Adam([d.pos for d in data], lr=lr)
   
-  large_structure = False
+  split = int(np.ceil(np.log2(nstarts)))
+  orig_split = split
 
   for i in range(niters):
     optimizer.zero_grad(set_to_none=True)
@@ -24,46 +26,39 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
       data[j].pos.requires_grad_()
       reprocess_data(data[j], config, device, nodes = False)
 
-    if not large_structure:
+    predicted = False
+    while not predicted:
       try:
-        predictions = ensemble.predict(data, prepared = True)
-        ucbs = torch.zeros(nstarts)
-        ucb_total = torch.tensor([0.0], device = device)
-        for j in range(nstarts):
-          yhat = torch.mean((predictions[1][j] ** 2) + (
-            (target - predictions[0][j]) ** 2))
-          s = torch.sqrt(2 * torch.sum((predictions[1][j] ** 4) + 2 * (
-            predictions[1][j] ** 2) * ((target - predictions[0][j]) ** 2))) / (
-            len(target))
-          ucb = yhat - λ * s + lj_repulsion(data[j], ljrmins)
-          ucb_total = ucb_total + ucb
-          ucbs[j] = ucb.detach()
-        ucb_total.backward()
-        del predictions, ucb, yhat, s
+        for k in range(2 ** (orig_split - split)):
+          starti = k * (2 ** split)
+          stopi = min((k + 1) * (2 ** split) - 1, nstarts - 1)
+          predictions = ensemble.predict(data[starti:stopi], 
+            prepared = True)
+          ucbs = torch.zeros(stopi - starti + 1)
+          ucb_total = torch.tensor([0.0], device = device)
+          for j in range(stopi - starti + 1):
+            yhat = torch.mean((predictions[1][j] ** 2) + (
+              (target - predictions[0][j]) ** 2))
+            s = torch.sqrt(2 * torch.sum((predictions[1][j] ** 4) + 2 * (
+              predictions[1][j] ** 2) * ((
+              target - predictions[0][j]) ** 2))) / (len(target))
+            ucb = yhat - λ * s + lj_repulsion(data[starti + j], ljrmins)
+            ucb_total = ucb_total + ucb
+            ucbs[j] = ucb.detach()
+          ucb_total.backward()
+          if (torch.min(ucbs) < best_ucb).item():
+            best_ucb = torch.min(ucbs).detach()
+            best_x = data[starti + torch.argmin(ucbs).item()].pos.detach(
+              ).flatten()
+          del predictions, ucb, yhat, s, ucbs, ucb_total
+        predicted = True
       except torch.cuda.OutOfMemoryError:
-        large_structure = True
-
-    if large_structure:
-      ucbs = torch.zeros(nstarts)
-      for j in range(nstarts):
-        predictions = ensemble.predict([data[j]], prepared = True)
-        yhat = torch.mean((predictions[1][0] ** 2) + (
-          (target - predictions[0][0]) ** 2))
-        s = torch.sqrt(2 * torch.sum((predictions[1][0] ** 4) + 2 * (
-          predictions[1][0] ** 2) * ((target - predictions[0][0]) ** 2))) / (
-          len(target))
-        ucb = yhat - λ * s + lj_repulsion(data[j], ljrmins)
-        ucbs[j] = ucb.detach()
-        ucb.backward()
-        del predictions, yhat, s, ucb
+        split -= 1
+        assert split >= 0
     
     if i != niters - 1:
       optimizer.step()
-    if (torch.min(ucbs) < best_ucb).item():
-      best_ucb = torch.min(ucbs).detach()
-      best_x = data[torch.argmin(ucbs).item()].pos.detach().flatten()
-    del ucbs
-    
+
   to_return = best_x.detach().cpu().numpy() 
   del best_ucb, best_x, target, data
   return to_return
