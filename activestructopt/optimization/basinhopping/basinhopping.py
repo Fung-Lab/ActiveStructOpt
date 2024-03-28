@@ -15,10 +15,7 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
     reprocess_data(data[i], config, device, edges = False)
                       
   optimizer = torch.optim.Adam([d.pos for d in data], lr=lr)
-  optimizer.zero_grad(set_to_none=True)
-  for i in range(nstarts):
-    data[i].pos.requires_grad_()
-
+  
   large_structure = False
 
   for i in range(niters):
@@ -39,8 +36,8 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
             predictions[1][j] ** 2) * ((target - predictions[0][j]) ** 2))) / (
             len(target))
           ucb = yhat - λ * s + lj_repulsion(data[j], ljrmins)
-        ucb_total = ucb_total + ucb
-        ucbs[j] = ucb.clone().detach()
+          ucb_total = ucb_total + ucb
+          ucbs[j] = ucb.detach()
         ucb_total.backward()
         del predictions, ucb, yhat, s
       except torch.cuda.OutOfMemoryError:

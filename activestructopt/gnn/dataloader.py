@@ -79,7 +79,8 @@ def reprocess_data(data, config, device, nodes = True, edges = True):
       data.distances = data.edge_weight
 
     if nodes and config['preprocess_params']['preprocess_node_features']:
-      generate_node_features(data, n_neighbors, device=device)
+      generate_node_features(data, n_neighbors, device=device, 
+        node_rep_func = reduced_one_hot)
         
     if edges and config['preprocess_params']['preprocess_edge_features']:
       generate_edge_features(data, config['preprocess_params']['edge_dim'], 
