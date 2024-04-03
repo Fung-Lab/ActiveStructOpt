@@ -20,8 +20,8 @@ def active_learning(
     perturbrmax = 1.0, 
     split = 1/3, 
     device = 'cuda',
-    bh_starts = 100,
-    bh_iters_per_start = 10,
+    bh_starts = 128,
+    bh_iters_per_start = 100,
     bh_lr = 0.01,
     bh_step_size = 0.1,
     bh_σ = 0.0025,
@@ -46,11 +46,11 @@ def active_learning(
     print(mses)
   active_steps = max_forward_calls - N
   for i in range(active_steps):
-    starting_structures = [structures[i].copy() for i in np.random.randint(
-      0, len(mses) - 1, bh_starts)]
     ensemble = Ensemble(k, config, datasets)
     ensemble.train()
     ensemble.set_scalar_calibration(test_data, test_targets)
+    starting_structures = [structures[i].copy() for i in np.random.randint(
+      0, len(mses) - 1, bh_starts)]
     new_structure = basinhop(ensemble, starting_structures, target, 
       config['dataset'], nhops = bh_starts, niters = bh_iters_per_start, 
       λ = 0.0 if i == (active_steps - 1) else 1.0, lr = bh_lr, 
