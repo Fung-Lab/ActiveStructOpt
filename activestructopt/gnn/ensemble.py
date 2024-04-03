@@ -14,6 +14,35 @@ from torch_geometric.loader import DataLoader
 from scipy.stats import norm
 from scipy.optimize import minimize
 
+def split_param_buffers(param_buffers):
+  new_param_buffers = []
+  can_split = False
+  for i in range(len(param_buffers)):
+    p, b = param_buffers[i]
+    pkeys = list(p.keys())
+    bkeys = list(b.keys())
+    if p[pkeys[0]].size()[0] > 1:
+      chunk_size = int(np.ceil(p[pkeys[0]].size()[0] / 2))
+      can_split = True
+      p_split_1 = {}
+      p_split_2 = {}
+      b_split_1 = {}
+      b_split_2 = {}
+      for j in range(len(pkeys)):
+        split_tensor = torch.split(p[pkeys[j]], chunk_size)
+        p_split_1[pkeys[j]] = split_tensor[0]
+        p_split_2[pkeys[j]] = split_tensor[1]
+      for j in range(len(bkeys)):
+        split_tensor = torch.split(b[bkeys[j]], chunk_size)
+        b_split_1[bkeys[j]] = split_tensor[0]
+        b_split_2[bkeys[j]] = split_tensor[1]
+      new_param_buffers.append((p_split_1, b_split_1))
+      new_param_buffers.append((p_split_2, b_split_2))
+    else:
+      new_param_buffers.append(param_buffers[i])
+  assert can_split, "Out of memory with only one model in vmap dimension"
+  return new_param_buffers
+
 class Ensemble:
   def __init__(self, k, config):
     self.k = k
@@ -33,13 +62,14 @@ class Ensemble:
       world_size = 1
       self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = BaseTrainer._load_model(config['model'], config['dataset']['preprocess_params'], None, world_size, self.device)[0]
-    params, buffers = stack_module_state([model for _ in range(self.k)])
+
     self.base_model = model.to('meta')
-    self.params = params
-    self.buffers = buffers
+    self.param_buffers = [stack_module_state([model for _ in range(self.k)])]
 
   
   def train(self, kfolds, trainval, trainval_targets):
+    trained = False
+
     def fmodel(params, buffers, x):
       return functional_call(self.base_model, (params, buffers), 
         (x,))['output']
@@ -57,79 +87,88 @@ class Ensemble:
 
     best_vals = [torch.inf for _ in range(self.k)]
 
-    try:
-      if str(self.device) not in ("cpu", "cuda"):
-        dist.barrier()
-
-      params = copy.deepcopy(self.params)
-      buffers = copy.deepcopy(self.buffers)
-
-      optimizer = getattr(optim, 
-        self.config["optim"]["optimizer"]["optimizer_type"])(
-        list(params.values()) + list(buffers.values()),
-        lr = self.config["optim"]["lr"],
-        **self.config["optim"]["optimizer"].get("optimizer_args", {}),
-      )
-
-      scheduler = LRScheduler(optimizer, 
-        self.config["optim"]["scheduler"]["scheduler_type"], 
-        self.config["optim"]["scheduler"]["scheduler_args"])
-      
-     
-      for _ in range(self.config["optim"]["max_epochs"]):
-        # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
-        # Start training over epochs loop
-        self.base_model.train()
-
-        out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
-          params, buffers, trainval_batch)
-        
-        train_loss_total = torch.tensor([0.0], device = self.device)
-        for j in range(self.k):
-          train_loss_total += self.loss_fn(out_lists[j, train_inds[j], :], 
-            trainval_targets[train_inds[j], :])
-
-        optimizer.zero_grad(set_to_none=True)
-        train_loss_total.backward()
-        if clip_grad_norm:
-          torch.nn.utils.clip_grad_norm_(
-            list(params.values()) + list(buffers.values()),
-            max_norm = clip_grad_norm,
-          )
-        optimizer.step()
-
-        del out_lists
-
+    while not trained:
+      try:
         if str(self.device) not in ("cpu", "cuda"):
           dist.barrier()
 
-        self.base_model.eval()
+        param_buffers = copy.deepcopy(self.param_buffers)
+        model_splits = len(param_buffers)
 
-        with torch.no_grad():
-          out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
-            params, buffers, trainval_batch)
-          if scheduler.scheduler_type == "ReduceLROnPlateau":
-            scheduler.step(metrics = train_loss_total)
-          else:
-            scheduler.step()
-          
-          for j in range(self.k): # update prediction model if beats val losses
-            vloss = self.loss_fn(out_lists[j, val_inds[j], :], 
-              trainval_targets[val_inds[j], :]).item()
-            if vloss < best_vals[j]:
-              best_vals[j] = vloss
-              for key in params.keys():
-                self.params[key][j] = params[key][j]
-              for key in buffers.keys():
-                self.buffers[key][j] = buffers[key][j]
+        optimizers = [getattr(optim, 
+          self.config["optim"]["optimizer"]["optimizer_type"])(
+          list(param_buffers[i][0].values()) + list(param_buffers[i][1].values()),
+          lr = self.config["optim"]["lr"],
+          **self.config["optim"]["optimizer"].get("optimizer_args", {}),
+        ) for i in range(model_splits)]
 
-          del out_lists, vloss, train_loss_total
-      del params, buffers
-               
-    except RuntimeError as e:
-      # TODO: re-implement error processing checking the model as this uses it
-      raise e
-    
+        schedulers = [LRScheduler(optimizers[i], 
+          self.config["optim"]["scheduler"]["scheduler_type"], 
+          self.config["optim"]["scheduler"]["scheduler_args"]) for i in range(
+            model_splits)]
+        
+      
+        for _ in range(self.config["optim"]["max_epochs"]):
+          # Based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/trainers/property_trainer.py
+          # Start training over epochs loop
+          self.base_model.train()
+
+          j_so_far = 0
+          for i in range(model_splits):
+            out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
+              param_buffers[i][0], param_buffers[i][1], trainval_batch)
+            
+            train_loss_total = torch.tensor([0.0], device = self.device)
+            for j in range(out_lists.size()[0]):
+              train_loss_total += self.loss_fn(out_lists[j, 
+                train_inds[j_so_far + j], :], 
+                trainval_targets[train_inds[j_so_far + j], :])
+            j_so_far += out_lists.size()[0]
+
+            optimizers[i].zero_grad(set_to_none=True)
+            train_loss_total.backward()
+            if clip_grad_norm:
+              torch.nn.utils.clip_grad_norm_(
+                list(param_buffers[i][0].values()) + list(
+                  param_buffers[i][1].values()),
+                max_norm = clip_grad_norm,
+              )
+            optimizers[i].step()
+
+            del out_lists
+
+          if str(self.device) not in ("cpu", "cuda"):
+            dist.barrier()
+          self.base_model.eval()
+
+          with torch.no_grad():
+            j_so_far = 0
+            for i in range(model_splits):
+              out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
+                param_buffers[i][0], param_buffers[i][1], trainval_batch)
+              if schedulers[i].scheduler_type == "ReduceLROnPlateau":
+                schedulers[i].step(metrics = train_loss_total)
+              else:
+                schedulers[i].step()
+              
+              for j in range(out_lists.size()[0]): # update prediction model if beats val losses
+                vloss = self.loss_fn(out_lists[j, val_inds[j_so_far + j], :], 
+                  trainval_targets[val_inds[j_so_far + j], :]).item()
+                if vloss < best_vals[j_so_far + j]:
+                  best_vals[j_so_far + j] = vloss
+                  for key in param_buffers[i][0].keys():
+                    self.param_buffers[i][0][key][j] = param_buffers[i][0][key][j]
+                  for key in param_buffers[i][1].keys():
+                    self.param_buffers[i][1][key][j] = param_buffers[i][1][key][j]
+              j_so_far += out_lists.size()[0]
+
+              del out_lists, vloss, train_loss_total
+        del param_buffers
+        trained = True
+
+      except torch.cuda.OutOfMemoryError: # TODO: re-implement error processing checking the model as this uses it
+        self.param_buffers = split_param_buffers(self.param_buffers)
+      
     del kfolds_tensors, train_inds, val_inds, best_vals
 
     torch.cuda.empty_cache()
