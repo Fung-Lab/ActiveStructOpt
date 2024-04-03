@@ -2,7 +2,6 @@ from matdeeplearn.trainers.base_trainer import BaseTrainer
 from matdeeplearn.modules.scheduler import LRScheduler
 from activestructopt.gnn.dataloader import prepare_data
 import numpy as np
-import time
 import torch
 from torch.func import stack_module_state, functional_call, vmap
 import torch.optim as optim
@@ -11,8 +10,6 @@ from torch import distributed as dist
 import copy
 import os
 from torch_geometric.loader import DataLoader
-from scipy.stats import norm
-from scipy.optimize import minimize
 
 def split_param_buffers(param_buffers):
   new_param_buffers = []
