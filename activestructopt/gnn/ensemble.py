@@ -51,6 +51,10 @@ def recombine_param_buffers(param_buffers):
     for j in range(len(bkeys)):
       buffers[bkeys[j]] = torch.cat(buffers[bkeys[j]], 
         param_buffers[i][1][bkeys[j]])
+  for j in range(len(pkeys)):
+    params[pkeys[j]] = params[pkeys[j]].detach()
+  for j in range(len(bkeys)):
+    params[bkeys[j]] = params[bkeys[j]].detach()
   return [(params, buffers)]
 
 class Ensemble:
