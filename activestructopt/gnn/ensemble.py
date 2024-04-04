@@ -52,9 +52,10 @@ def recombine_param_buffers(param_buffers):
       buffers[bkeys[j]] = torch.cat(buffers[bkeys[j]], 
         param_buffers[i][1][bkeys[j]])
   for j in range(len(pkeys)):
-    params[pkeys[j]] = params[pkeys[j]].detach()
+    # https://stackoverflow.com/questions/75875801/why-is-tensor-not-a-leaf-tensor
+    params[pkeys[j]] = params[pkeys[j]].detach().clone().requires_grad_()
   for j in range(len(bkeys)):
-    params[bkeys[j]] = params[bkeys[j]].detach()
+    params[bkeys[j]] = params[bkeys[j]].detach().clone().requires_grad_()
   return [(params, buffers)]
 
 class Ensemble:
@@ -85,13 +86,6 @@ class Ensemble:
   
   def train(self, kfolds, trainval, trainval_targets):
     trained = False
-
-    pkeys = list(self.param_buffers[0][0].keys())
-    bkeys = list(self.param_buffers[0][1].keys())
-    for i in range(len(pkeys)):
-      self.param_buffers[0][0][pkeys[i]].requires_grad_()
-    for i in range(len(bkeys)):
-      self.param_buffers[0][1][bkeys[i]].requires_grad_()
 
     def fmodel(params, buffers, x):
       return functional_call(self.base_model, (params, buffers), 
