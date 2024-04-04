@@ -114,8 +114,9 @@ class Ensemble:
 
           j_so_far = 0
           for i in range(model_splits):
-            out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
-              param_buffers[i][0], param_buffers[i][1], trainval_batch)
+            out_lists = vmap(fmodel, in_dims = (0, 0, None), 
+              randomness = 'different')(param_buffers[i][0], 
+              param_buffers[i][1], trainval_batch)
             
             train_loss_total = torch.tensor([0.0], device = self.device)
             for j in range(out_lists.size()[0]):
@@ -143,8 +144,9 @@ class Ensemble:
           with torch.no_grad():
             j_so_far = 0
             for i in range(model_splits):
-              out_lists = vmap(fmodel, in_dims = (0, 0, None), randomness = 'same')(
-                param_buffers[i][0], param_buffers[i][1], trainval_batch)
+              out_lists = vmap(fmodel, in_dims = (0, 0, None), 
+                randomness = 'different')(param_buffers[i][0], 
+                param_buffers[i][1], trainval_batch)
               if schedulers[i].scheduler_type == "ReduceLROnPlateau":
                 schedulers[i].step(metrics = train_loss_total)
               else:
