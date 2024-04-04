@@ -46,11 +46,11 @@ def recombine_param_buffers(param_buffers):
   bkeys = list(buffers.keys())
   for i in range(1, len(param_buffers)):
     for j in range(len(pkeys)):
-      params[pkeys[j]] = torch.cat(params[pkeys[j]], 
-        param_buffers[i][0][pkeys[j]])
+      params[pkeys[j]] = torch.cat((params[pkeys[j]], 
+        param_buffers[i][0][pkeys[j]]))
     for j in range(len(bkeys)):
-      buffers[bkeys[j]] = torch.cat(buffers[bkeys[j]], 
-        param_buffers[i][1][bkeys[j]])
+      buffers[bkeys[j]] = torch.cat((buffers[bkeys[j]], 
+        param_buffers[i][1][bkeys[j]]))
   for j in range(len(pkeys)):
     # https://stackoverflow.com/questions/75875801/why-is-tensor-not-a-leaf-tensor
     params[pkeys[j]] = params[pkeys[j]].detach().clone().requires_grad_()
