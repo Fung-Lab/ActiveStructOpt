@@ -152,8 +152,12 @@ class Ensemble:
                 max_norm = clip_grad_norm,
               )
             optimizers[i].step()
+            if schedulers[i].scheduler_type == "ReduceLROnPlateau":
+              schedulers[i].step(metrics = train_loss_total)
+            else:
+              schedulers[i].step()
 
-            del out_lists
+            del out_lists, train_loss_total
 
           if str(self.device) not in ("cpu", "cuda"):
             dist.barrier()
@@ -165,10 +169,6 @@ class Ensemble:
               out_lists = vmap(fmodel, in_dims = (0, 0, None), 
                 randomness = 'different')(param_buffers[i][0], 
                 param_buffers[i][1], trainval_batch)
-              if schedulers[i].scheduler_type == "ReduceLROnPlateau":
-                schedulers[i].step(metrics = train_loss_total)
-              else:
-                schedulers[i].step()
               
               for j in range(out_lists.size()[0]): # update prediction model if beats val losses
                 vloss = self.loss_fn(out_lists[j, val_inds[j_so_far + j], :], 
@@ -176,12 +176,12 @@ class Ensemble:
                 if vloss < best_vals[j_so_far + j]:
                   best_vals[j_so_far + j] = vloss
                   for key in param_buffers[i][0].keys():
-                    self.param_buffers[i][0][key][j] = param_buffers[i][0][key][j].detach().clone().requires_grad_()
+                    self.param_buffers[i][0][key][j] = param_buffers[i][0][key][j]
                   for key in param_buffers[i][1].keys():
-                    self.param_buffers[i][1][key][j] = param_buffers[i][1][key][j].detach().clone().requires_grad_()
+                    self.param_buffers[i][1][key][j] = param_buffers[i][1][key][j]
               j_so_far += out_lists.size()[0]
 
-              del out_lists, vloss, train_loss_total
+              del out_lists, vloss
         del param_buffers
         trained = True
 
