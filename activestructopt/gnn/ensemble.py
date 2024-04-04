@@ -186,6 +186,7 @@ class Ensemble:
         trained = True
 
       except torch.cuda.OutOfMemoryError: # TODO: re-implement error processing checking the model as this uses it
+        torch.cuda.empty_cache()
         self.param_buffers = split_param_buffers(self.param_buffers)
 
     self.param_buffers = recombine_param_buffers(self.param_buffers)
