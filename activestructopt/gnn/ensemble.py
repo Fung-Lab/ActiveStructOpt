@@ -27,12 +27,12 @@ def split_param_buffers(param_buffers):
       b_split_2 = {}
       for j in range(len(pkeys)):
         split_tensor = torch.split(p[pkeys[j]], chunk_size)
-        p_split_1[pkeys[j]] = split_tensor[0]
-        p_split_2[pkeys[j]] = split_tensor[1]
+        p_split_1[pkeys[j]] = split_tensor[0].detach().clone().requires_grad_()
+        p_split_2[pkeys[j]] = split_tensor[1].detach().clone().requires_grad_()
       for j in range(len(bkeys)):
         split_tensor = torch.split(b[bkeys[j]], chunk_size)
-        b_split_1[bkeys[j]] = split_tensor[0]
-        b_split_2[bkeys[j]] = split_tensor[1]
+        b_split_1[bkeys[j]] = split_tensor[0].detach().clone().requires_grad_()
+        b_split_2[bkeys[j]] = split_tensor[1].detach().clone().requires_grad_()
       new_param_buffers.append((p_split_1, b_split_1))
       new_param_buffers.append((p_split_2, b_split_2))
     else:
