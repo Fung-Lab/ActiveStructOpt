@@ -40,6 +40,19 @@ def split_param_buffers(param_buffers):
   assert can_split, "Out of memory with only one model in vmap dimension"
   return new_param_buffers
 
+def recombine_param_buffers(param_buffers):
+  params, buffers = param_buffers[0]
+  pkeys = list(params.keys())
+  bkeys = list(buffers.keys())
+  for i in range(1, len(param_buffers)):
+    for j in range(len(pkeys)):
+      params[pkeys[j]] = torch.cat(params[pkeys[j]], 
+        param_buffers[i][0][pkeys[j]])
+    for j in range(len(bkeys)):
+      buffers[bkeys[j]] = torch.cat(buffers[bkeys[j]], 
+        param_buffers[i][1][bkeys[j]])
+  return [(params, buffers)]
+
 class Ensemble:
   def __init__(self, k, config):
     self.k = k
@@ -169,6 +182,8 @@ class Ensemble:
 
       except torch.cuda.OutOfMemoryError: # TODO: re-implement error processing checking the model as this uses it
         self.param_buffers = split_param_buffers(self.param_buffers)
+
+    self.param_buffers = recombine_param_buffers(self.param_buffers)
       
     del kfolds_tensors, train_inds, val_inds, best_vals
 
@@ -176,14 +191,13 @@ class Ensemble:
 
 
   def predict(self, structure, prepared = False):
+    params, buffers = self.param_buffers[0]
     def fmodel(params, buffers, x):
       return functional_call(self.base_model, (params, buffers), (x,))['output']
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
-    prediction = vmap(fmodel, in_dims = (0, 0, None), 
-      chunk_size = 1)(
-      self.params, self.buffers, next(iter(DataLoader(data, 
-      batch_size = len(data)))))
+    prediction = vmap(fmodel, in_dims = (0, 0, None), chunk_size = 1)(
+      params, buffers, next(iter(DataLoader(data, batch_size = len(data)))))
 
     mean = torch.mean(prediction, dim = 0)
     # last term to remove Bessel correction and match numpy behavior
