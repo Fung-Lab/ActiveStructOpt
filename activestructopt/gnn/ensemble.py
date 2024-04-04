@@ -86,6 +86,13 @@ class Ensemble:
   def train(self, kfolds, trainval, trainval_targets):
     trained = False
 
+    pkeys = list(self.param_buffers[0][0].keys())
+    bkeys = list(self.param_buffers[0][1].keys())
+    for i in range(len(pkeys)):
+      self.param_buffers[0][0][pkeys[i]].requires_grad_()
+    for i in range(len(bkeys)):
+      self.param_buffers[0][1][bkeys[i]].requires_grad_()
+
     def fmodel(params, buffers, x):
       return functional_call(self.base_model, (params, buffers), 
         (x,))['output']
