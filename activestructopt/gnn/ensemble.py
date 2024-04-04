@@ -176,9 +176,9 @@ class Ensemble:
                 if vloss < best_vals[j_so_far + j]:
                   best_vals[j_so_far + j] = vloss
                   for key in param_buffers[i][0].keys():
-                    self.param_buffers[i][0][key][j] = param_buffers[i][0][key][j]
+                    self.param_buffers[i][0][key][j] = param_buffers[i][0][key][j].detach().clone().requires_grad_()
                   for key in param_buffers[i][1].keys():
-                    self.param_buffers[i][1][key][j] = param_buffers[i][1][key][j]
+                    self.param_buffers[i][1][key][j] = param_buffers[i][1][key][j].detach().clone().requires_grad_()
               j_so_far += out_lists.size()[0]
 
               del out_lists, vloss, train_loss_total
