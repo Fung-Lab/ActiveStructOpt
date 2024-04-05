@@ -47,10 +47,11 @@ def active_learning(
   if print_mses:
     print(mses)
   active_steps = max_forward_calls - N
-  ensemble = Ensemble(k, config)
+  
   for i in range(active_steps):
     starting_structures = [structures[i].copy() for i in np.random.randint(
       0, len(mses) - 1, 10)]
+    ensemble = Ensemble(k, config)
     ensemble.train(kfolds, trainval, trainval_targets)
     ensemble.set_scalar_calibration(test, test_targets)
     new_structure = basinhop(ensemble, starting_structures, target, 
