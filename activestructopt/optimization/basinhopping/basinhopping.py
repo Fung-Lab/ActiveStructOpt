@@ -30,12 +30,11 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
         ucbs = torch.zeros(nstarts)
         ucb_total = torch.tensor([0.0], device = device)
         for j in range(nstarts):
-          yhat = torch.mean((predictions[1][j] ** 2) + (
-            (target - predictions[0][j]) ** 2))
-          s = torch.sqrt(2 * torch.sum((predictions[1][j] ** 4) + 2 * (
+          ucb = (torch.mean((predictions[1][j] ** 2) + (
+            (target - predictions[0][j]) ** 2)) if λ == 0.0 else -torch.sqrt(
+            2 * torch.sum((predictions[1][j] ** 4) + 2 * (
             predictions[1][j] ** 2) * ((target - predictions[0][j]) ** 2))) / (
-            len(target))
-          ucb = yhat - λ * s + lj_repulsion(data[j], ljrmins)
+            len(target))) + lj_repulsion(data[j], ljrmins)
           ucb_total = ucb_total + ucb
           ucbs[j] = ucb.detach()
         ucb_total.backward()
