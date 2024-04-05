@@ -48,9 +48,9 @@ def split_param_buffers(param_buffers):
   # Require gradients again
   for i in range(len(new_param_buffers)):
     for j in range(len(pkeys)):
-      new_param_buffers[i][0][pkeys[j]]._requires_grad_()
+      new_param_buffers[i][0][pkeys[j]].requires_grad_()
     for j in range(len(bkeys)):
-      new_param_buffers[i][1][bkeys[j]]._requires_grad_()
+      new_param_buffers[i][1][bkeys[j]].requires_grad_()
 
   assert can_split, "Out of memory with only one model in vmap dimension"
   return new_param_buffers
