@@ -31,10 +31,10 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
         ucb_total = torch.tensor([0.0], device = device)
         for j in range(nstarts):
           ucb = (torch.mean((predictions[1][j] ** 2) + (
-            (target - predictions[0][j]) ** 2)) if λ == 0.0 else -torch.sqrt(
+            (target - predictions[0][j]) ** 2)) if λ == 0.0 else -(torch.sqrt(
             2 * torch.sum((predictions[1][j] ** 4) + 2 * (
             predictions[1][j] ** 2) * ((target - predictions[0][j]) ** 2))) / (
-            len(target))) + lj_repulsion(data[j], ljrmins)
+            len(target)))) + lj_repulsion(data[j], ljrmins)
           ucb_total = ucb_total + ucb
           ucbs[j] = ucb.detach()
         ucb_total.backward()
@@ -46,15 +46,14 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
       ucbs = torch.zeros(nstarts)
       for j in range(nstarts):
         predictions = ensemble.predict([data[j]], prepared = True)
-        yhat = torch.mean((predictions[1][0] ** 2) + (
-          (target - predictions[0][0]) ** 2))
-        s = torch.sqrt(2 * torch.sum((predictions[1][0] ** 4) + 2 * (
+        ucb = ((torch.mean((predictions[1][0] ** 2) + (
+          (target - predictions[0][0]) ** 2))) if λ == 0.0 else -(torch.sqrt(
+          2 * torch.sum((predictions[1][0] ** 4) + 2 * (
           predictions[1][0] ** 2) * ((target - predictions[0][0]) ** 2))) / (
-          len(target))
-        ucb = yhat - λ * s + lj_repulsion(data[j], ljrmins)
+          len(target)))) + lj_repulsion(data[j], ljrmins)
         ucbs[j] = ucb.detach()
         ucb.backward()
-        del predictions, yhat, s, ucb
+        del predictions, ucb#, yhat, s
     
     if i != niters - 1:
       optimizer.step()
