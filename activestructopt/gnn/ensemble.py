@@ -14,29 +14,44 @@ from torch_geometric.loader import DataLoader
 def split_param_buffers(param_buffers):
   new_param_buffers = []
   can_split = False
+
+  pkeys = list(param_buffers[0][0].keys())
+  bkeys = list(param_buffers[0][1].keys())
+
+  # Detach from computational graph and then clear cache to free up memory
+  for i in range(len(param_buffers)):
+    for j in range(len(pkeys)):
+      param_buffers[i][0][pkeys[j]] = param_buffers[i][0][pkeys[j]].detach()
+    for j in range(len(bkeys)):
+      param_buffers[i][1][bkeys[j]] = param_buffers[i][1][bkeys[j]].detach()
+  torch.cuda.empty_cache()
+  
   for i in range(len(param_buffers)):
     p, b = param_buffers[i]
-    pkeys = list(p.keys())
-    bkeys = list(b.keys())
     if p[pkeys[0]].size()[0] > 1:
       chunk_size = int(np.ceil(p[pkeys[0]].size()[0] / 2))
       can_split = True
-      p_split_1 = {}
-      p_split_2 = {}
-      b_split_1 = {}
-      b_split_2 = {}
+      p_split_1, p_split_2, b_split_1, b_split_2 = {}, {}, {}, {}
       for j in range(len(pkeys)):
         split_tensor = torch.split(p[pkeys[j]], chunk_size)
-        p_split_1[pkeys[j]] = split_tensor[0].detach().clone().requires_grad_()
-        p_split_2[pkeys[j]] = split_tensor[1].detach().clone().requires_grad_()
+        p_split_1[pkeys[j]] = split_tensor[0]
+        p_split_2[pkeys[j]] = split_tensor[1]
       for j in range(len(bkeys)):
         split_tensor = torch.split(b[bkeys[j]], chunk_size)
-        b_split_1[bkeys[j]] = split_tensor[0].detach().clone().requires_grad_()
-        b_split_2[bkeys[j]] = split_tensor[1].detach().clone().requires_grad_()
+        b_split_1[bkeys[j]] = split_tensor[0]
+        b_split_2[bkeys[j]] = split_tensor[1]
       new_param_buffers.append((p_split_1, b_split_1))
       new_param_buffers.append((p_split_2, b_split_2))
     else:
       new_param_buffers.append(param_buffers[i])
+
+  # Require gradients again
+  for i in range(len(new_param_buffers)):
+    for j in range(len(pkeys)):
+      new_param_buffers[i][0][pkeys[j]]._requires_grad_()
+    for j in range(len(bkeys)):
+      new_param_buffers[i][1][bkeys[j]]._requires_grad_()
+
   assert can_split, "Out of memory with only one model in vmap dimension"
   return new_param_buffers
 
@@ -176,9 +191,9 @@ class Ensemble:
                 if vloss < best_vals[j_so_far + j]:
                   best_vals[j_so_far + j] = vloss
                   for key in param_buffers[i][0].keys():
-                    self.param_buffers[i][0][key][j] = param_buffers[i][0][key][j]
+                    self.param_buffers[i][0][key][j] = param_buffers[i][0][key][j].detach().clone().requires_grad_()
                   for key in param_buffers[i][1].keys():
-                    self.param_buffers[i][1][key][j] = param_buffers[i][1][key][j]
+                    self.param_buffers[i][1][key][j] = param_buffers[i][1][key][j].detach().clone().requires_grad_()
               j_so_far += out_lists.size()[0]
 
               del out_lists, vloss
@@ -186,7 +201,6 @@ class Ensemble:
         trained = True
 
       except torch.cuda.OutOfMemoryError: # TODO: re-implement error processing checking the model as this uses it
-        torch.cuda.empty_cache()
         self.param_buffers = split_param_buffers(self.param_buffers)
 
     self.param_buffers = recombine_param_buffers(self.param_buffers)
