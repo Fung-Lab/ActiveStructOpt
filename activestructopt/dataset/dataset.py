@@ -2,18 +2,38 @@ from activestructopt.gnn.dataloader import prepare_data
 from activestructopt.optimization.shared.constraints import lj_reject
 import numpy as np
 
+def get_perturbed_structure(initial_structure, 
+                            perturbrmin = 0.1, perturbrmax = 1.0, 
+                            perturblmax = 0.2, perturbθmax = 10,):
+  rejected = True
+  while rejected:
+    new_structure = initial_structure.copy()
+    new_structure.perturb(np.random.uniform(perturbrmin, perturbrmax))
+    new_structure.lattice = new_structure.lattice.from_parameters(
+      max(0.0, new_structure.lattice.a + np.random.uniform(
+        -perturblmax, perturblmax)),
+      max(0.0, new_structure.lattice.b + np.random.uniform(
+        -perturblmax, perturblmax)),
+      max(0.0, new_structure.lattice.c + np.random.uniform(
+        -perturblmax, perturblmax)), 
+      min(180.0, max(0.0, new_structure.lattice.alpha + np.random.uniform(
+        -perturbθmax, perturbθmax))), 
+      min(180.0, max(0.0, new_structure.lattice.beta + np.random.uniform(
+        -perturbθmax, perturbθmax))), 
+      min(180.0, max(0.0, new_structure.lattice.gamma + np.random.uniform(
+        -perturbθmax, perturbθmax)))
+    )
+    rejected = lj_reject(new_structure)
+  return new_structure
+
 def make_data_splits(initial_structure, optfunc, args, config, 
                       perturbrmin = 0.1, perturbrmax = 1.0, 
+                      perturblmax = 0.2, perturbθmax = 10,
                       N = 100, split = 0.85, k = 5, device = 'cuda', seed = 0):
   np.random.seed(seed)
-  structures = [initial_structure.copy() for _ in range(N)]
-  for i in range(1, N):
-    rejected = True
-    while rejected:
-      new_structure = initial_structure.copy()
-      new_structure.perturb(np.random.uniform(perturbrmin, perturbrmax))
-      rejected = lj_reject(new_structure)
-    structures[i] = new_structure.copy()
+  structures = [get_perturbed_structure(initial_structure, 
+    perturbrmin = perturbrmin, perturbrmax = perturbrmax, 
+    perturblmax = perturblmax, perturbθmax = perturbθmax) for _ in range(N)]
   ys = [optfunc(structures[i], **(args)) for i in range(N)]
   data = [prepare_data(structures[i], config, y = ys[i]).to(device) for i in range(N)]
       

@@ -1,6 +1,6 @@
 from activestructopt.optimization.basinhopping.basinhopping import basinhop
 from activestructopt.gnn.ensemble import Ensemble
-from activestructopt.dataset.dataset import make_data_splits, update_datasets
+from activestructopt.dataset.dataset import make_data_splits, update_datasets, get_perturbed_structure
 from activestructopt.optimization.shared.constraints import lj_reject
 import numpy as np
 import gc
@@ -19,6 +19,8 @@ def active_learning(
     k = 5, 
     perturbrmin = 0.0, 
     perturbrmax = 1.0, 
+    perturblmax = 0.2, 
+    perturbθmax = 10,
     split = 1/3, 
     device = 'cuda',
     bh_starts = 128,
@@ -59,12 +61,9 @@ def active_learning(
       starting_structures[j] = structures[j].copy()
     if len(structures) < bh_starts:
       for j in range(len(structures), bh_starts):
-        rejected = True
-        while rejected:
-          new_structure = initial_structure.copy()
-          new_structure.perturb(np.random.uniform(perturbrmin, perturbrmax))
-          rejected = lj_reject(new_structure)
-        starting_structures[j] = new_structure.copy()
+        starting_structures[j] = get_perturbed_structure(initial_structure, 
+          perturbrmin = perturbrmin, perturbrmax = perturbrmax, 
+          perturblmax = perturblmax, perturbθmax = perturbθmax)
 
     ensemble.train(datasets, iterations = config['optim'][
       'max_epochs'] if i == 0 else finetune_epochs, lr = lr1 if i == 0 else lr2)
