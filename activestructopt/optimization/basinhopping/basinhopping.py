@@ -46,7 +46,8 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
             s = torch.sqrt(2 * torch.sum((predictions[1][j] ** 4) + 2 * (
               predictions[1][j] ** 2) * ((
               target - predictions[0][j]) ** 2))) / (len(target))
-            ucb = yhat - λ * s + lj_repulsion(data[starti + j], ljrmins)
+            ucb = torch.maximum(yhat - λ * s, torch.tensor(0.)) + lj_repulsion(
+              data[starti + j], ljrmins)
             ucb_total = ucb_total + ucb
             ucbs[j] = ucb.detach()
           ucb_total.backward()
@@ -54,7 +55,7 @@ def run_adam(ensemble, target, starting_structures, config, ljrmins,
             best_ucb = torch.min(ucbs).detach()
             best_x = data[starti + torch.argmin(ucbs).item()].pos.detach(
               ).flatten()
-            best_cell = data[torch.argmin(ucbs).item()].cell[0].detach()
+            best_cell = data[starti + torch.argmin(ucbs).item()].cell[0].detach()
           del predictions, ucb, yhat, s, ucbs, ucb_total
         predicted = True
       except torch.cuda.OutOfMemoryError:
