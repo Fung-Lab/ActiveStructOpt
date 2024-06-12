@@ -125,6 +125,7 @@ class Torch(BaseOptimizer):
               del predictions, objs, obj_total
             if i != iters_per_start - 1:
               pos_optimizer.step()
+          predicted = True
         except torch.cuda.OutOfMemoryError:
           split -= 1
           assert split >= 0, "Out of memory with only one structure"
