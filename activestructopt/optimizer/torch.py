@@ -26,7 +26,7 @@ class Torch(BaseOptimizer):
       ) if j < dataset.N else sampler.sample(
       ) for j in range(starts)]
 
-    obj_values = torch.zeros((iters_per_start, starts), device = 'cpu'
+    obj_values = torch.zeros((2 * iters_per_start, starts), device = 'cpu'
       ) if save_obj_values else None
     
     device = model.device
@@ -63,6 +63,7 @@ class Torch(BaseOptimizer):
             cell_optimizer.zero_grad(set_to_none=True)
             for j in range(nstarts):
               data[j].cell.requires_grad_()
+              data[j].pos.requires_grad_(False)
               reprocess_data(data[j], dataset.config, device, nodes = False)
             for k in range(2 ** (orig_split - split)):
               starti = k * (2 ** split)
@@ -77,95 +78,56 @@ class Torch(BaseOptimizer):
                 obj_total += lj_repulsion(data[starti + j], ljrmins)
                 objs[j] = objs[j].detach()
                 if save_obj_values:
-                  obj_values[i, starti + j] = objs[j].detach().cpu()
+                  obj_values[2 * i, starti + j] = objs[j].detach().cpu()
 
-              obj_total.backward()
               if (torch.min(objs) < best_obj).item():
                 best_obj = torch.min(objs).detach()
+                if optimize_atoms:
+                  best_x = data[starti + torch.argmin(objs).item()].pos.detach(
+                    ).flatten()
                 best_cell = data[starti + torch.argmin(objs).item(
-                    )].cell[0].detach()
-                new_cell = best_cell.detach().cpu().numpy()
+                  )].cell[0].detach()
+              if i != iters_per_start - 1 and not optimize_atoms:
+                obj_total.backward()
               del predictions, objs, obj_total
+            if i != iters_per_start - 1 and not optimize_atoms:
+              cell_optimizer.step()
 
-            new_structure = starting_structures[0].copy()
-              
-
-
-          optimizer.zero_grad(set_to_none=True)
-          for j in range(nstarts):
-            if optimize_atoms:
+          if optimize_atoms:
+            pos_optimizer.zero_grad(set_to_none=True)
+            for j in range(nstarts):
+              data[j].cell.requires_grad_(False)
               data[j].pos.requires_grad_()
-            if optimize_lattice:
-              
-            reprocess_data(data[j], dataset.config, device, nodes = False)
+            for k in range(2 ** (orig_split - split)):
+              starti = k * (2 ** split)
+              stopi = min((k + 1) * (2 ** split) - 1, nstarts - 1)
+              predictions = model.predict(data[starti:(stopi+1)], 
+                prepared = True, mask = dataset.simfunc.mask)
 
-          for k in range(2 ** (orig_split - split)):
-            starti = k * (2 ** split)
-            stopi = min((k + 1) * (2 ** split) - 1, nstarts - 1)
-            predictions = model.predict(data[starti:(stopi+1)], 
-              prepared = True, mask = dataset.simfunc.mask)
+              objs, obj_total = objective.get(predictions, target, 
+                device = device, N = stopi - starti + 1)
+              for j in range(stopi - starti + 1):
+                objs[j] += lj_repulsion(data[starti + j], ljrmins)
+                obj_total += lj_repulsion(data[starti + j], ljrmins)
+                objs[j] = objs[j].detach()
+                if save_obj_values:
+                  obj_values[2 * i + 1, starti + j] = objs[j].detach().cpu()
 
-            objs, obj_total = objective.get(predictions, target, 
-              device = device, N = stopi - starti + 1)
-            for j in range(stopi - starti + 1):
-              objs[j] += lj_repulsion(data[starti + j], ljrmins)
-              obj_total += lj_repulsion(data[starti + j], ljrmins)
-              objs[j] = objs[j].detach()
-              if save_obj_values:
-                obj_values[i, starti + j] = objs[j].detach().cpu()
-
-            obj_total.backward()
-            if (torch.min(objs) < best_obj).item():
-              best_obj = torch.min(objs).detach()
-              if optimize_atoms:
+              if (torch.min(objs) < best_obj).item():
+                best_obj = torch.min(objs).detach()
                 best_x = data[starti + torch.argmin(objs).item()].pos.detach(
                   ).flatten()
-              if optimize_lattice:
-                best_cell = data[starti + torch.argmin(objs).item(
-                  )].cell[0].detach()
-            del predictions, objs, obj_total
-          
-          optimizer.zero_grad(set_to_none=True)
-          for j in range(nstarts):
-            if optimize_atoms:
-              data[j].pos.requires_grad_()
-            if optimize_lattice:
-              data[j].cell.requires_grad_()
-            reprocess_data(data[j], dataset.config, device, nodes = False)
-
-          for k in range(2 ** (orig_split - split)):
-            starti = k * (2 ** split)
-            stopi = min((k + 1) * (2 ** split) - 1, nstarts - 1)
-            predictions = model.predict(data[starti:(stopi+1)], 
-              prepared = True, mask = dataset.simfunc.mask)
-
-            objs, obj_total = objective.get(predictions, target, 
-              device = device, N = stopi - starti + 1)
-            for j in range(stopi - starti + 1):
-              objs[j] += lj_repulsion(data[starti + j], ljrmins)
-              obj_total += lj_repulsion(data[starti + j], ljrmins)
-              objs[j] = objs[j].detach()
-              if save_obj_values:
-                obj_values[i, starti + j] = objs[j].detach().cpu()
-
-            obj_total.backward()
-            if (torch.min(objs) < best_obj).item():
-              best_obj = torch.min(objs).detach()
-              if optimize_atoms:
-                best_x = data[starti + torch.argmin(objs).item()].pos.detach(
-                  ).flatten()
-              if optimize_lattice:
-                best_cell = data[starti + torch.argmin(objs).item(
-                  )].cell[0].detach()
-            del predictions, objs, obj_total
-
-          predicted = True
+                if optimize_lattice:
+                  best_cell = data[starti + torch.argmin(objs).item(
+                    )].cell[0].detach()
+              if i != iters_per_start - 1:
+                obj_total.backward()
+              del predictions, objs, obj_total
+            if i != iters_per_start - 1:
+              pos_optimizer.step()
         except torch.cuda.OutOfMemoryError:
           split -= 1
           assert split >= 0, "Out of memory with only one structure"
-      
-      if i != iters_per_start - 1:
-        optimizer.step()
 
     if optimize_atoms:
       new_x = best_x.detach().cpu().numpy()
