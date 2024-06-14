@@ -60,14 +60,19 @@ class Torch(BaseOptimizer):
       while not predicted:
         try:
           if optimize_lattice:
-            cell_optimizer.zero_grad(set_to_none=True)
-            for j in range(nstarts):
-              data[j].cell.requires_grad_()
-              data[j].pos.requires_grad_(False)
-              reprocess_data(data[j], dataset.config, device, nodes = False)
             for k in range(2 ** (orig_split - split)):
               starti = k * (2 ** split)
               stopi = min((k + 1) * (2 ** split) - 1, nstarts - 1)
+
+              cell_optimizer.zero_grad()
+              for j in range(nstarts):
+                data[j].cell.requires_grad_(False)
+                data[j].pos.requires_grad_(False)
+              for j in range(stopi - starti + 1):
+                data[starti + j].cell.requires_grad_()
+                reprocess_data(data[starti + j], dataset.config, device, 
+                  nodes = False)
+
               predictions = model.predict(data[starti:(stopi+1)], 
                 prepared = True, mask = dataset.simfunc.mask)
 
@@ -87,20 +92,26 @@ class Torch(BaseOptimizer):
                     ).flatten()
                 best_cell = data[starti + torch.argmin(objs).item(
                   )].cell[0].detach()
+
               if i != iters_per_start - 1 and not optimize_atoms:
                 obj_total.backward()
-              del predictions, objs, obj_total
-            if i != iters_per_start - 1 and not optimize_atoms:
-              cell_optimizer.step()
+                cell_optimizer.step()
+              del predictions, objs, obj_total              
 
           if optimize_atoms:
-            pos_optimizer.zero_grad(set_to_none=True)
-            for j in range(nstarts):
-              data[j].cell.requires_grad_(False)
-              data[j].pos.requires_grad_()
             for k in range(2 ** (orig_split - split)):
               starti = k * (2 ** split)
               stopi = min((k + 1) * (2 ** split) - 1, nstarts - 1)
+
+              pos_optimizer.zero_grad()
+              for j in range(nstarts):
+                data[j].cell.requires_grad_(False)
+                data[j].pos.requires_grad_(False)
+              for j in range(stopi - starti + 1):
+                data[starti + j].pos.requires_grad_()
+                reprocess_data(data[starti + j], dataset.config, device, 
+                  nodes = False)
+
               predictions = model.predict(data[starti:(stopi+1)], 
                 prepared = True, mask = dataset.simfunc.mask)
 
@@ -120,11 +131,11 @@ class Torch(BaseOptimizer):
                 if optimize_lattice:
                   best_cell = data[starti + torch.argmin(objs).item(
                     )].cell[0].detach()
+              
               if i != iters_per_start - 1:
                 obj_total.backward()
+                pos_optimizer.step()
               del predictions, objs, obj_total
-            if i != iters_per_start - 1:
-              pos_optimizer.step()
           predicted = True
         except torch.cuda.OutOfMemoryError:
           split -= 1
