@@ -82,8 +82,8 @@ class Torch(BaseOptimizer):
             objs, obj_total = objective.get(predictions, target, 
               device = device, N = stopi - starti + 1)
             for j in range(stopi - starti + 1):
-              objs[j] += lj_repulsion(data[starti + j], ljrmins)
-              obj_total += lj_repulsion(data[starti + j], ljrmins)
+              #objs[j] += lj_repulsion(data[starti + j], ljrmins)
+              #obj_total += lj_repulsion(data[starti + j], ljrmins)
               objs[j] = objs[j].detach()
               if save_obj_values:
                 obj_values[i, starti + j] = objs[j].detach().cpu()
