@@ -91,7 +91,7 @@ class ActiveLearning():
           self.config['aso_params']['optimizer']['name'])
 
         new_structure, obj_values = optimizer_cls().run(self.model, 
-          self.dataset, objective, self.sampler, 
+          self.dataset, objective, self.sampler, opt_start = self.target_structure,
           **(self.config['aso_params']['optimizer']['args']))
         self.opt_obj_values.append(obj_values)
         

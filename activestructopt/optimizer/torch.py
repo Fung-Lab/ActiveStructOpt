@@ -20,11 +20,14 @@ class Torch(BaseOptimizer):
     objective: BaseObjective, sampler: BaseSampler, 
     nstarts = 128, iters_per_start = 100, lr = 0.01, optimizer = "Adam",
     optimizer_args = {}, optimize_atoms = True, 
-    optimize_lattice = False, save_obj_values = False, **kwargs) -> IStructure:
+    optimize_lattice = False, save_obj_values = False, opt_start = None, **kwargs) -> IStructure:
     
-    starting_structures = [dataset.structures[j].copy(
-      ) if j < dataset.N else sampler.sample(
-      ) for j in range(nstarts)]
+    if opt_start is None:
+      starting_structures = [dataset.structures[j].copy(
+        ) if j < dataset.N else sampler.sample(
+        ) for j in range(nstarts)]
+    else: 
+      starting_structures = [opt_start for _ in range(nstarts)]
 
     obj_values = torch.zeros((iters_per_start, nstarts), device = 'cpu'
       ) if save_obj_values else None
