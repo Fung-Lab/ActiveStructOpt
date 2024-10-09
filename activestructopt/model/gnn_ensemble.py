@@ -113,6 +113,8 @@ class GNNEnsemble(BaseModel):
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
 
+    print(self.base_model.gradient)
+
     data = next(iter(DataLoader(data, batch_size = len(data))))
     (
             edge_index,
