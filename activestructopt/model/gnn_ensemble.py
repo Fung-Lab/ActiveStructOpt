@@ -125,7 +125,7 @@ class GNNEnsemble(BaseModel):
           self.config['dataset']['preprocess_params']['cutoff_radius'], 
           self.config['dataset']['preprocess_params']['n_neighbors'])
     data.edge_index = edge_index
-    data.edge_weights = edge_weights
+    data.edge_weight = edge_weights
     data.edge_vec = edge_vec
     data.cell_offsets = cell_offsets
     data.offset_distance = offset_distance
