@@ -129,6 +129,7 @@ class GNNEnsemble(BaseModel):
           self.config['dataset']['preprocess_params']['n_neighbors'])
 
     print(data.pos.requires_grad)
+    print(data.displacement)
     
     data.edge_index = edge_index
     data.edge_weight = edge_weights
