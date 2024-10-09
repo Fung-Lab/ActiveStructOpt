@@ -127,6 +127,9 @@ class GNNEnsemble(BaseModel):
         ) = self.base_model.generate_graph(data, 
           self.config['dataset']['preprocess_params']['cutoff_radius'], 
           self.config['dataset']['preprocess_params']['n_neighbors'])
+
+    print(data.pos.requires_grad)
+    
     data.edge_index = edge_index
     data.edge_weight = edge_weights
     data.edge_vec = edge_vec
