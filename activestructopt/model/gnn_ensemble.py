@@ -104,6 +104,7 @@ class GNNEnsemble(BaseModel):
     def fmodel(params, buffers, x):
       fcall = functional_call(self.base_model, (params, buffers), (x,))
       print(fcall)
+      print(fcall['output'].requires_grad)
       print(fcall['output'].size())
       print(fcall['pos_grad'].size())
       print(fcall['cell_grad'].size())
