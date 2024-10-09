@@ -41,6 +41,7 @@ class GNNEnsemble(BaseModel):
       # Create new runner, with config and datasets
       new_runner = Runner()
       self.config['task']['seed'] = self.k * self.updates + i
+      self.config['model']['gradient'] = False
       new_runner(self.config, ConfigSetup('train'), 
                             dataset.datasets[i][0], dataset.datasets[i][1])
 
@@ -83,6 +84,9 @@ class GNNEnsemble(BaseModel):
       
       #self.ensemble[i].trainer.model[0] = compile(self.ensemble[i].trainer.model)
     
+    new_params = [self.ensemble[i].trainer.model[0].state_dict(
+      ) for i in range(self.k)]
+
     #https://pytorch.org/tutorials/intermediate/ensembling.html
     models = [self.ensemble[i].trainer.model[0] for i in range(self.k)]
     self.params, self.buffers = stack_module_state(models)
@@ -91,8 +95,7 @@ class GNNEnsemble(BaseModel):
     gnn_mae, _, _ = self.set_scalar_calibration(dataset)
     self.updates = self.updates + 1
     
-    return gnn_mae, metrics, [self.ensemble[i].trainer.model[0].state_dict(
-      ) for i in range(self.k)]
+    return gnn_mae, metrics, new_params
 
   def predict(self, structure, prepared = False, mask = None, **kwargs):
     def fmodel(params, buffers, x):
@@ -102,10 +105,33 @@ class GNNEnsemble(BaseModel):
       print(fcall['cell_grad'].size())
       assert False
       return functional_call(self.base_model, (params, buffers), (x,))['output']
+    
+    for i in range(self.k):
+      self.ensemble[i].trainer.model[0].gradient = True
+
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
+
+    data = next(iter(DataLoader(data, batch_size = len(data))))
+    (
+            edge_index,
+            edge_weights,
+            edge_vec,
+            cell_offsets,
+            offset_distance,
+            neighbors,
+        ) = self.base_model.generate_graph(data, 
+          self.config['dataset']['preprocess_params']['cutoff_radius'], 
+          self.config['dataset']['preprocess_params']['n_neighbors'])
+    data.edge_index = edge_index
+    data.edge_weights = edge_weights
+    data.edge_vec = edge_vec
+    data.cell_offsets = cell_offsets
+    data.offset_distance = offset_distance
+    data.neighbors = neighbors
+
     prediction = vmap(fmodel, in_dims = (0, 0, None))(
-      self.params, self.buffers, next(iter(DataLoader(data, batch_size = len(data)))))
+      self.params, self.buffers, data)
 
     prediction = torch.mean(torch.transpose(torch.stack(torch.split(prediction, 
       len(mask), dim = 1)), 0, 1)[:, :, torch.tensor(mask, dtype = torch.bool), :], 
