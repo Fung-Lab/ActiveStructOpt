@@ -96,6 +96,11 @@ class GNNEnsemble(BaseModel):
 
   def predict(self, structure, prepared = False, mask = None, **kwargs):
     def fmodel(params, buffers, x):
+      fcall = functional_call(self.base_model, (params, buffers), (x,))
+      print(fcall['output'].size())
+      print(fcall['pos_grad'].size())
+      print(fcall['cell_grad'].size())
+      assert False
       return functional_call(self.base_model, (params, buffers), (x,))['output']
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]

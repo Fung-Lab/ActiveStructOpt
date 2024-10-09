@@ -37,7 +37,7 @@ torchmd_config = {
    'model_ensemble': 1,
    'gradient': False,
  },
- 'optim': {'max_epochs': 500,
+ 'optim': {'max_epochs': 10,
   'max_checkpoint_epochs': 0,
   'lr': 0.001,
   'loss': {'loss_type': 'TorchLossWrapper',
