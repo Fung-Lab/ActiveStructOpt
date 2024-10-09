@@ -87,6 +87,9 @@ class GNNEnsemble(BaseModel):
     new_params = [self.ensemble[i].trainer.model[0].state_dict(
       ) for i in range(self.k)]
 
+    for i in range(self.k):
+      self.ensemble[i].trainer.model[0].gradient = True
+
     #https://pytorch.org/tutorials/intermediate/ensembling.html
     models = [self.ensemble[i].trainer.model[0] for i in range(self.k)]
     self.params, self.buffers = stack_module_state(models)
@@ -99,15 +102,13 @@ class GNNEnsemble(BaseModel):
 
   def predict(self, structure, prepared = False, mask = None, **kwargs):
     def fmodel(params, buffers, x):
-      fcall = functional_call(self.base_model.forward, (params, buffers), (x,))
+      fcall = functional_call(self.base_model, (params, buffers), (x,))
+      print(fcall)
       print(fcall['output'].size())
       print(fcall['pos_grad'].size())
       print(fcall['cell_grad'].size())
       assert False
       return functional_call(self.base_model, (params, buffers), (x,))['output']
-    
-    for i in range(self.k):
-      self.ensemble[i].trainer.model[0].gradient = True
 
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
