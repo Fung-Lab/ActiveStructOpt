@@ -99,7 +99,7 @@ class GNNEnsemble(BaseModel):
 
   def predict(self, structure, prepared = False, mask = None, **kwargs):
     def fmodel(params, buffers, x):
-      fcall = functional_call(self.base_model.forward(), (params, buffers), (x,))
+      fcall = functional_call(self.base_model.forward, (params, buffers), (x,))
       print(fcall['output'].size())
       print(fcall['pos_grad'].size())
       print(fcall['cell_grad'].size())
