@@ -114,29 +114,9 @@ class GNNEnsemble(BaseModel):
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
 
-    print(self.base_model.gradient)
-
-    data = next(iter(DataLoader(data, batch_size = len(data))))
-    (
-            edge_index,
-            edge_weights,
-            edge_vec,
-            cell_offsets,
-            offset_distance,
-            neighbors,
-        ) = self.base_model.generate_graph(data, 
-          self.config['dataset']['preprocess_params']['cutoff_radius'], 
-          self.config['dataset']['preprocess_params']['n_neighbors'])
-
-    print(data.pos.requires_grad)
-    print(data.displacement.requires_grad)
-    
-    data.edge_index = edge_index
-    data.edge_weight = edge_weights
-    data.edge_vec = edge_vec
-    data.cell_offsets = cell_offsets
-    data.offset_distance = offset_distance
-    data.neighbors = neighbors
+    self.base_model.otf_edge_index = True
+    self.base_model.otf_edge_attr = True
+    self.base_model.otf_node_attr = True
 
     prediction = vmap(fmodel, in_dims = (0, 0, None))(
       self.params, self.buffers, data)
