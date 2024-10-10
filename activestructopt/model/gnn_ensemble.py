@@ -123,6 +123,10 @@ class GNNEnsemble(BaseModel):
     data.edge_index, data.edge_weight, data.edge_vec, _, _, _ = self.base_model.generate_graph(
       data, self.base_model.cutoff_radius, self.base_model.n_neighbors)
 
+    print(data.edge_index.requires_grad)
+    print(data.edge_weight.requires_grad)
+    print(data.edge_vec.requires_grad)
+
     print("Entering prediction mode")
 
     print(data.pos.requires_grad)
