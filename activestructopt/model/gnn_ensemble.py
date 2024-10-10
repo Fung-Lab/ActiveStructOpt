@@ -123,6 +123,8 @@ class GNNEnsemble(BaseModel):
     data.edge_index, data.edge_weight, data.edge_vec, _, _, _ = self.base_model.generate_graph(
       data, self.base_model.cutoff_radius, self.base_model.n_neighbors)
 
+    print(data.pos.requires_grad)
+
     prediction = vmap(fmodel, in_dims = (0, 0, None))(
       self.params, self.buffers, data)
 
