@@ -118,6 +118,8 @@ class GNNEnsemble(BaseModel):
     self.base_model.otf_edge_attr = True
     self.base_model.otf_node_attr = True
 
+    data = next(iter(DataLoader(data, batch_size = len(data))))
+
     prediction = vmap(fmodel, in_dims = (0, 0, None))(
       self.params, self.buffers, data)
 
