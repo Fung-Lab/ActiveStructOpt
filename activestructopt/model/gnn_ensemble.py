@@ -114,11 +114,14 @@ class GNNEnsemble(BaseModel):
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
 
-    self.base_model.otf_edge_index = True
-    self.base_model.otf_edge_attr = True
-    self.base_model.otf_node_attr = True
+    #self.base_model.otf_edge_index = True
+    #self.base_model.otf_edge_attr = True
+    #self.base_model.otf_node_attr = True
 
     data = next(iter(DataLoader(data, batch_size = len(data))))
+
+    data.edge_index, data.edge_weight, data.edge_vec, _, _, _ = self.base_model.generate_graph(
+      data, self.base_model.cutoff_radius, self.base_model.n_neighbors)
 
     prediction = vmap(fmodel, in_dims = (0, 0, None))(
       self.params, self.buffers, data)
