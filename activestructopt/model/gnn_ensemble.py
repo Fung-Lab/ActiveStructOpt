@@ -129,6 +129,10 @@ class GNNEnsemble(BaseModel):
       n_neighbors = self.config['dataset']['preprocess_params']['n_neighbors']
 
       if self.config['dataset']['preprocess_params']['preprocess_edges']:
+        print("Processing Edges")
+        print(data[i].pos.requires_grad)
+        print(data[i].cell.requires_grad)
+
         edge_gen_out = calculate_edges_master(
           self.config['dataset']['preprocess_params']['edge_calc_method'],
           r,
@@ -139,10 +143,12 @@ class GNNEnsemble(BaseModel):
           data[i].pos,
           data[i].z,
           device = self.device
-        ) 
+        )
                                                 
         edge_index = edge_gen_out["edge_index"]
         edge_vec = edge_gen_out["edge_vec"]
+        print(edge_index.requires_grad)
+        print(edge_vec.requires_grad)
         edge_weights_list.append(edge_gen_out["edge_weights"])
         #data.cell_offsets = edge_gen_out["cell_offsets"]
         #data.neighbors = edge_gen_out["neighbors"]            
