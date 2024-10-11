@@ -121,6 +121,13 @@ class GNNEnsemble(BaseModel):
 
     data = next(iter(DataLoader(data, batch_size = len(data))))
 
+    data.pos.requires_grad_(True)
+    data.displacement = torch.zeros((len(data), 3, 3), dtype=data.pos.dtype, device=data.pos.device)            
+    data.displacement.requires_grad_(True)
+    symmetric_displacement = 0.5 * (data.displacement + data.displacement.transpose(-1, -2))
+    data.pos += torch.bmm(data.pos.unsqueeze(-2), symmetric_displacement[data.batch]).squeeze(-2)            
+    data.cell = data.cell + torch.bmm(data.cell, symmetric_displacement) 
+
     edge_index_list = []
     edge_weights_list = []
     edge_vec_list = []
