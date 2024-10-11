@@ -131,7 +131,7 @@ class GNNEnsemble(BaseModel):
     edge_index_list = []
     edge_weights_list = []
     edge_vec_list = []
-    print(data[i].pos)
+    print(data.pos.requires_grad)
     for i in range(0, len(data)):
       r = self.config['dataset']['preprocess_params']['cutoff_radius']
       n_neighbors = self.config['dataset']['preprocess_params']['n_neighbors']
