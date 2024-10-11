@@ -1,4 +1,4 @@
-from activestructopt.common.dataloader import prepare_data
+from activestructopt.common.dataloader import prepare_data, reduced_one_hot
 from activestructopt.model.base import BaseModel, Runner, ConfigSetup
 from activestructopt.dataset.kfolds import KFoldsDataset
 from activestructopt.common.registry import registry
@@ -9,6 +9,11 @@ import torch
 from torch.func import stack_module_state, functional_call, vmap
 import copy
 from torch_geometric.loader import DataLoader
+from matdeeplearn.preprocessor.helpers import (
+    generate_edge_features,
+    generate_node_features,
+    calculate_edges_master,
+)
 
 @registry.register_model("GNNEnsemble")
 class GNNEnsemble(BaseModel):
@@ -116,8 +121,61 @@ class GNNEnsemble(BaseModel):
 
     data = next(iter(DataLoader(data, batch_size = len(data))))
 
-    data.edge_index, data.edge_weight, data.edge_vec, _, _, _ = self.base_model.generate_graph(
-      data, self.base_model.cutoff_radius, self.base_model.n_neighbors)
+    edge_index_list = []
+    edge_weights_list = []
+    edge_vec_list = []
+    for i in range(0, len(data)):
+      r = self.config['dataset']['preprocess_params']['cutoff_radius']
+      n_neighbors = self.config['dataset']['preprocess_params']['n_neighbors']
+
+      if self.config['dataset']['preprocess_params']['preprocess_edges']:
+        edge_gen_out = calculate_edges_master(
+          self.config['dataset']['preprocess_params']['edge_calc_method'],
+          r,
+          n_neighbors,
+          self.config['dataset']['preprocess_params']['num_offsets'],
+          ["_"],
+          data[i].cell,
+          data[i].pos,
+          data[i].z,
+          device = self.device
+        ) 
+                                                
+        edge_index = edge_gen_out["edge_index"]
+        edge_vec = edge_gen_out["edge_vec"]
+        edge_weights_list.append(edge_gen_out["edge_weights"])
+        #data.cell_offsets = edge_gen_out["cell_offsets"]
+        #data.neighbors = edge_gen_out["neighbors"]            
+      
+        if(edge_vec.dim() > 2):
+          edge_vec = edge_vec[edge_index[0], edge_index[1]] 
+        
+        edge_index_list.append(edge_index)
+        edge_vec_list.append(edge_vec)
+
+      #if self.config['dataset']['preprocess_params']['preprocess_edge_features']:
+      #  data.edge_descriptor = {}
+      #  data.edge_descriptor["distance"] = data.edge_weight
+      #  data.distances = data.edge_weight
+
+      #if self.config['dataset']['preprocess_params']['preprocess_node_features']:
+      #  generate_node_features(data, n_neighbors, device=self.device, 
+      #    node_rep_func = reduced_one_hot)
+          
+      #if self.config['dataset']['preprocess_params']['preprocess_edge_features']:
+      #  generate_edge_features(data, self.config['preprocess_params']['edge_dim'], 
+      #    r, device=self.device)
+      #  if self.config['dataset']['preprocess_params']['preprocess_edges']:
+      #    delattr(data, "edge_descriptor")
+      
+      #cell_offsets_list.append(cell_offsets)
+
+    data.edge_index = torch.cat(edge_index_list, dim=1)
+    data.edge_weights = torch.cat(edge_weights_list)
+    data.edge_vec = torch.cat(edge_vec_list)
+
+    #data.edge_index, data.edge_weight, data.edge_vec, _, _, _ = self.base_model.generate_graph(
+    #  data, self.base_model.cutoff_radius, self.base_model.n_neighbors)
 
     print(data.edge_index.requires_grad)
     print(data.edge_weight.requires_grad)
