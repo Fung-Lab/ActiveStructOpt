@@ -133,8 +133,14 @@ class GNNEnsemble(BaseModel):
     print(out['pos_grad'].size())
     print(out['cell_grad'].size())
 
+    print(data.batch)
+
+    print(out['output'][data.batch].size())
+
     prediction = vmap(fmodel, in_dims = (0, 0, None))(
       self.params, self.buffers, data)
+
+    
 
     prediction = torch.mean(torch.transpose(torch.stack(torch.split(prediction, 
       len(mask), dim = 1)), 0, 1)[:, :, torch.tensor(mask, dtype = torch.bool), :], 
