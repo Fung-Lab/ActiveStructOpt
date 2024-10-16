@@ -121,84 +121,8 @@ class GNNEnsemble(BaseModel):
 
     data = next(iter(DataLoader(data, batch_size = len(data))))
 
-    data.pos.requires_grad_(True)
-    data.displacement = torch.zeros((len(data), 3, 3), dtype=data.pos.dtype, device=data.pos.device)            
-    data.displacement.requires_grad_(True)
-    symmetric_displacement = 0.5 * (data.displacement + data.displacement.transpose(-1, -2))
-    data.pos += torch.bmm(data.pos.unsqueeze(-2), symmetric_displacement[data.batch]).squeeze(-2)            
-    data.cell = data.cell + torch.bmm(data.cell, symmetric_displacement) 
-
-    edge_index_list = []
-    edge_weights_list = []
-    edge_vec_list = []
-    print(data.pos.requires_grad)
-    for i in range(0, len(data)):
-      r = self.config['dataset']['preprocess_params']['cutoff_radius']
-      n_neighbors = self.config['dataset']['preprocess_params']['n_neighbors']
-
-      if self.config['dataset']['preprocess_params']['preprocess_edges']:
-        print("Processing Edges")
-        print(data[i].pos.requires_grad)
-        print(data[i].cell.requires_grad)
-
-        edge_gen_out = calculate_edges_master(
-          self.config['dataset']['preprocess_params']['edge_calc_method'],
-          r,
-          n_neighbors,
-          self.config['dataset']['preprocess_params']['num_offsets'],
-          ["_"],
-          data[i].cell,
-          data[i].pos,
-          data[i].z,
-          device = self.device
-        )
-                                                
-        edge_index = edge_gen_out["edge_index"]
-        edge_vec = edge_gen_out["edge_vec"]
-        print(edge_index.requires_grad)
-        print(edge_vec.requires_grad)
-        edge_weights_list.append(edge_gen_out["edge_weights"])
-        #data.cell_offsets = edge_gen_out["cell_offsets"]
-        #data.neighbors = edge_gen_out["neighbors"]            
-      
-        if(edge_vec.dim() > 2):
-          edge_vec = edge_vec[edge_index[0], edge_index[1]] 
-        
-        edge_index_list.append(edge_index)
-        edge_vec_list.append(edge_vec)
-
-      #if self.config['dataset']['preprocess_params']['preprocess_edge_features']:
-      #  data.edge_descriptor = {}
-      #  data.edge_descriptor["distance"] = data.edge_weight
-      #  data.distances = data.edge_weight
-
-      #if self.config['dataset']['preprocess_params']['preprocess_node_features']:
-      #  generate_node_features(data, n_neighbors, device=self.device, 
-      #    node_rep_func = reduced_one_hot)
-          
-      #if self.config['dataset']['preprocess_params']['preprocess_edge_features']:
-      #  generate_edge_features(data, self.config['preprocess_params']['edge_dim'], 
-      #    r, device=self.device)
-      #  if self.config['dataset']['preprocess_params']['preprocess_edges']:
-      #    delattr(data, "edge_descriptor")
-      
-      #cell_offsets_list.append(cell_offsets)
-
-    data.edge_index = torch.cat(edge_index_list, dim=1)
-    data.edge_weights = torch.cat(edge_weights_list)
-    data.edge_vec = torch.cat(edge_vec_list)
-
-    #data.edge_index, data.edge_weight, data.edge_vec, _, _, _ = self.base_model.generate_graph(
-    #  data, self.base_model.cutoff_radius, self.base_model.n_neighbors)
-
-    print(data.edge_index.requires_grad)
-    print(data.edge_weight.requires_grad)
-    print(data.edge_vec.requires_grad)
-
-    print("Entering prediction mode")
-
-    print(data.pos.requires_grad)
-    print(self.base_model.neighbor_embedding)
+    data.edge_index, data.edge_weight, data.edge_vec, _, _, _ = self.base_model.generate_graph(
+      data, self.base_model.cutoff_radius, self.base_model.n_neighbors)
 
     prediction = vmap(fmodel, in_dims = (0, 0, None))(
       self.params, self.buffers, data)
@@ -217,9 +141,9 @@ class GNNEnsemble(BaseModel):
 
   def set_scalar_calibration(self, dataset: KFoldsDataset):
     self.scalar = 1.0
-    with torch.inference_mode():
-      test_res = self.predict(dataset.test_data, prepared = True, 
-        mask = dataset.simfunc.mask)
+    #with torch.inference_mode():
+    test_res = self.predict(dataset.test_data, prepared = True, 
+      mask = dataset.simfunc.mask)
     aes = []
     zscores = []
     for i in range(len(dataset.test_targets)):
