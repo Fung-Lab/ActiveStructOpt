@@ -126,6 +126,13 @@ class GNNEnsemble(BaseModel):
 
     print([data.edge_index.requires_grad, data.edge_weight.requires_grad, data.edge_vec.requires_grad])
 
+    out = self.ensemble[0].trainer.model[0].forward(data)
+
+    print(out['output'].requires_grad)
+    print(out['output'].size())
+    print(out['pos_grad'].size())
+    print(out['cell_grad'].size())
+
     prediction = vmap(fmodel, in_dims = (0, 0, None))(
       self.params, self.buffers, data)
 
