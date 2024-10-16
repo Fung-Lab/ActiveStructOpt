@@ -71,10 +71,6 @@ class Torch(BaseOptimizer):
               data[j].cell.requires_grad_(False)
               data[j].pos.requires_grad_(False)
             for j in range(stopi - starti + 1):
-              if optimize_atoms:
-                data[starti + j].pos.requires_grad_()
-              if optimize_lattice:
-                data[starti + j].cell.requires_grad_()
               reprocess_data(data[starti + j], dataset.config, device, 
                 nodes = False)
 
@@ -99,9 +95,28 @@ class Torch(BaseOptimizer):
               if optimize_lattice:
                 best_cell = data[starti + obj_arg.item()].cell[0].detach()
 
-            if i != iters_per_start - 1:
-              obj_total.backward()
-              optimizer.step()
+            if i != iters_per_start - 1:                      
+              to_get_grads = []
+              for j in range(stopi - starti + 1):
+                to_get_grads.append(data[starti + j].pos)
+                to_get_grads.append(data[starti + j].displacement)
+              
+              grad = torch.autograd.grad(
+                      obj_total,
+                      to_get_grads)
+              
+              print(grad)
+              assert False
+
+              for j in range(stopi - starti + 1):
+                volume = torch.einsum("zi,zi->z", 
+                  data[starti + j].cell[:, 0, :], 
+                  torch.cross(data[starti + j].cell[:, 1, :], 
+                  data[starti + j].cell[:, 2, :], dim=1)).unsqueeze(-1)  
+                data[starti + j].pos.grad = grad[2 * j]
+                data[starti + j].cell.grad = -grad[2 * j + 1] / volume.view(
+                  -1, 1, 1)
+
             del predictions, objs, obj_total
           predicted = True
         except torch.cuda.OutOfMemoryError:

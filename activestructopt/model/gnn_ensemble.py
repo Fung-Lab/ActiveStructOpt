@@ -92,64 +92,34 @@ class GNNEnsemble(BaseModel):
     new_params = [self.ensemble[i].trainer.model[0].state_dict(
       ) for i in range(self.k)]
 
-    for i in range(self.k):
-      self.ensemble[i].trainer.model[0].gradient = True
-
-    #https://pytorch.org/tutorials/intermediate/ensembling.html
-    models = [self.ensemble[i].trainer.model[0] for i in range(self.k)]
-    self.params, self.buffers = stack_module_state(models)
-    base_model = copy.deepcopy(models[0])
-    self.base_model = base_model.to('meta')
     gnn_mae, _, _ = self.set_scalar_calibration(dataset)
     self.updates = self.updates + 1
     
     return gnn_mae, metrics, new_params
 
   def predict(self, structure, prepared = False, mask = None, **kwargs):
-    def fmodel(params, buffers, x):
-      fcall = functional_call(self.base_model, (params, buffers), (x,))
-      print(fcall)
-      print(fcall['output'].requires_grad)
-      print(fcall['output'].size())
-      print(fcall['pos_grad'].size())
-      print(fcall['cell_grad'].size())
-      assert False
-      return functional_call(self.base_model, (params, buffers), (x,))['output']
-
     data = structure if prepared else [prepare_data(
       structure, self.config['dataset']).to(self.device)]
 
-    data = next(iter(DataLoader(data, batch_size = len(data))))
+    N = len(data)
+    mask = torch.tensor(mask, dtype = torch.bool)
 
-    data.edge_index, data.edge_weight, data.edge_vec, _, _, _ = self.base_model.generate_graph(
-      data, self.base_model.cutoff_radius, self.base_model.n_neighbors)
+    data = next(iter(DataLoader(data, batch_size = N)))
 
-    print([data.edge_index.requires_grad, data.edge_weight.requires_grad, data.edge_vec.requires_grad])
+    self.ensemble[0].trainer.model[0].gradient = True
+    data.edge_index, data.edge_weight, data.edge_vec, _, _, _ = self.ensemble[0].trainer.model[0].generate_graph(
+      data, self.ensemble[0].trainer.model[0].cutoff_radius, self.ensemble[0].trainer.model[0].n_neighbors)
+    self.ensemble[0].trainer.model[0].gradient = False
 
-    out = self.ensemble[0].trainer.model[0].forward(data)
-
-    print(out['output'].requires_grad)
-    print(out['output'].size())
-    print(out['pos_grad'].size())
-    print(out['cell_grad'].size())
-
-    print(data.batch)
-
-    print(out['output'][data.batch].size())
-
-    prediction = vmap(fmodel, in_dims = (0, 0, None))(
-      self.params, self.buffers, data)
-
-    
-
-    prediction = torch.mean(torch.transpose(torch.stack(torch.split(prediction, 
-      len(mask), dim = 1)), 0, 1)[:, :, torch.tensor(mask, dtype = torch.bool), :], 
-      dim = 2) # node level masking
-
-    mean = torch.mean(prediction, dim = 0)
+    out = [self.ensemble[i].trainer.model[0].forward(data)['output'] for i in range(self.k)]
+    collated = torch.stack([torch.stack([torch.mean(out[j][torch.where(
+      data.batch == i)][torch.where(mask)], dim = 0) for i in range(
+      N)]) for j in range(self.k)])
+  
+    mean = torch.mean(collated, dim = 0)
     # last term to remove Bessel correction and match numpy behavior
     # https://github.com/pytorch/pytorch/issues/1082
-    std = self.scalar * torch.std(prediction, dim = 0) * np.sqrt(
+    std = self.scalar * torch.std(collated, dim = 0) * np.sqrt(
       (self.k - 1) / self.k)
 
     return torch.stack((mean, std))
