@@ -107,20 +107,17 @@ class Torch(BaseOptimizer):
               grad = torch.autograd.grad(
                       obj_total,
                       [data_dl.pos, data_dl.displacement])
-              
-              print(grad)
-              print(grad[0].size())
-              print(grad[1].size())
-              assert False
 
               for j in range(stopi - starti + 1):
                 volume = torch.einsum("zi,zi->z", 
                   data[starti + j].cell[:, 0, :], 
                   torch.cross(data[starti + j].cell[:, 1, :], 
                   data[starti + j].cell[:, 2, :], dim=1)).unsqueeze(-1)  
-                data[starti + j].pos.grad = grad[2 * j]
-                data[starti + j].cell.grad = -grad[2 * j + 1] / volume.view(
+                data[starti + j].pos.grad = grad[0][torch.where(data_dl.batch == j)]
+                data[starti + j].cell.grad = -grad[1][j] / volume.view(
                   -1, 1, 1)
+              
+              optimizer.step()
 
             del predictions, objs, obj_total
           predicted = True
@@ -151,5 +148,6 @@ class Torch(BaseOptimizer):
           print(new_x)
           raise e
 
+    assert False
     
     return new_structure, obj_values
