@@ -78,11 +78,11 @@ class ActiveLearning():
         self.model_errs.append(model_err)
         self.model_metrics.append(metrics)
 
-        if not (self.target_structure is None):
-          with inference_mode():
-            self.target_predictions.append(self.model.predict(
-              self.target_structure, 
-              mask = self.dataset.simfunc.mask).cpu().numpy())
+        #if not (self.target_structure is None):
+        #  with inference_mode():
+        #    self.target_predictions.append(self.model.predict(
+        #      self.target_structure, 
+        #      mask = self.dataset.simfunc.mask).cpu().numpy())
 
         objective_cls = registry.get_objective_class(opt_profile['name'])
         objective = objective_cls(**(opt_profile['args']))
