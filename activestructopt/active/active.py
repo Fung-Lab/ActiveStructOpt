@@ -99,10 +99,10 @@ class ActiveLearning():
         #for ensemble_i in range(len(metrics)):
         #  print(metrics[ensemble_i]['val_error'])
         self.dataset.update(new_structure)
-        with inference_mode():
-          self.new_structure_predictions.append(self.model.predict(
-            new_structure, 
-            mask = self.dataset.simfunc.mask).cpu().numpy())
+        #with inference_mode():
+        #  self.new_structure_predictions.append(self.model.predict(
+        #    new_structure, 
+        #    mask = self.dataset.simfunc.mask).cpu().numpy())
 
         if print_mismatches:
           print(self.dataset.mismatches[-1])
