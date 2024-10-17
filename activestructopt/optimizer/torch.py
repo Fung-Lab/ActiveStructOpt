@@ -148,6 +148,4 @@ class Torch(BaseOptimizer):
           print(new_x)
           raise e
 
-    assert False
-    
     return new_structure, obj_values
