@@ -1,4 +1,3 @@
-from activestructopt.common.dataloader import prepare_data, reduced_one_hot
 from activestructopt.model.base import BaseModel, Runner, ConfigSetup
 from activestructopt.dataset.kfolds import KFoldsDataset
 from activestructopt.common.registry import registry
@@ -6,14 +5,7 @@ import numpy as np
 from scipy.stats import norm
 from scipy.optimize import minimize
 import torch
-from torch.func import stack_module_state, functional_call, vmap
-import copy
 from torch_geometric.loader import DataLoader
-from matdeeplearn.preprocessor.helpers import (
-    generate_edge_features,
-    generate_node_features,
-    calculate_edges_master,
-)
 
 @registry.register_model("GNNEnsemble")
 class GNNEnsemble(BaseModel):
@@ -97,21 +89,12 @@ class GNNEnsemble(BaseModel):
     
     return gnn_mae, metrics, new_params
 
-  def predict(self, structure, prepared = False, mask = None, **kwargs):
-    data = structure if prepared else [prepare_data(
-      structure, self.config['dataset']).to(self.device)]
-
-    N = len(data)
+  def predict(self, data, mask = None, **kwargs):
+    N = data.num_graphs
     mask = torch.tensor(mask, dtype = torch.bool)
 
-    data = next(iter(DataLoader(data, batch_size = N)))
-
-    self.ensemble[0].trainer.model[0].gradient = True
-    data.edge_index, data.edge_weight, data.edge_vec, _, _, _ = self.ensemble[0].trainer.model[0].generate_graph(
-      data, self.ensemble[0].trainer.model[0].cutoff_radius, self.ensemble[0].trainer.model[0].n_neighbors)
-    self.ensemble[0].trainer.model[0].gradient = False
-
-    out = [self.ensemble[i].trainer.model[0].forward(data)['output'] for i in range(self.k)]
+    out = [self.ensemble[i].trainer.model[0].forward(
+      data)['output'] for i in range(self.k)]
     collated = torch.stack([torch.stack([torch.mean(out[j][torch.where(
       data.batch == i)][torch.where(mask)], dim = 0) for i in range(
       N)]) for j in range(self.k)])
@@ -127,8 +110,9 @@ class GNNEnsemble(BaseModel):
   def set_scalar_calibration(self, dataset: KFoldsDataset):
     self.scalar = 1.0
     #with torch.inference_mode():
-    test_res = self.predict(dataset.test_data, prepared = True, 
-      mask = dataset.simfunc.mask)
+    data = next(iter(DataLoader(dataset.test_data, 
+      batch_size = len(dataset.test_data))))
+    test_res = self.predict(data, mask = dataset.simfunc.mask)
     aes = []
     zscores = []
     for i in range(len(dataset.test_targets)):

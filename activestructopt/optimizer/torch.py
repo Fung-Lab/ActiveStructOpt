@@ -8,6 +8,7 @@ from activestructopt.sampler.base import BaseSampler
 from activestructopt.common.registry import registry
 from pymatgen.core.structure import IStructure
 from pymatgen.core import Lattice
+from torch_geometric.loader import DataLoader
 import torch
 import numpy as np
 
@@ -74,8 +75,15 @@ class Torch(BaseOptimizer):
               reprocess_data(data[starti + j], dataset.config, device, 
                 nodes = False)
 
-            predictions = model.predict(data[starti:(stopi+1)], 
-              prepared = True, mask = dataset.simfunc.mask)
+            data_dl = next(iter(DataLoader(data[starti:(stopi+1)], 
+              batch_size = stopi - starti + 1)))
+
+            model.ensemble[0].trainer.model[0].gradient = True
+            data_dl.edge_index, data_dl.edge_weight, data_dl.edge_vec, _, _, _ = model.ensemble[0].trainer.model[0].generate_graph(
+              data, model.ensemble[0].trainer.model[0].cutoff_radius, model.ensemble[0].trainer.model[0].n_neighbors)
+            model.ensemble[0].trainer.model[0].gradient = False
+
+            predictions = model.predict(data_dl, mask = dataset.simfunc.mask)
 
             objs, obj_total = objective.get(predictions, target, 
               device = device, N = stopi - starti + 1)
@@ -95,17 +103,14 @@ class Torch(BaseOptimizer):
               if optimize_lattice:
                 best_cell = data[starti + obj_arg.item()].cell[0].detach()
 
-            if i != iters_per_start - 1:                      
-              to_get_grads = []
-              for j in range(stopi - starti + 1):
-                to_get_grads.append(data[starti + j].pos)
-                to_get_grads.append(data[starti + j].displacement)
-              
+            if i != iters_per_start - 1:                     
               grad = torch.autograd.grad(
                       obj_total,
-                      to_get_grads)
+                      [data_dl.pos, data_dl.displacement])
               
               print(grad)
+              print(grad[0].size())
+              print(grad[1].size())
               assert False
 
               for j in range(stopi - starti + 1):
