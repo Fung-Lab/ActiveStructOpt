@@ -80,7 +80,7 @@ class Torch(BaseOptimizer):
 
             model.ensemble[0].trainer.model[0].gradient = True
             data_dl.edge_index, data_dl.edge_weight, data_dl.edge_vec, _, _, _ = model.ensemble[0].trainer.model[0].generate_graph(
-              data, model.ensemble[0].trainer.model[0].cutoff_radius, model.ensemble[0].trainer.model[0].n_neighbors)
+              data_dl, model.ensemble[0].trainer.model[0].cutoff_radius, model.ensemble[0].trainer.model[0].n_neighbors)
             model.ensemble[0].trainer.model[0].gradient = False
 
             predictions = model.predict(data_dl, mask = dataset.simfunc.mask)
