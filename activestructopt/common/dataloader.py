@@ -7,15 +7,33 @@ from matdeeplearn.preprocessor.helpers import (
     generate_node_features,
     calculate_edges_master,
 )
+from pymatgen.core.structure import IStructure
+from ase.atoms import Atoms
 
 def reduced_one_hot(Z):
   return torch.transpose(Z == torch.transpose(torch.unique(Z).repeat((Z.size()[0], 1)), 0, 1), 0, 1).float()
 
 def prepare_data(
-    structure, 
+    structure : IStructure, 
     config,
     y = None,
     pos_grad = False,
+    cell_grad = False,
+    device = None,
+    preprocess = True,
+):  
+    # based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/preprocessor/processor.py
+    adaptor = AseAtomsAdaptor()
+    ase_crystal = adaptor.get_atoms(structure)
+    return prepare_data(ase_crystal, config, y = y, pos_grad = pos_grad, 
+      cell_grad = cell_grad, device = device, preprocess = preprocess)
+
+def prepare_data(
+    structure : Atoms, 
+    config,
+    y = None,
+    pos_grad = False,
+    cell_grad = False,
     device = None,
     preprocess = True,
 ):
@@ -24,20 +42,16 @@ def prepare_data(
     
     # based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/preprocessor/processor.py
     data = Data()
-    adaptor = AseAtomsAdaptor()
-    ase_crystal = adaptor.get_atoms(structure)
     data.batch = torch.zeros(len(structure), device = device, dtype = torch.long)
     data.n_atoms = torch.tensor([len(structure)], device = device, 
       dtype = torch.long)
-    data.cell = torch.tensor([ase_crystal.get_cell().tolist()], 
-      device = device, dtype = torch.float)
-    data.z = torch.tensor(ase_crystal.get_atomic_numbers().tolist(), 
+    data.cell = torch.tensor([structure.get_cell().tolist()], 
+      device = device, dtype = torch.float, requires_grad = cell_grad)
+    data.z = torch.tensor(structure.get_atomic_numbers().tolist(), 
       device = device, dtype = torch.long)
     data.u = torch.Tensor(np.zeros((3))[np.newaxis, ...])
-    data.pos = torch.tensor(ase_crystal.get_positions().tolist(), 
-      device = device, dtype = torch.float)
-    if pos_grad:
-      data.pos.requires_grad_()
+    data.pos = torch.tensor(structure.get_positions().tolist(), 
+      device = device, dtype = torch.float, requires_grad = pos_grad)
 
     if preprocess:
       reprocess_data(data, config, device)
