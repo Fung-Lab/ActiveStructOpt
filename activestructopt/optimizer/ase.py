@@ -1,4 +1,4 @@
-from activestructopt.common.dataloader import prepare_data, reprocess_data
+from activestructopt.common.dataloader import prepare_data
 from activestructopt.common.constraints import lj_rmins, lj_repulsion
 from activestructopt.model.base import BaseModel
 from activestructopt.dataset.base import BaseDataset
@@ -7,129 +7,84 @@ from activestructopt.optimizer.base import BaseOptimizer
 from activestructopt.sampler.base import BaseSampler
 from activestructopt.common.registry import registry
 from pymatgen.core.structure import IStructure
-from pymatgen.core import Lattice
+from pymatgen.io.ase import AseAtomsAdaptor
+import ase
 import torch
 import numpy as np
 
-@registry.register_optimizer("Torch")
-class Torch(BaseOptimizer):
+from ase.calculators.calculator import Calculator, all_changes
+from ase.filters import FrechetCellFilter
+
+class ASOCalc(Calculator):
+  def __init__(self, model, dataset, objective, target, device, 
+    constraint_scale, ljrmins, **kwargs):
+    self.implemented_properties = ['energy', 'energies', 'forces', 'stress']
+    Calculator.__init__(self, **kwargs)
+    self.model = model
+    self.dataset = dataset
+    self.device = device
+    self.objective = objective
+    self.target = target
+    self.constraint_scale = constraint_scale
+    self.ljrmins = ljrmins
+
+  def calculate(self, atoms = None, properties = ['energy'],
+                system_changes = all_changes):
+    Calculator.calculate(self, atoms, properties, system_changes)
+
+    data = [prepare_data(self.atoms, self.dataset.config, pos_grad = True, 
+      cell_grad = True, device = self.device, preprocess = True)]
+
+    predictions = self.model.predict(data, prepared = True, 
+      mask = self.dataset.simfunc.mask)
+
+    _, obj_total = self.objective.get(predictions, self.target, 
+      device = self.device, N = 1)
+    
+    obj_total = obj_total + self.constraint_scale * lj_repulsion(data[0], 
+      self.ljrmins)
+
+    grads = torch.autograd.grad(obj_total, [data.pos, data.cell]) 
+
+    self.results['energy'] = obj_total
+    self.results['energies'] = np.ones(len(atoms)) * (obj_total / len(atoms))
+    self.results['forces'] = grads[0].squeeze(0).detach().cpu().numpy()
+    self.results['stress'] = grads[1].squeeze(0).detach().cpu().numpy()
+
+@registry.register_optimizer("ASE")
+class ASE(BaseOptimizer):
   def __init__(self) -> None:
     pass
 
   def run(self, model: BaseModel, dataset: BaseDataset, 
     objective: BaseObjective, sampler: BaseSampler, 
-    starts = 128, iters_per_start = 100, optimizer = "Adam",
+    starts = 128, iters_per_start = 100, optimizer = "FIRE",
     optimizer_args = {}, optimize_atoms = True, 
-    optimize_lattice = False, save_obj_values = False, 
-    constraint_scale = 1.0, pos_lr = 0.001, cell_lr = 0.001,
+    optimize_lattice = False, constraint_scale = 1.0,
     **kwargs) -> IStructure:
     
     starting_structures = [dataset.structures[j].copy(
       ) if j < dataset.N else sampler.sample(
       ) for j in range(starts)]
-
-    obj_values = torch.zeros((iters_per_start, starts), device = 'cpu'
-      ) if save_obj_values else None
-    
+  
     device = model.device
     nstarts = len(starting_structures)
-    natoms = len(starting_structures[0])
     ljrmins = torch.tensor(lj_rmins, device = device)
-    best_obj = torch.tensor([float('inf')], device = device)
-    if optimize_atoms:
-      best_x = torch.zeros(3 * natoms, device = device)
-    if optimize_lattice:
-      best_cell = torch.zeros((3, 3), device = device)
+    best_obj = np.inf
+    best_struct = None
     target = torch.tensor(dataset.target, device = device)
+
+    adaptor = AseAtomsAdaptor()
     
-    data = [prepare_data(s, dataset.config, pos_grad = True, device = device, 
-      preprocess = False) for s in starting_structures]
-    for i in range(nstarts): # process node features
-      reprocess_data(data[i], dataset.config, device, edges = False)
+    for j in range(nstarts):
+      ase_crystal = adaptor.get_atoms(starting_structures[j])
+      ase_crystal.calc(ASOCalc(model, dataset, objective, 
+        target, device, constraint_scale, ljrmins))
+      if optimize_lattice:
+        ase_crystal = FrechetCellFilter(ase_crystal)
+      dyn = getattr(ase.optimize, optimizer)(ase_crystal)
+      dyn.run(steps = iters_per_start, **optimizer_args)
+      if ase_crystal.calc.results['energy'] < best_obj:
+        best_struct = adaptor.get_structure(ase_crystal)
     
-    to_optimize = []
-    if optimize_atoms:
-      to_optimize += [{'params': d.pos, 'lr': pos_lr} for d in data]
-    if optimize_lattice:
-      to_optimize += [{'params': d.cell, 'lr': cell_lr} for d in data]
-    optimizer = getattr(torch.optim, optimizer)(to_optimize, 
-      **(optimizer_args))
-    
-    split = int(np.ceil(np.log2(nstarts)))
-    orig_split = split
-
-    for i in range(iters_per_start):
-      predicted = False
-      while not predicted:
-        try:
-          for k in range(2 ** (orig_split - split)):
-            starti = k * (2 ** split)
-            stopi = min((k + 1) * (2 ** split) - 1, nstarts - 1)
-
-            optimizer.zero_grad()
-            for j in range(nstarts):
-              data[j].cell.requires_grad_(False)
-              data[j].pos.requires_grad_(False)
-            for j in range(stopi - starti + 1):
-              if optimize_atoms:
-                data[starti + j].pos.requires_grad_()
-              if optimize_lattice:
-                data[starti + j].cell.requires_grad_()
-              reprocess_data(data[starti + j], dataset.config, device, 
-                nodes = False)
-
-            predictions = model.predict(data[starti:(stopi+1)], 
-              prepared = True, mask = dataset.simfunc.mask)
-
-            objs, obj_total = objective.get(predictions, target, 
-              device = device, N = stopi - starti + 1)
-            for j in range(stopi - starti + 1):
-              objs[j] += constraint_scale * lj_repulsion(data[starti + j], ljrmins)
-              obj_total += constraint_scale * lj_repulsion(data[starti + j], ljrmins)
-              objs[j] = objs[j].detach()
-              if save_obj_values:
-                obj_values[i, starti + j] = objs[j].detach().cpu()
-
-            min_obj_iter = torch.min(torch.nan_to_num(objs, nan = torch.inf))
-            if (min_obj_iter < best_obj).item():
-              best_obj = min_obj_iter.detach()
-              obj_arg = torch.argmin(torch.nan_to_num(objs, nan = torch.inf))
-              if optimize_atoms:
-                best_x = data[starti + obj_arg.item()].pos.detach().flatten()
-              if optimize_lattice:
-                best_cell = data[starti + obj_arg.item()].cell[0].detach()
-
-            if i != iters_per_start - 1:
-              obj_total.backward()
-              optimizer.step()
-            del predictions, objs, obj_total
-          predicted = True
-        except torch.cuda.OutOfMemoryError:
-          split -= 1
-          assert split >= 0, "Out of memory with only one structure"
-
-    if optimize_atoms:
-      new_x = best_x.detach().cpu().numpy()
-      del best_x
-    if optimize_lattice:
-      new_cell = best_cell.detach().cpu().numpy()
-      del best_cell
-
-    del target, data
-    new_structure = starting_structures[0].copy()
-
-    if optimize_lattice:
-      new_structure.lattice = Lattice(new_cell)
-    if optimize_atoms:
-      for i in range(len(new_structure)):
-        try:
-          new_structure[i].coords = new_x[(3 * i):(3 * (i + 1))]
-        except np.linalg.LinAlgError as e:
-          print(best_obj)
-          print(new_cell)
-          print(new_structure.lattice)
-          print(new_x)
-          raise e
-
-    
-    return new_structure, obj_values
+    return best_struct, None
