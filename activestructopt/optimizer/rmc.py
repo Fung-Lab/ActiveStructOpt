@@ -6,7 +6,7 @@ from activestructopt.sampler.base import BaseSampler
 from activestructopt.common.registry import registry
 from pymatgen.core.structure import IStructure
 import numpy as np
-from activestructopt.common.dataloader import prepare_data
+from activestructopt.common.dataloader import prepare_data_pmg
 from activestructopt.common.constraints import lj_rmins, lj_repulsion
 import torch
 
@@ -79,7 +79,7 @@ class RMC(BaseOptimizer):
             starti = k * (2 ** split)
             stopi = min((k + 1) * (2 ** split) - 1, starts - 1)
 
-            data = [prepare_data(s, dataset.config, pos_grad = True, 
+            data = [prepare_data_pmg(s, dataset.config, pos_grad = True, 
               device = device, preprocess = True
               ) for s in structures[starti:(stopi + 1)]]
               

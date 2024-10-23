@@ -1,4 +1,4 @@
-from activestructopt.common.dataloader import prepare_data
+from activestructopt.common.dataloader import prepare_data_ase
 from activestructopt.common.constraints import lj_rmins, lj_repulsion
 from activestructopt.model.base import BaseModel
 from activestructopt.dataset.base import BaseDataset
@@ -32,7 +32,7 @@ class ASOCalc(Calculator):
                 system_changes = all_changes):
     Calculator.calculate(self, atoms, properties, system_changes)
 
-    data = [prepare_data(self.atoms, self.dataset.config, pos_grad = True, 
+    data = [prepare_data_ase(self.atoms, self.dataset.config, pos_grad = True, 
       cell_grad = True, device = self.device, preprocess = True)]
 
     predictions = self.model.predict(data, prepared = True, 

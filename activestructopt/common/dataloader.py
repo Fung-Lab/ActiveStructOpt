@@ -13,7 +13,7 @@ from ase.atoms import Atoms
 def reduced_one_hot(Z):
   return torch.transpose(Z == torch.transpose(torch.unique(Z).repeat((Z.size()[0], 1)), 0, 1), 0, 1).float()
 
-def prepare_data(
+def prepare_data_pmg(
     structure : IStructure, 
     config,
     y = None,
@@ -25,10 +25,10 @@ def prepare_data(
     # based on https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/preprocessor/processor.py
     adaptor = AseAtomsAdaptor()
     ase_crystal = adaptor.get_atoms(structure)
-    return prepare_data(ase_crystal, config, y = y, pos_grad = pos_grad, 
+    return prepare_data_ase(ase_crystal, config, y = y, pos_grad = pos_grad, 
       cell_grad = cell_grad, device = device, preprocess = preprocess)
 
-def prepare_data(
+def prepare_data_ase(
     structure : Atoms, 
     config,
     y = None,

@@ -1,4 +1,4 @@
-from activestructopt.common.dataloader import prepare_data
+from activestructopt.common.dataloader import prepare_data_pmg
 from activestructopt.common.constraints import lj_reject
 from activestructopt.common.registry import registry
 from activestructopt.dataset.base import BaseDataset
@@ -29,7 +29,7 @@ class KFoldsDataset(BaseDataset):
     for i, s in enumerate(self.structures):
       y_promises[i].get(s)
     self.ys = [yp.resolve() for yp in y_promises]
-    data = [prepare_data(self.structures[i], config, y = self.ys[i]).to(
+    data = [prepare_data_pmg(self.structures[i], config, y = self.ys[i]).to(
       self.device) for i in range(N)]
         
     structure_indices = np.random.permutation(np.arange(1, N))
@@ -54,7 +54,7 @@ class KFoldsDataset(BaseDataset):
     y = y_promise.resolve()
     new_mismatch = self.simfunc.get_mismatch(y, self.target)
     y_promise.garbage_collect(new_mismatch <= min(self.mismatches))
-    new_data = prepare_data(new_structure, self.config, y = y).to(self.device)
+    new_data = prepare_data_pmg(new_structure, self.config, y = y).to(self.device)
     fold = len(self.datasets) - 1
     for i in range(len(self.datasets) - 1):
       if len(self.datasets[i][1]) < len(self.datasets[i + 1][1]):

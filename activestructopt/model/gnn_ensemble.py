@@ -1,4 +1,4 @@
-from activestructopt.common.dataloader import prepare_data
+from activestructopt.common.dataloader import prepare_data_pmg
 from activestructopt.model.base import BaseModel, Runner, ConfigSetup
 from activestructopt.dataset.kfolds import KFoldsDataset
 from activestructopt.common.registry import registry
@@ -97,7 +97,7 @@ class GNNEnsemble(BaseModel):
   def predict(self, structure, prepared = False, mask = None, **kwargs):
     def fmodel(params, buffers, x):
       return functional_call(self.base_model, (params, buffers), (x,))['output']
-    data = structure if prepared else [prepare_data(
+    data = structure if prepared else [prepare_data_pmg(
       structure, self.config['dataset']).to(self.device)]
     prediction = vmap(fmodel, in_dims = (0, 0, None))(
       self.params, self.buffers, next(iter(DataLoader(data, batch_size = len(data)))))

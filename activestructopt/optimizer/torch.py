@@ -1,4 +1,4 @@
-from activestructopt.common.dataloader import prepare_data, reprocess_data
+from activestructopt.common.dataloader import prepare_data_pmg, reprocess_data
 from activestructopt.common.constraints import lj_rmins, lj_repulsion
 from activestructopt.model.base import BaseModel
 from activestructopt.dataset.base import BaseDataset
@@ -42,7 +42,7 @@ class Torch(BaseOptimizer):
       best_cell = torch.zeros((3, 3), device = device)
     target = torch.tensor(dataset.target, device = device)
     
-    data = [prepare_data(s, dataset.config, pos_grad = True, device = device, 
+    data = [prepare_data_pmg(s, dataset.config, pos_grad = True, device = device, 
       preprocess = False) for s in starting_structures]
     for i in range(nstarts): # process node features
       reprocess_data(data[i], dataset.config, device, edges = False)
