@@ -45,7 +45,7 @@ class ASOCalc(Calculator):
     obj_total = obj_total + self.constraint_scale * lj_repulsion(data[0], 
       self.ljrmins)
 
-    grads = torch.autograd.grad(obj_total, [data.pos, data.cell]) 
+    grads = torch.autograd.grad(obj_total, [data[0].pos, data[0].cell]) 
 
     self.results['energy'] = obj_total
     self.results['energies'] = np.ones(len(atoms)) * (obj_total / len(atoms))
