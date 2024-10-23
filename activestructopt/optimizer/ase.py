@@ -78,8 +78,8 @@ class ASE(BaseOptimizer):
     
     for j in range(nstarts):
       ase_crystal = adaptor.get_atoms(starting_structures[j])
-      ase_crystal.calc(ASOCalc(model, dataset, objective, 
-        target, device, constraint_scale, ljrmins))
+      ase_crystal.calc = ASOCalc(model, dataset, objective, 
+        target, device, constraint_scale, ljrmins)
       if optimize_lattice:
         ase_crystal = FrechetCellFilter(ase_crystal)
       dyn = getattr(ase.optimize, optimizer)(ase_crystal)
