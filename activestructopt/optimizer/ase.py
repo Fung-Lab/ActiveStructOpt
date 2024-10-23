@@ -47,8 +47,8 @@ class ASOCalc(Calculator):
 
     grads = torch.autograd.grad(obj_total, [data[0].pos, data[0].cell]) 
 
-    self.results['energy'] = obj_total
-    self.results['energies'] = np.ones(len(atoms)) * (obj_total / len(atoms))
+    self.results['energy'] = obj_total.item()
+    self.results['energies'] = np.ones(len(atoms)) * (obj_total.item() / len(atoms))
     self.results['forces'] = grads[0].squeeze(0).detach().cpu().numpy()
     self.results['stress'] = grads[1].squeeze(0).detach().cpu().numpy()
 
