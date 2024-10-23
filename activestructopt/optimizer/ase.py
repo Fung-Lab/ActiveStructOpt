@@ -9,6 +9,7 @@ from activestructopt.common.registry import registry
 from pymatgen.core.structure import IStructure
 from pymatgen.io.ase import AseAtomsAdaptor
 import ase
+import ase.optimize
 import torch
 import numpy as np
 
