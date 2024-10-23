@@ -78,7 +78,7 @@ class ASE(BaseOptimizer):
     adaptor = AseAtomsAdaptor()
     
     for j in range(nstarts):
-      ase_crystal = adaptor.get_atoms(starting_structures[j])
+      ase_crystal = AseAtomsAdaptor().get_atoms(starting_structures[j])
       ase_crystal.calc = ASOCalc(model, dataset, objective, 
         target, device, constraint_scale, ljrmins)
       if optimize_lattice:
@@ -86,6 +86,6 @@ class ASE(BaseOptimizer):
       dyn = getattr(ase.optimize, optimizer)(ase_crystal)
       dyn.run(steps = iters_per_start, **optimizer_args)
       if ase_crystal.calc.results['energy'] < best_obj:
-        best_struct = adaptor.get_structure(ase_crystal)
+        best_struct = AseAtomsAdaptor().get_structure(ase_crystal)
     
     return best_struct, None
