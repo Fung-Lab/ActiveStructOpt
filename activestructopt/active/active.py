@@ -9,6 +9,7 @@ from os.path import exists as pathexists
 from os import remove
 from copy import deepcopy
 from traceback import format_exc
+import json
 
 class ActiveLearning():
   def __init__(self, simfunc, target, config, initial_structure, 
@@ -112,10 +113,16 @@ class ActiveLearning():
         empty_cache()
         
         if save_progress_dir is not None:
-          self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
-            i) + ".pkl"))
-          prev_progress_file = pathjoin(save_progress_dir, str(self.index
-            ) + "_" + str(i - 1) + ".pkl")
+          if self.verbosity == 0:
+            self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
+              i) + ".json"))
+            prev_progress_file = pathjoin(save_progress_dir, str(self.index
+              ) + "_" + str(i - 1) + ".json")
+          else:
+            self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
+              i) + ".pkl"))
+            prev_progress_file = pathjoin(save_progress_dir, str(self.index
+              ) + "_" + str(i - 1) + ".pkl")
           if pathexists(prev_progress_file):
             remove(prev_progress_file)
     except Exception as err:
@@ -133,17 +140,23 @@ class ActiveLearning():
 
     if self.verbosity == 0:
       res = {'index': self.index,
-            'ys': self.dataset.ys,
-            'target': self.dataset.target,
+            'ys': [y.tolist() for y in self.dataset.ys],
+            'target': self.dataset.target.tolist(),
             'mismatches': self.dataset.mismatches,
-            'structures': self.dataset.structures
+            'structures': [s.as_dict() for s in self.dataset.structures]
       }
+      with open(filename, "w") as outfile: 
+        json.dump(res, outfile)
     elif self.verbosity == 1:
       res = {'index': self.index,
             'dataset': self.dataset,
             'model_params': self.model_params,
             'error': self.error,
             'traceback': self.traceback}
+      for k, v in additional_data.items():
+        res[k] = v
+      with open(filename, "wb") as file:
+        dump(res, file)
     elif self.verbosity == 2:
       res = {'index': self.index,
             'dataset': self.dataset,
@@ -156,7 +169,7 @@ class ActiveLearning():
             'traceback': self.traceback}
       if not (self.target_structure is None):
         res['target_predictions'] = self.target_predictions
-    for k, v in additional_data.items():
-      res[k] = v
-    with open(filename, "wb") as file:
-      dump(res, file)
+      for k, v in additional_data.items():
+        res[k] = v
+      with open(filename, "wb") as file:
+        dump(res, file)
