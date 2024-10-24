@@ -49,8 +49,8 @@ class ASOCalc(Calculator):
 
     self.results['energy'] = obj_total.item()
     self.results['energies'] = np.ones(len(atoms)) * (obj_total.item() / len(atoms))
-    self.results['forces'] = grads[0].squeeze(0).detach().cpu().numpy()
-    self.results['stress'] = grads[1].squeeze(0).detach().cpu().numpy()
+    self.results['forces'] = -grads[0].squeeze(0).detach().cpu().numpy()
+    self.results['stress'] = -grads[1].squeeze(0).detach().cpu().numpy()
 
 @registry.register_optimizer("ASE")
 class ASE(BaseOptimizer):
