@@ -138,6 +138,12 @@ class ActiveLearning():
             'mismatches': self.dataset.mismatches,
             'structures': self.dataset.structures
       }
+    elif self.verbosity == 1:
+      res = {'index': self.index,
+            'dataset': self.dataset,
+            'model_params': self.model_params,
+            'error': self.error,
+            'traceback': self.traceback}
     elif self.verbosity == 2:
       res = {'index': self.index,
             'dataset': self.dataset,
