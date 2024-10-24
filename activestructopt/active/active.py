@@ -12,13 +12,14 @@ from traceback import format_exc
 
 class ActiveLearning():
   def __init__(self, simfunc, target, config, initial_structure, 
-    index = -1, target_structure = None, progress_file = None):
+    index = -1, target_structure = None, progress_file = None, verbosity = 2):
     setup_imports()
 
     self.simfunc = simfunc
     self.config = simfunc.setup_config(config)
     self.index = index
     self.iteration = 0
+    self.verbosity = verbosity
 
     self.model_params = None
     self.model_errs = []
@@ -129,17 +130,26 @@ class ActiveLearning():
       for param_tensor in cpu_model_params[i]:
         cpu_model_params[i][param_tensor] = cpu_model_params[i][
           param_tensor].detach().cpu()
-    res = {'index': self.index,
-          'dataset': self.dataset,
-          'model_errs': self.model_errs,
-          'model_metrics': self.model_metrics,
-          'model_params': self.model_params,
-          'opt_obj_values': self.opt_obj_values,
-          'new_structure_predictions': self.new_structure_predictions,
-          'error': self.error,
-          'traceback': self.traceback}
-    if not (self.target_structure is None):
-      res['target_predictions'] = self.target_predictions
+
+    if self.verbosity == 0:
+      res = {'index': self.index,
+            'ys': self.dataset.ys,
+            'target': self.dataset.target,
+            'mismatches': self.dataset.mismatches,
+            'structures': self.dataset.structures
+      }
+    elif self.verbosity == 2:
+      res = {'index': self.index,
+            'dataset': self.dataset,
+            'model_errs': self.model_errs,
+            'model_metrics': self.model_metrics,
+            'model_params': self.model_params,
+            'opt_obj_values': self.opt_obj_values,
+            'new_structure_predictions': self.new_structure_predictions,
+            'error': self.error,
+            'traceback': self.traceback}
+      if not (self.target_structure is None):
+        res['target_predictions'] = self.target_predictions
     for k, v in additional_data.items():
       res[k] = v
     with open(filename, "wb") as file:
