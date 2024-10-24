@@ -12,7 +12,7 @@ import ase
 import ase.optimize
 import torch
 import numpy as np
-import concurrent.futures
+
 from ase.calculators.calculator import Calculator, all_changes
 from ase.filters import FrechetCellFilter
 
@@ -52,17 +52,6 @@ class ASOCalc(Calculator):
     self.results['forces'] = -grads[0].squeeze(0).detach().cpu().numpy()
     self.results['stress'] = -grads[1].squeeze(0).detach().cpu().numpy()
 
-def get_ase_opt_struct(input_data):
-  starting_structure, calculator, optimize_lattice, optimizer, iters_per_start, optimizer_args = input_data
-  ase_crystal = AseAtomsAdaptor().get_atoms(starting_structure)
-  ase_crystal.calc = calculator
-  if optimize_lattice:
-    ase_crystal = FrechetCellFilter(ase_crystal)
-  dyn = getattr(ase.optimize, optimizer)(ase_crystal)
-  dyn.run(steps = iters_per_start, **optimizer_args)
-  return ase_crystal.calc.results['energy'], AseAtomsAdaptor(
-    ).get_structure(ase_crystal.atoms)
-
 @registry.register_optimizer("ASE")
 class ASE(BaseOptimizer):
   def __init__(self) -> None:
@@ -85,33 +74,16 @@ class ASE(BaseOptimizer):
     best_obj = np.inf
     best_struct = None
     target = torch.tensor(dataset.target, device = device)
-
-    split = int(np.ceil(np.log2(nstarts)))
-    orig_split = split
     
-    predicted = False
-    while not predicted:
-      with concurrent.futures.ProcessPoolExecutor() as executor:
-        try:
-          for k in range(2 ** (orig_split - split)):
-            starti = k * (2 ** split)
-            stopi = min((k + 1) * (2 ** split) - 1, nstarts - 1)
-            futures = [executor.submit(get_ase_opt_struct, (s, ASOCalc(model, 
-              dataset, objective, target, device, constraint_scale, 
-              ljrmins), optimize_lattice, optimizer, iters_per_start, 
-              optimizer_args)) for s in starting_structures[starti:(stopi+1)]]
-
-            for f in concurrent.futures.as_completed(futures):
-              result = f.result()
-              if result[0] < best_obj:
-                best_struct = result[1]
-                best_obj = result[0]
-
-          predicted = True
-        except torch.cuda.OutOfMemoryError:
-          for f in futures:
-            f.cancel()
-          split -= 1
-          assert split >= 0, "Out of memory with only one structure"
-
+    for j in range(nstarts):
+      ase_crystal = AseAtomsAdaptor().get_atoms(starting_structures[j])
+      ase_crystal.calc = ASOCalc(model, dataset, objective, 
+        target, device, constraint_scale, ljrmins)
+      if optimize_lattice:
+        ase_crystal = FrechetCellFilter(ase_crystal)
+      dyn = getattr(ase.optimize, optimizer)(ase_crystal)
+      dyn.run(steps = iters_per_start, **optimizer_args)
+      if ase_crystal.calc.results['energy'] < best_obj:
+        best_struct = AseAtomsAdaptor().get_structure(ase_crystal.atoms)
+    
     return best_struct, None
