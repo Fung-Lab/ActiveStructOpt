@@ -67,3 +67,16 @@ class KFoldsDataset(BaseDataset):
     self.ys.append(y)
     self.mismatches.append(new_mismatch)
     self.N += 1
+
+  def toJSONDict(self):
+    return {
+      'start_N': self.start_N,
+      'N': self.N,
+      'structures': [s.as_dict() for s in self.structures],
+      'ys': [y.tolist() for y in self.ys],
+      'kfolds': self.kfolds.tolist(),
+      'test_indices': self.test_indices.tolist(),
+      'test_indices': self.test_indices.tolist(),
+      'train_indices': [t.tolist() for t in self.train_indices],
+      'mismatches': self.mismatches
+    }

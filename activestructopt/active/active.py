@@ -145,18 +145,16 @@ class ActiveLearning():
             'mismatches': self.dataset.mismatches,
             'structures': [s.as_dict() for s in self.dataset.structures]
       }
-      with open(filename, "w") as outfile: 
-        json.dump(res, outfile)
+      with open(filename, "w") as file: 
+        json.dump(res, file)
     elif self.verbosity == 1:
       res = {'index': self.index,
-            'dataset': self.dataset,
-            'model_params': self.model_params,
+            'dataset': self.dataset.toJSONDict(),
+            'model_params': self.model_params, # this probably doesn't work as of now
             'error': self.error,
             'traceback': self.traceback}
-      for k, v in additional_data.items():
-        res[k] = v
-      with open(filename, "wb") as file:
-        dump(res, file)
+      with open(filename, "w") as file:
+        json.dump(res, file)
     elif self.verbosity == 2:
       res = {'index': self.index,
             'dataset': self.dataset,
