@@ -84,6 +84,7 @@ class ASE(BaseOptimizer):
       dyn = getattr(ase.optimize, optimizer)(ase_crystal)
       dyn.run(steps = iters_per_start, **optimizer_args)
       if ase_crystal.calc.results['energy'] < best_obj:
-        best_struct = AseAtomsAdaptor().get_structure(ase_crystal.atoms)
+        best_struct = AseAtomsAdaptor().get_structure(
+          ase_crystal.atoms if optimize_lattice else ase_crystal)
     
     return best_struct, None
