@@ -9,7 +9,7 @@ from activestructopt.common.registry import registry
 from pymatgen.core.structure import IStructure
 from pymatgen.io.ase import AseAtomsAdaptor
 import ase
-import ase.optimize
+from ase.optimize.basin import BasinHopping
 import torch
 import numpy as np
 
@@ -101,8 +101,12 @@ class ASE(BaseOptimizer):
       if optimize_lattice:
         ase_crystal = FrechetCellFilter(ase_crystal)
       traj = ASOTraj(optimize_lattice)
-      dyn = getattr(ase.optimize, optimizer)(ase_crystal, trajectory = traj)
-      dyn.run(steps = iters_per_start, **optimizer_args)
+      if optimizer == 'BasinHopping':
+        dyn = BasinHopping(ase_crystal, trajectory = traj, **optimizer_args)
+        dyn.run(steps = iters_per_start)
+      else: 
+        dyn = getattr(ase.optimize, optimizer)(ase_crystal, trajectory = traj)
+        dyn.run(steps = iters_per_start, **optimizer_args)
       if traj.best_obj < best_obj:
         best_struct = traj.best_structure
         best_obj = traj.best_obj
