@@ -16,6 +16,21 @@ import numpy as np
 from ase.calculators.calculator import Calculator, all_changes
 from ase.filters import FrechetCellFilter
 
+class ASOTraj():
+  def __init__(self, optimize_lattice):
+    self.best_obj = np.inf
+    self.best_structure = None
+    self.optimize_lattice = optimize_lattice
+
+  def __len__(self):
+    return 0
+
+  def write(self, atoms = None, **kwargs):
+    if atoms.atoms.calc.results['energy'] < self.best_obj:
+      self.best_structure = AseAtomsAdaptor().get_structure(
+        atoms.atoms.atoms if self.optimize_lattice else atoms.atoms)
+      self.best_obj = atoms.atoms.calc.results['energy']
+
 class ASOCalc(Calculator):
   def __init__(self, model, dataset, objective, target, device, 
     constraint_scale, ljrmins, **kwargs):
@@ -81,10 +96,11 @@ class ASE(BaseOptimizer):
         target, device, constraint_scale, ljrmins)
       if optimize_lattice:
         ase_crystal = FrechetCellFilter(ase_crystal)
-      dyn = getattr(ase.optimize, optimizer)(ase_crystal)
+      traj = ASOTraj(optimize_lattice)
+      dyn = getattr(ase.optimize, optimizer)(ase_crystal, trajectory = traj)
       dyn.run(steps = iters_per_start, **optimizer_args)
-      if ase_crystal.calc.results['energy'] < best_obj:
-        best_struct = AseAtomsAdaptor().get_structure(
-          ase_crystal.atoms if optimize_lattice else ase_crystal)
+      if traj.best_obj < best_obj:
+        best_struct = traj.best_structure
+        best_obj = traj.best_obj
     
     return best_struct, None
