@@ -26,10 +26,14 @@ class ASOTraj():
     return 0
 
   def write(self, atoms = None, **kwargs):
-    if atoms.atoms.calc.results['energy'] < self.best_obj:
-      self.best_structure = AseAtomsAdaptor().get_structure(
-        atoms.atoms.atoms if self.optimize_lattice else atoms.atoms)
-      self.best_obj = atoms.atoms.calc.results['energy']
+    if self.optimize_lattice:
+      if atoms.filterobj.calc.results['energy'] < self.best_obj:
+        self.best_structure = AseAtomsAdaptor().get_structure(atoms.filterobj.atoms)
+        self.best_obj = atoms.filterobj.calc.results['energy']
+    else:
+      if atoms.atoms.calc.results['energy'] < self.best_obj:
+        self.best_structure = AseAtomsAdaptor().get_structure(atoms.atoms)
+        self.best_obj = atoms.atoms.calc.results['energy']
 
 class ASOCalc(Calculator):
   def __init__(self, model, dataset, objective, target, device, 
