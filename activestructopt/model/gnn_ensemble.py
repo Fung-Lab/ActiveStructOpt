@@ -135,3 +135,30 @@ class GNNEnsemble(BaseModel):
     self.scalar = minimize(f, [1.0]).x[0]
     return np.mean(aes), normdist.cdf(np.sort(zscores) / 
       self.scalar), np.cumsum(np.ones(len(zscores))) / len(zscores)
+
+  def load(self, dataset: KFoldsDataset, params, scalar, **kwargs):
+    for i in range(self.k):
+      # Create new runner, with config and datasets
+      new_runner = Runner()
+      self.config['task']['seed'] = self.k * self.updates + i
+      new_runner(self.config, ConfigSetup('train'), 
+                            dataset.datasets[i][0], dataset.datasets[i][1])
+
+      device = next(iter(new_runner.trainer.model[0].state_dict().values(
+        ))).get_device()
+      device = 'cpu' if device == -1 else 'cuda:' + str(device)
+      self.device = device
+
+      # If applicable, use the old model
+      new_runner.trainer.model[0].load_state_dict(params[i])
+      self.ensemble[i] = new_runner
+      
+      # Set to evaluation mode
+      self.ensemble[i].trainer.model[0].eval()
+    
+    #https://pytorch.org/tutorials/intermediate/ensembling.html
+    models = [self.ensemble[i].trainer.model[0] for i in range(self.k)]
+    self.params, self.buffers = stack_module_state(models)
+    base_model = copy.deepcopy(models[0])
+    self.base_model = base_model.to('meta')
+    self.scalar = scalar
