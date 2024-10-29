@@ -76,9 +76,9 @@ class TorchBH(BaseOptimizer):
       rejected = True
       new_structure = starting_structure.copy()
       if optimize_atoms:
-        new_x = best_x.detach().cpu().numpy()
+        new_x = data.pos.detach().flatten().cpu().numpy()
       if optimize_lattice:
-        new_cell = best_cell.detach().cpu().numpy()
+        new_cell = data.cell[0].detach().cpu().numpy()
 
       if optimize_lattice:
         new_structure.lattice = Lattice(new_cell)
