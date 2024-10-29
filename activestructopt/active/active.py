@@ -11,6 +11,7 @@ from copy import deepcopy
 from traceback import format_exc
 import json
 import torch
+import os
 
 class ActiveLearning():
   def __init__(self, simfunc, target, config, initial_structure, 
@@ -192,3 +193,31 @@ class ActiveLearning():
       self.error = err
       print(self.traceback)
       print(self.error)
+
+  def load_model_and_optimize(self, model_params_dir, print_mismatches = True):
+    params_file = model_params_dir + "/" + list(filter(
+      lambda x: x.startswith("{}.".format(self.index)), os.listdir(
+      model_params_dir)))[0]
+    
+    model_params = torch.load(params_file, weights_only=True)
+
+    self.model.load(self.dataset, model_params['model_params'], 
+      model_params['model_scalar'])
+
+    opt_profile = self.config['aso_params']['optimizer']['profiles'][0]
+
+    objective_cls = registry.get_objective_class(opt_profile['name'])
+    objective = objective_cls(**(opt_profile['args']))
+
+    optimizer_cls = registry.get_optimizer_class(
+      self.config['aso_params']['optimizer']['name'])
+
+    new_structure, obj_values = optimizer_cls().run(self.model, 
+      self.dataset, objective, self.sampler, 
+      **(self.config['aso_params']['optimizer']['args']))
+    self.opt_obj_values.append(obj_values)
+    
+    self.dataset.update(new_structure)
+
+    if print_mismatches:
+      print(self.dataset.mismatches[-1])
