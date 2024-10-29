@@ -10,6 +10,7 @@ from os import remove
 from copy import deepcopy
 from traceback import format_exc
 import json
+import torch
 
 class ActiveLearning():
   def __init__(self, simfunc, target, config, initial_structure, 
@@ -171,3 +172,23 @@ class ActiveLearning():
         res[k] = v
       with open(filename, "wb") as file:
         dump(res, file)
+
+  def train_model_and_save(self, save_progress_dir = None):
+    try:
+      train_profile = self.config['aso_params']['model']['profiles'][0]
+      
+      _, _, self.model_params = self.model.train(self.dataset, **(
+        train_profile))
+
+      out = {
+        'model_params': self.model_params, 
+        'model_scalar': self.model.scalar
+      }
+
+      torch.save(out, save_progress_dir + '/{}.pth'.format(self.index))
+
+    except Exception as err:
+      self.traceback = format_exc()
+      self.error = err
+      print(self.traceback)
+      print(self.error)
