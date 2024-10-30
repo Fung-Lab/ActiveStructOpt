@@ -17,7 +17,7 @@ class RMC(BaseOptimizer):
   def run(self, model: BaseModel, dataset: BaseDataset, 
     objective: BaseObjective, sampler: BaseSampler, 
     steps = 10000, σ = 0.0025, latticeprob = 0.5, 
-    σr = 0.01, σl = 0.01, σθ = 0.1, 
+    σr = 0.1, σl = 0.1, σθ = 0.1, 
     save_obj_values = False, **kwargs) -> IStructure:
 
     device = model.device
