@@ -199,7 +199,7 @@ class ActiveLearning():
       lambda x: x.startswith("{}.".format(self.index)), os.listdir(
       model_params_dir)))[0]
     
-    model_params = torch.load(params_file, weights_only=True)
+    model_params = torch.load(params_file, weights_only=False)
 
     self.model.load(self.dataset, model_params['model_params'], 
       model_params['model_scalar'])
