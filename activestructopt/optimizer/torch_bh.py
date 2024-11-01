@@ -1,5 +1,6 @@
 from activestructopt.common.dataloader import prepare_data_pmg, reprocess_data
 from activestructopt.common.constraints import lj_rmins, lj_repulsion, lj_reject
+from activestructopt.sampler.single_atom_perturbation import SingleAtomPerturbation
 from activestructopt.model.base import BaseModel
 from activestructopt.dataset.base import BaseDataset
 from activestructopt.objective.base import BaseObjective
@@ -22,13 +23,14 @@ class TorchBH(BaseOptimizer):
     optimizer_args = {}, optimize_atoms = True, 
     optimize_lattice = False, save_obj_values = False, 
     constraint_scale = 1.0, pos_lr = 0.001, cell_lr = 0.001,
-    perturbrmin = 0.0, perturbrmax = 0.2, perturblσ = 0.1,
-    **kwargs) -> IStructure:
+    σr = 0.2, **kwargs) -> IStructure:
 
     accepted = 0
     device = model.device
+    ljrmins = torch.tensor(lj_rmins, device = device)
     
     structure = dataset.structures[0].copy()
+    natoms = len(structure)
     prev_structure = structure.copy()
     target = torch.tensor(dataset.target, device = device)
 
@@ -109,7 +111,7 @@ class TorchBH(BaseOptimizer):
         if optimize_lattice:
           new_cell = best_local_cell.cpu().numpy()
         
-        prev_structure = starting_structure.copy()
+        prev_structure = structure.copy()
         
         if optimize_lattice:
           prev_structure.lattice = Lattice(new_cell)
@@ -134,7 +136,7 @@ class TorchBH(BaseOptimizer):
     if optimize_lattice:
       new_cell = best_cell.detach().cpu().numpy()
 
-    best_structure = starting_structure.copy()
+    best_structure = structure.copy()
 
     if optimize_lattice:
       best_structure.lattice = Lattice(new_cell)
