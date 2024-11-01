@@ -23,7 +23,7 @@ class TorchBH(BaseOptimizer):
     optimizer_args = {}, optimize_atoms = True, 
     optimize_lattice = False, save_obj_values = False, 
     constraint_scale = 1.0, pos_lr = 0.001, cell_lr = 0.001,
-    σr = 0.2, **kwargs) -> IStructure:
+    σr = 0.2, σ = 0.0025, **kwargs) -> IStructure:
 
     accepted = 0
     device = model.device
@@ -51,9 +51,9 @@ class TorchBH(BaseOptimizer):
     prev_obj = torch.tensor([float('inf')], device = device)
 
     for _ in range(hops):
-      data = [prepare_data_pmg(structure, dataset.config, pos_grad = False, 
+      data = prepare_data_pmg(structure, dataset.config, pos_grad = False, 
         device = device, preprocess = True, cell_grad = False
-        )]
+        )
 
       to_optimize = []
       if optimize_atoms:
