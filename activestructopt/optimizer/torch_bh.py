@@ -25,6 +25,7 @@ class TorchBH(BaseOptimizer):
     perturbrmin = 0.0, perturbrmax = 0.2, perturblσ = 0.1,
     **kwargs) -> IStructure:
 
+    accepted = 0
     device = model.device
     
     structure = dataset.structures[0].copy()
@@ -101,6 +102,8 @@ class TorchBH(BaseOptimizer):
         -2 * σ ** 2)
       accept = torch.logical_or(better, hastings)
       if (accept).item():
+        accepted += 1
+        
         if optimize_atoms:
           new_x = best_local_x.cpu().numpy()
         if optimize_lattice:
@@ -145,5 +148,6 @@ class TorchBH(BaseOptimizer):
           print(best_structure.lattice)
           print(new_x)
           raise e
-      
+
+    print('Acceptance rate: {}'.format(accepted / hops))
     return best_structure, None
