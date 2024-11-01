@@ -60,7 +60,7 @@ class TorchBH(BaseOptimizer):
         to_optimize += [{'params': data.pos, 'lr': pos_lr}]
       if optimize_lattice:
         to_optimize += [{'params': data.cell, 'lr': cell_lr}]
-      optimizer = getattr(torch.optim, optimizer)(to_optimize, 
+      local_optimizer = getattr(torch.optim, optimizer)(to_optimize, 
         **(optimizer_args))
 
       best_local_obj = torch.tensor([float('inf')], device = device)
@@ -68,7 +68,7 @@ class TorchBH(BaseOptimizer):
       best_local_cell = None
       
       for j in range(iters_per_hops):
-        optimizer.zero_grad()
+        local_optimizer.zero_grad()
         if optimize_atoms:
           data.pos.requires_grad_()
         if optimize_lattice:
@@ -94,7 +94,7 @@ class TorchBH(BaseOptimizer):
               best_cell = best_local_cell
         if j != iters_per_hops - 1:
           obj_total.backward()
-          optimizer.step()
+          local_optimizer.step()
 
       new_obj = best_local_obj
       
