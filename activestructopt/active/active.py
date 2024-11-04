@@ -53,8 +53,12 @@ class ActiveLearning():
 
     model_cls = registry.get_model_class(
       self.config['aso_params']['model']['name'])
-    self.model = model_cls(self.config, 
-      **(self.config['aso_params']['model']['args']))
+    if self.config['aso_params']['model']['name'] == "GroundTruth":
+      self.model = model_cls(self.config, self.simfunc,
+        **(self.config['aso_params']['model']['args']))
+    else:
+      self.model = model_cls(self.config, 
+        **(self.config['aso_params']['model']['args']))
 
     self.traceback = None
     self.error = None
