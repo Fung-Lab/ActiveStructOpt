@@ -64,7 +64,7 @@ class ActiveLearning():
     self.error = None
   
   def optimize(self, print_mismatches = True, save_progress_dir = None, 
-    predict_target = False):
+    predict_target = False, new_structure_predict = False):
     try:
       active_steps = self.config['aso_params'][
         'max_forward_calls'] - self.dataset.start_N
@@ -108,10 +108,11 @@ class ActiveLearning():
         #for ensemble_i in range(len(metrics)):
         #  print(metrics[ensemble_i]['val_error'])
         self.dataset.update(new_structure)
-        with inference_mode():
-          self.new_structure_predictions.append(self.model.predict(
-            new_structure, 
-            mask = self.dataset.simfunc.mask).cpu().numpy())
+        if new_structure_predict:
+          with inference_mode():
+            self.new_structure_predictions.append(self.model.predict(
+              new_structure, 
+              mask = self.dataset.simfunc.mask).cpu().numpy())
 
         if print_mismatches:
           print(self.dataset.mismatches[-1])
