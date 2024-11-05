@@ -63,7 +63,8 @@ class ActiveLearning():
     self.traceback = None
     self.error = None
   
-  def optimize(self, print_mismatches = True, save_progress_dir = None):
+  def optimize(self, print_mismatches = True, save_progress_dir = None, 
+    predict_target = False):
     try:
       active_steps = self.config['aso_params'][
         'max_forward_calls'] - self.dataset.start_N
@@ -86,7 +87,7 @@ class ActiveLearning():
         self.model_errs.append(model_err)
         self.model_metrics.append(metrics)
 
-        if not (self.target_structure is None):
+        if not (self.target_structure is None) and predict_target:
           with inference_mode():
             self.target_predictions.append(self.model.predict(
               self.target_structure, 
