@@ -19,8 +19,8 @@ class RDFD(BaseSimulation):
       self.σ ** 2) * torch.square(self.rs)
     
   def setup_config(self, config):
-    config['dataset']['preprocess_params']['prediction_level'] = 'node'
-    config['dataset']['preprocess_params']['output_dim'] = self.outdim
+    #config['dataset']['preprocess_params']['prediction_level'] = 'node'
+    #config['dataset']['preprocess_params']['output_dim'] = self.outdim
     return config
 
   def get(self, data):
