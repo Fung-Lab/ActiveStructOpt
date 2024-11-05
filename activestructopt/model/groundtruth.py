@@ -7,6 +7,7 @@ import torch
 class GroundTruth(BaseModel):
   def __init__(self, config, simfunc, **kwargs):
     self.simfunc = simfunc
+    self.device = 'cuda'
 
   def train(self, dataset: BaseDataset, **kwargs):
     return None, None, torch.empty(0)
