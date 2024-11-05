@@ -75,7 +75,8 @@ class TorchBH(BaseOptimizer):
           data.cell.requires_grad_()
         reprocess_data(data, dataset.config, device, nodes = False)
         predictions = model.predict([data], prepared = True, 
-          mask = dataset.simfunc.mask)
+          mask = dataset.simfunc.mask if hasattr(
+          dataset.simfunc, 'mask') else None)
         _, obj_total = objective.get(predictions, target, device = device, 
           N = 1)
         obj_total += constraint_scale * lj_repulsion(data, ljrmins)
