@@ -1,6 +1,8 @@
 from activestructopt.simulation.base import BaseSimulation
 from activestructopt.common.registry import registry
+from activestructopt.common.dataloader import prepare_data_pmg
 import numpy as np
+from pymatgen.core.structure import IStructure
 import torch
 
 @registry.register_simulation("RDFD")
@@ -19,15 +21,21 @@ class RDFD(BaseSimulation):
       self.σ ** 2) * torch.square(self.rs)
     
   def setup_config(self, config):
+    self.config = config
     #config['dataset']['preprocess_params']['prediction_level'] = 'node'
     #config['dataset']['preprocess_params']['output_dim'] = self.outdim
     return config
 
   def get(self, data):
-    self.data = data
+    if isinstance(data, IStructure):
+      self.data = prepare_data_pmg(data, self.config['dataset'], 
+        device = self.device, preprocess = True)
+    else:
+      self.data = data
     # https://github.com/Fung-Lab/MatDeepLearn_dev/blob/main/matdeeplearn/models/torchmd_etEarly.py#L230
-    self.volume = torch.einsum("zi,zi->z", data.cell[:, 0, :], 
-      torch.cross(data.cell[:, 1, :], data.cell[:, 2, :], dim=1)).unsqueeze(-1) 
+    self.volume = torch.einsum("zi,zi->z", self.data.cell[:, 0, :], 
+      torch.cross(self.data.cell[:, 1, :], self.data.cell[:, 2, :], dim = 1)
+      ).unsqueeze(-1) 
 
   def resolve(self):
     ews = self.data.edge_weight
