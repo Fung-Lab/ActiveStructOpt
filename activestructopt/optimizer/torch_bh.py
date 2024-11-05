@@ -154,4 +154,4 @@ class TorchBH(BaseOptimizer):
           raise e
 
     print('Acceptance rate: {}'.format(accepted / hops))
-    return best_structure, None
+    return best_structure, obj_vals
