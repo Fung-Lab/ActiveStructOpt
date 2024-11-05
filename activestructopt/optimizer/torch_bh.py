@@ -23,7 +23,10 @@ class TorchBH(BaseOptimizer):
     optimizer_args = {}, optimize_atoms = True, 
     optimize_lattice = False, save_obj_values = False, 
     constraint_scale = 1.0, pos_lr = 0.001, cell_lr = 0.001,
-    σr = 0.2, σ = 0.0025, **kwargs) -> IStructure:
+    σ = 0.0025, hop_sampler = 'SingleAtomPerturbation', 
+    hop_sampler_args = {'perturbrmin': 0.2, 'perturbrmax': 0.2, 
+      'perturblmax': 0, 'perturbθmax': 0, 'lattice_prob': 0},
+    **kwargs) -> IStructure:
 
     accepted = 0
     device = model.device
@@ -40,9 +43,8 @@ class TorchBH(BaseOptimizer):
     if optimize_lattice:
       best_cell = torch.zeros((3, 3), device = device)
 
-    rmc_sampler = SingleAtomPerturbation(structure, perturbrmin = σr, 
-      perturbrmax = σr, perturblmax = 0, perturbθmax = 0, 
-      lattice_prob = 0)
+    sampler_cls = registry.get_sampler_class(hop_sampler)
+    rmc_sampler = sampler_cls(structure, **hop_sampler_args)
 
     obj_vals = None
     if save_obj_values:
@@ -52,8 +54,7 @@ class TorchBH(BaseOptimizer):
 
     for i in range(hops):
       data = prepare_data_pmg(structure, dataset.config, pos_grad = False, 
-        device = device, preprocess = True, cell_grad = False
-        )
+        device = device, preprocess = True, cell_grad = False)
 
       to_optimize = []
       if optimize_atoms:
