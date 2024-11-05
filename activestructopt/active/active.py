@@ -121,7 +121,7 @@ class ActiveLearning():
         empty_cache()
         
         if save_progress_dir is not None:
-          if self.verbosity == 0:
+          if self.verbosity == 0 or self.verbosity == 0.5:
             self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
               i) + ".json"))
             prev_progress_file = pathjoin(save_progress_dir, str(self.index
