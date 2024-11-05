@@ -161,7 +161,7 @@ class ActiveLearning():
             'target': self.dataset.target.tolist(),
             'mismatches': self.dataset.mismatches,
             'structures': [s.as_dict() for s in self.dataset.structures],
-            'obj_values': self.opt_obj_values.tolist(),
+            'obj_values': [x.tolist() for x in self.opt_obj_values],
       }
       with open(filename, "w") as file: 
         json.dump(res, file)
