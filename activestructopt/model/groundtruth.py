@@ -13,8 +13,8 @@ class GroundTruth(BaseModel):
     return None, None, torch.empty(0)
 
   def predict(self, structure, **kwargs):
-    self.simfunc.get(structure)
+    self.simfunc.get(structure[0])
     gt = self.simfunc.resolve()
     unc = torch.zeros(gt.size())
 
-    return torch.stack((gt, unc))
+    return torch.stack((gt, unc)).unsqueeze(1)
