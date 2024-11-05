@@ -209,9 +209,11 @@ groundtruth_config = {
     'optimize_atoms': True,
     'optimize_lattice': True,
     'constraint_scale': 1.0,
-    'σr': 0.2,
     'σ': 0.02, 
-    'save_obj_values': True,}, 
+    'save_obj_values': True,
+    'hop_sampler': 'SingleAtomPerturbation', 
+    'hop_sampler_args': {'perturbrmin': 0.2, 'perturbrmax': 0.2, 
+      'perturblmax': 0, 'perturbθmax': 0, 'lattice_prob': 0}}, 
    'switch_profiles': [],
    'profiles': [{'name': 'MSE', 'args': {}}],
    }}}
