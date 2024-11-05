@@ -49,7 +49,7 @@ class KFoldsDataset(BaseDataset):
 
   def update(self, new_structure: IStructure):
     self.structures.append(new_structure)
-    y_promise = copy.deepcopy(self.simfunc) 
+    y_promise = self.simfunc
     y_promise.get(new_structure)
     y = y_promise.resolve()
     new_mismatch = self.simfunc.get_mismatch(y, self.target)
