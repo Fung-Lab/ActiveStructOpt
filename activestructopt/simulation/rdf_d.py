@@ -52,4 +52,4 @@ class RDFD(BaseSimulation):
     return
 
   def get_mismatch(self, to_compare, target):
-    return np.mean((to_compare - target) ** 2)
+    return torch.mean((to_compare - target) ** 2).item()
