@@ -81,13 +81,13 @@ class TorchBH(BaseOptimizer):
           N = 1)
         obj_total += constraint_scale * lj_repulsion(data, ljrmins)
         obj_total = torch.nan_to_num(obj_total, nan = torch.inf)
+        obj_vals[j, i] = obj_total.detach().cpu()
         if (obj_total < best_local_obj).item():
           best_local_obj = obj_total.detach()
           if optimize_atoms:
             best_local_x = data.pos.detach().flatten()
           if optimize_lattice:
             best_local_cell = data.cell[0].detach()
-          obj_vals[j, i] = obj_total.detach().cpu()
           if (obj_total < best_obj).item():
             best_obj = best_local_obj
             if optimize_atoms:
