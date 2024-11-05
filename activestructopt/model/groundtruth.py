@@ -15,6 +15,6 @@ class GroundTruth(BaseModel):
   def predict(self, structure, **kwargs):
     self.simfunc.get(structure[0])
     gt = self.simfunc.resolve()
-    unc = torch.zeros(gt.size())
+    unc = torch.zeros(gt.size(), device = gt.device)
 
     return torch.stack((gt, unc)).unsqueeze(1)
