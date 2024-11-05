@@ -44,13 +44,13 @@ class TorchBH(BaseOptimizer):
       perturbrmax = σr, perturblmax = 0, perturbθmax = 0, 
       lattice_prob = 0)
 
-    #obj_vals = None
-    #if save_obj_values:
-    #  obj_vals = torch.zeros((iters_per_start, starts), device = 'cpu')
+    obj_vals = None
+    if save_obj_values:
+      obj_vals = torch.zeros((iters_per_hops, hops), device = 'cpu')
 
     prev_obj = torch.tensor([float('inf')], device = device)
 
-    for _ in range(hops):
+    for i in range(hops):
       data = prepare_data_pmg(structure, dataset.config, pos_grad = False, 
         device = device, preprocess = True, cell_grad = False
         )
@@ -86,6 +86,7 @@ class TorchBH(BaseOptimizer):
             best_local_x = data.pos.detach().flatten()
           if optimize_lattice:
             best_local_cell = data.cell[0].detach()
+          obj_vals[j, i] = obj_total.detach().cpu()
           if (obj_total < best_obj).item():
             best_obj = best_local_obj
             if optimize_atoms:

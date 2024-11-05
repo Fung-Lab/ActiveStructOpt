@@ -186,7 +186,7 @@ groundtruth_config = {
    'node_representation': 'onehot',
    'all_neighbors': True}},
  'submit': None,
- 'aso_params': {'max_forward_calls': 100,
+ 'aso_params': {'max_forward_calls': 31,
   'sampler': {'name': 'Perturbation', 
     'args': {'perturblσ': 0.1, 'perturbrmin': 0.1, 'perturbrmax': 1.0}},
   'dataset': {'name': 'KFoldsDataset', 'args': {'N': 30, 
@@ -210,7 +210,8 @@ groundtruth_config = {
     'optimize_lattice': True,
     'constraint_scale': 1.0,
     'σr': 0.2,
-    'σ': 0.02}, 
+    'σ': 0.02, 
+    'save_obj_values': True,}, 
    'switch_profiles': [],
    'profiles': [{'name': 'MSE', 'args': {}}],
    }}}
