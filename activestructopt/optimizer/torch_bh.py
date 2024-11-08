@@ -26,6 +26,7 @@ class TorchBH(BaseOptimizer):
     σ = 0.0025, hop_sampler = 'SingleAtomPerturbation', 
     hop_sampler_args = {'perturbrmin': 0.2, 'perturbrmax': 0.2, 
       'perturblmax': 0, 'perturbθmax': 0, 'lattice_prob': 0},
+    alternate = False,
     **kwargs) -> IStructure:
 
     accepted = 0
@@ -42,6 +43,12 @@ class TorchBH(BaseOptimizer):
       best_x = torch.zeros(3 * natoms, device = device)
     if optimize_lattice:
       best_cell = torch.zeros((3, 3), device = device)
+
+    sampler_args = hop_sampler_args
+    curr_sampler_type = 'positions'
+
+    if alternate and hasattr(sampler_args, 'perturblσ'):
+      sampler_args['perturblσ'] = 0.0
 
     sampler_cls = registry.get_sampler_class(hop_sampler)
     rmc_sampler = sampler_cls(structure, **hop_sampler_args)
@@ -132,6 +139,28 @@ class TorchBH(BaseOptimizer):
         prev_obj = obj_total
     
       rmc_sampler.initial_structure = prev_structure.copy()
+      if alternate and curr_sampler_type == 'lattice':
+        sampler_args = hop_sampler_args
+        curr_sampler_type = 'positions'
+
+        if hasattr(sampler_args, 'perturblσ'):
+          sampler_args['perturblσ'] = 0.0
+
+        sampler_cls = registry.get_sampler_class(hop_sampler)
+        rmc_sampler = sampler_cls(structure, **hop_sampler_args)
+      elif alternate and curr_sampler_type == 'positions':
+        sampler_args = hop_sampler_args
+        curr_sampler_type = 'lattice'
+
+        if hasattr(sampler_args, 'perturbrmin'):
+          sampler_args['perturbrmin'] = 0.0
+
+        if hasattr(sampler_args, 'perturbrmax'):
+          sampler_args['perturbrmax'] = 0.0
+
+        sampler_cls = registry.get_sampler_class(hop_sampler)
+        rmc_sampler = sampler_cls(structure, **hop_sampler_args)
+
       structure = rmc_sampler.sample()
 
     if optimize_atoms:
