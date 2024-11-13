@@ -150,7 +150,7 @@ class ActiveLearning():
       model_params = []
       for i in range(len(self.model_params)):
         model_dict = {}
-        state_dict = self.model_params[i].state_dict()
+        state_dict = self.model_params[i]
         for param_tensor in state_dict:
           model_dict[param_tensor] = state_dict[param_tensor].detach().cpu(
             ).tolist()
