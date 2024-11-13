@@ -74,9 +74,8 @@ class KFoldsDataset(BaseDataset):
       'N': self.N,
       'structures': [s.as_dict() for s in self.structures],
       'ys': [y.tolist() for y in self.ys],
-      'kfolds': self.kfolds.tolist(),
-      'test_indices': self.test_indices.tolist(),
-      'test_indices': self.test_indices.tolist(),
+      'kfolds': [t.tolist() for t in self.kfolds],
+      'test_indices': [t.tolist() for t in self.test_indices],
       'train_indices': [t.tolist() for t in self.train_indices],
       'mismatches': self.mismatches
     }
