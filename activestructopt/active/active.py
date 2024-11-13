@@ -147,11 +147,19 @@ class ActiveLearning():
           param_tensor].detach().cpu()
 
     if self.verbosity == 0:
+      model_params = []
+      for i in range(len(self.model_params)):
+        model_dict = {}
+        state_dict = self.model_params[i].state_dict()
+        for param_tensor in state_dict:
+          model_dict[param_tensor] = state_dict[param_tensor].detach().cpu(
+            ).numpy().tolist()
+        model_params.append(model_dict)
+
       res = {'index': self.index,
             'ys': [y.tolist() for y in self.dataset.ys],
-            'target': self.dataset.target.tolist(),
-            'mismatches': self.dataset.mismatches,
-            'structures': [s.as_dict() for s in self.dataset.structures]
+            'dataset': self.dataset.toJSONDict(),
+            'model_params': model_params
       }
       with open(filename, "w") as file: 
         json.dump(res, file)
