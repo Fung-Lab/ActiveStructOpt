@@ -57,6 +57,11 @@ class KFoldsDataset(BaseDataset):
       self.kfolds = [np.array(kfold) for kfold in progress_dict['kfolds']]
       self.test_indices = np.array(progress_dict['test_indices'])
       self.mismatches = progress_dict['mismatches']
+      data = [prepare_data_pmg(self.structures[i], config, y = self.ys[i]).to(
+        self.device) for i in range(len(self.structures))]
+      trainval_indices = np.setxor1d(np.arange(len(self.structures)), self.test_indices)
+      self.datasets = [([data[j] for j in np.setxor1d(trainval_indices, self.kfolds[i])], 
+        [data[j] for j in self.kfolds[i]]) for i in range(k)]
 
 
   def update(self, new_structure: IStructure):
