@@ -56,7 +56,7 @@ class KFoldsDataset(BaseDataset):
       self.ys = [np.array(y) for y in progress_dict['ys']]
       self.kfolds = [np.array(kfold) for kfold in progress_dict['kfolds']]
       self.test_indices = np.array(progress_dict['test_indices'])
-      self.mismatches = self.mismatches
+      self.mismatches = progress_dict['mismatches']
 
 
   def update(self, new_structure: IStructure):
