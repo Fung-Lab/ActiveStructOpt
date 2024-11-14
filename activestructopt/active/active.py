@@ -9,6 +9,7 @@ from os.path import exists as pathexists
 from os import remove
 from copy import deepcopy
 from traceback import format_exc
+from collections import OrderedDict
 import json
 import torch
 import os
@@ -39,11 +40,29 @@ class ActiveLearning():
       **(self.config['aso_params']['sampler']['args']))
 
     if progress_file is not None:
-      with open(progress_file, 'rb') as f:
-        progress = load(f)
-      self.dataset = progress['dataset']
-      self.model_params = progress['model_params']
-      self.iteration = progress['dataset'].N - progress['dataset'].start_N - 1
+      if progress_file.split(".")[-1] == 'pkl':
+        with open(progress_file, 'rb') as f:
+          progress = load(f)
+        self.dataset = progress['dataset']
+        self.model_params = progress['model_params']
+        self.iteration = progress['dataset'].N - progress['dataset'].start_N - 1
+      elif progress_file.split(".")[-1] == 'json':
+        with open(progress_file, 'rb') as f:
+          progress_dict = json.load(f)
+          dataset_cls = registry.get_dataset_class(
+            self.config['aso_params']['dataset']['name'])
+          self.dataset = dataset_cls(simfunc, self.sampler, initial_structure, 
+            target, self.config['dataset'], 
+            progress_dict = progress_dict['dataset'], **(
+            self.config['aso_params']['dataset']['args']))
+          self.model_params = []
+          for i in range(len(progress_dict['model_params'])):
+            kparams = OrderedDict()
+            for key, value in progress_dict['model_params'][i].items():
+              kparams[key] = torch.tensor(value)
+            self.model_params.append(kparams)
+      else:
+        raise Exception("Progress file should be .pkl or .json") 
     else:
       dataset_cls = registry.get_dataset_class(
         self.config['aso_params']['dataset']['name'])
@@ -66,21 +85,19 @@ class ActiveLearning():
   def optimize(self, print_mismatches = True, save_progress_dir = None, 
     predict_target = False, new_structure_predict = False):
     try:
-      active_steps = self.config['aso_params'][
-        'max_forward_calls'] - self.dataset.start_N
-
       if print_mismatches:
         print(self.dataset.mismatches)
 
-      for i in range(self.iteration, active_steps):
+      for i in range(len(self.dataset.mismatches), 
+        self.config['aso_params']['max_forward_calls']):
         train_profile = self.config['aso_params']['model']['profiles'][
           np.searchsorted(-np.array(
             self.config['aso_params']['model']['switch_profiles']), 
-            -(active_steps - i))]
+            -(self.config['aso_params']['max_forward_calls'] - i))]
         opt_profile = self.config['aso_params']['optimizer']['profiles'][
           np.searchsorted(-np.array(
             self.config['aso_params']['optimizer']['switch_profiles']), 
-            -(active_steps - i))]
+            -(self.config['aso_params']['max_forward_calls'] - i))]
         
         model_err, metrics, self.model_params = self.model.train(
           self.dataset, **(train_profile))
@@ -157,9 +174,8 @@ class ActiveLearning():
         model_params.append(model_dict)
 
       res = {'index': self.index,
-            'ys': [y.tolist() for y in self.dataset.ys],
             'dataset': self.dataset.toJSONDict(),
-            'model_params': model_params
+            'model_params': model_params,
       }
       with open(filename, "w") as file: 
         json.dump(res, file)
