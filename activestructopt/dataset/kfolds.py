@@ -62,6 +62,8 @@ class KFoldsDataset(BaseDataset):
       trainval_indices = np.setxor1d(np.arange(len(self.structures)), self.test_indices)
       self.datasets = [([data[j] for j in np.setxor1d(trainval_indices, self.kfolds[i])], 
         [data[j] for j in self.kfolds[i]]) for i in range(k)]
+      self.test_data = [data[i] for i in self.test_indices]
+      self.test_targets = [self.ys[i] for i in self.test_indices]
 
 
   def update(self, new_structure: IStructure):
