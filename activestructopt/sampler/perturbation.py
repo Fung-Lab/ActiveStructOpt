@@ -7,13 +7,15 @@ import numpy as np
 @registry.register_sampler("Perturbation")
 class Perturbation(BaseSampler):
   def __init__(self, initial_structure: IStructure, perturbrmin = 0.1, 
-    perturbrmax = 1.0, perturblσ = 0.0, perturbl = None, perturbθ = None) -> None:
+    perturbrmax = 1.0, perturblσ = 0.0, perturbl = None, perturbθ = None, 
+    constraint_buffer = 0.85) -> None:
     self.initial_structure = initial_structure
     self.perturbrmin = perturbrmin
     self.perturbrmax = perturbrmax
     self.perturblσ = perturblσ
     self.perturbl = perturbl
     self.perturbθ = perturbθ
+    self.constraint_buffer = constraint_buffer
 
   def sample(self) -> IStructure:
     rejected = True
@@ -49,7 +51,7 @@ class Perturbation(BaseSampler):
               -self.perturbθ, self.perturbθ))),
           )
         
-        rejected = lj_reject(new_structure)
+        rejected = lj_reject(new_structure, buffer = self.constraint_buffer)
       except:
         rejected = True
     return new_structure

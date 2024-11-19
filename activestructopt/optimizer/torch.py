@@ -22,6 +22,7 @@ class Torch(BaseOptimizer):
     optimizer_args = {}, optimize_atoms = True, 
     optimize_lattice = False, save_obj_values = False, 
     constraint_scale = 1.0, pos_lr = 0.001, cell_lr = 0.001,
+    constraint_buffer = 0.85,
     **kwargs) -> IStructure:
     
     starting_structures = [dataset.structures[j].copy(
@@ -34,7 +35,7 @@ class Torch(BaseOptimizer):
     device = model.device
     nstarts = len(starting_structures)
     natoms = len(starting_structures[0])
-    ljrmins = torch.tensor(lj_rmins, device = device)
+    ljrmins = torch.tensor(lj_rmins, device = device) * constraint_buffer
     best_obj = torch.tensor([float('inf')], device = device)
     if optimize_atoms:
       best_x = torch.zeros(3 * natoms, device = device)
