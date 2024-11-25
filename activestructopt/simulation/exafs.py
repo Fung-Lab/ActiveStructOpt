@@ -90,7 +90,23 @@ class EXAFS(BaseSimulation):
       os.remove(params_loc)
 
       # run feff.inp and don't wait for the output
-      subprocess.Popen(f"cd {new_abs_folder} && {self.feff_location} feff.inp", 
+      subprocess.Popen(f"cd {new_abs_folder} && " + 
+        f"srun {self.feff_location}/rdinp && " + 
+        f"srun {self.feff_location}/atomic && " + 
+        f"srun {self.feff_location}/dmdw && " + 
+        f"srun {self.feff_location}/pot && " + 
+        f"srun {self.feff_location}/ldos && " + 
+        f"srun {self.feff_location}/screen && " + 
+        f"srun {self.feff_location}/opconsat && " + 
+        f"srun {self.feff_location}/xsph && " + 
+        f"srun {self.feff_location}/fms && " + 
+        f"srun {self.feff_location}/mkgtr && " + 
+        f"srun {self.feff_location}/path && " + 
+        f"srun {self.feff_location}/genfmt && " + 
+        f"srun {self.feff_location}/ff2x && " + 
+        f"srun {self.feff_location}/sfconv && " + 
+        f"srun {self.feff_location}/compton && " + 
+        f"srun {self.feff_location}/eels", 
         shell = True)#), stdout = subprocess.PIPE, stderr=subprocess.STDOUT)
     self.folder = new_folder
     self.params = params
