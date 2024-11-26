@@ -16,7 +16,8 @@ import os
 
 class ActiveLearning():
   def __init__(self, simfunc, target, config, initial_structure, 
-    index = -1, target_structure = None, progress_file = None, verbosity = 2):
+    index = -1, target_structure = None, progress_file = None, verbosity = 2,
+    save_progress_dir = None):
     setup_imports()
 
     self.simfunc = simfunc
@@ -81,6 +82,14 @@ class ActiveLearning():
 
     self.traceback = None
     self.error = None
+
+    if save_progress_dir is not None:
+      if self.verbosity == 0 or self.verbosity == 0.5:
+        self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
+          0) + ".json"))
+      else:
+        self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
+          0) + ".pkl"))
   
   def optimize(self, print_mismatches = True, save_progress_dir = None, 
     predict_target = False, new_structure_predict = False):

@@ -13,7 +13,8 @@ import shutil
 class EXAFS(BaseSimulation):
   def __init__(self, initial_structure, feff_location = "", folder = "", 
     absorber = 'Co', edge = 'K', radius = 10.0, kmax = 12.0, 
-    scf = '4.5 0 30 .2 1', rgrid = 0.05, **kwargs) -> None:
+    scf = '4.5 0 30 .2 1', rgrid = 0.05, sbatch_template = None, 
+    **kwargs) -> None:
     self.feff_location = feff_location
     self.parent_folder = folder
     self.absorber = absorber
@@ -25,6 +26,7 @@ class EXAFS(BaseSimulation):
     self.mask = [x.symbol == self.absorber 
       for x in initial_structure.species]
     self.N = len(self.mask)
+    self.sbatch_template = sbatch_template
 
   def setup_config(self, config):
     config['dataset']['preprocess_params']['prediction_level'] = 'node'
@@ -89,25 +91,18 @@ class EXAFS(BaseSimulation):
       os.remove(pot_loc)
       os.remove(params_loc)
 
-      # run feff.inp and don't wait for the output
-      subprocess.Popen(f"cd {new_abs_folder} && " + 
-        f"srun {self.feff_location}/rdinp && " + 
-        f"srun {self.feff_location}/atomic && " + 
-        f"srun {self.feff_location}/dmdw && " + 
-        f"srun {self.feff_location}/pot && " + 
-        f"srun {self.feff_location}/ldos && " + 
-        f"srun {self.feff_location}/screen && " + 
-        f"srun {self.feff_location}/opconsat && " + 
-        f"srun {self.feff_location}/xsph && " + 
-        f"srun {self.feff_location}/fms && " + 
-        f"srun {self.feff_location}/mkgtr && " + 
-        f"srun {self.feff_location}/path && " + 
-        f"srun {self.feff_location}/genfmt && " + 
-        f"srun {self.feff_location}/ff2x && " + 
-        f"srun {self.feff_location}/sfconv && " + 
-        f"srun {self.feff_location}/compton && " + 
-        f"srun {self.feff_location}/eels", 
-        shell = True)#), stdout = subprocess.PIPE, stderr=subprocess.STDOUT)
+    with open(self.sbatch_template, 'r') as file:
+      sbatch_data = file.read()
+    index_str = str(absorber_indices[0])
+    for i in range(1, len(absorber_indices)):
+      index_str += ',' + str(absorber_indices[i])
+    sbatch_data = sbatch_data.replace('##ARRAY_INDS##', index_str)
+    sbatch_data = sbatch_data.replace('##DIRECTORY##', new_folder)
+    new_job_file = os.path.join(new_folder, 'job.sbatch')
+    with open(new_job_file, 'w') as file:
+      file.write(sbatch_data)
+    subprocess.Popen(f"sbatch {new_job_file}", shell = True)
+    
     self.folder = new_folder
     self.params = params
     self.inds = absorber_indices 
