@@ -12,10 +12,9 @@ import copy
 class KFoldsDataset(BaseDataset):
   def __init__(self, simulation: BaseSimulation, sampler: BaseSampler, 
     initial_structure: IStructure, target, config, N = 100, split = 0.85, 
-    k = 5, device = 'cuda', seed = 0, progress_dict = None, 
+    k = 5, seed = 0, progress_dict = None, 
     new_ys = None, wait_for_ys = True, **kwargs) -> None:
     np.random.seed(seed)
-    self.device = device
     self.config = config
     self.target = target
     self.initial_structure = initial_structure
@@ -38,18 +37,11 @@ class KFoldsDataset(BaseDataset):
       trainval_indices = np.append(trainval_indices, [0])
       self.kfolds = np.array_split(trainval_indices, k)
       self.test_indices = structure_indices[int(np.round(split * N) - 1):]
-      train_indices = [np.concatenate(
-        [self.kfolds[j] for j in range(k) if j != i]) for i in range(k)]
 
       if self.wait_for_ys:
         self.ys = [yp.resolve() for yp in y_promises]
         self.test_targets = [self.ys[i] for i in self.test_indices]
         self.mismatches = [simulation.get_mismatch(y, target) for y in self.ys]
-        data = [prepare_data_pmg(self.structures[i], config, y = self.ys[i]).to(
-          self.device) for i in range(N)]
-        self.test_data = [data[i] for i in self.test_indices]
-        self.datasets = [([data[j] for j in train_indices[i]], 
-          [data[j] for j in self.kfolds[i]]) for i in range(k)]
       else:
         self.ys = []
         self.mismatches = []
@@ -64,14 +56,6 @@ class KFoldsDataset(BaseDataset):
       self.kfolds = progress_dict['kfolds']
       self.test_indices = np.array(progress_dict['test_indices'])
       self.mismatches = progress_dict['mismatches']
-      data = [prepare_data_pmg(self.structures[i], config, y = self.ys[i]).to(
-        self.device) for i in range(len(self.structures))]
-      trainval_indices = np.setxor1d(np.arange(len(self.structures)), self.test_indices)
-      self.datasets = [([data[j] for j in np.setxor1d(trainval_indices, self.kfolds[i])], 
-        [data[j] for j in self.kfolds[i]]) for i in range(k)]
-      self.test_data = [data[i] for i in self.test_indices]
-      self.test_targets = [self.ys[i] for i in self.test_indices]
-
 
   def update(self, new_structure: IStructure):
     self.structures.append(new_structure)
@@ -86,18 +70,12 @@ class KFoldsDataset(BaseDataset):
       self.update_new_ys(self, y)
 
   def update_new_ys(self, new_y):
-    new_data = prepare_data_pmg(self.structures[-1], self.config, y = new_y
-      ).to(self.device)
     fold = len(self.datasets) - 1
     for i in range(len(self.datasets) - 1):
       if len(self.datasets[i][1]) < len(self.datasets[i + 1][1]):
         fold = i
         break
     self.kfolds[fold].append(fold)
-    self.datasets[fold][1].append(new_data)
-    for i in range(len(self.datasets)):
-      if fold != i:
-        self.datasets[i][0].append(new_data)
     new_mismatch = self.simfunc.get_mismatch(new_y, self.target)
     self.ys.append(new_y)
     self.mismatches.append(new_mismatch)
