@@ -15,15 +15,13 @@ import torch
 import os
 
 class ActiveLearning():
-  def __init__(self, simfunc, target, config, initial_structure, 
-    index = -1, target_structure = None, progress_file = None, verbosity = 2,
-    save_progress_dir = None):
+  def __init__(self, simfunc, target, initial_structure, index = -1, 
+    config = None, target_structure = None, progress_file = None, verbosity = 2,
+    save_progress_dir = None, save_initialization = False):
     setup_imports()
 
     self.simfunc = simfunc
-    self.config = simfunc.setup_config(config)
     self.index = index
-    self.iteration = 0
     self.verbosity = verbosity
 
     self.model_params = None
@@ -35,21 +33,18 @@ class ActiveLearning():
     if not (target_structure is None):
       self.target_predictions = []
 
-    sampler_cls = registry.get_sampler_class(
-      self.config['aso_params']['sampler']['name'])
-    self.sampler = sampler_cls(initial_structure, 
-      **(self.config['aso_params']['sampler']['args']))
-
     if progress_file is not None:
       if progress_file.split(".")[-1] == 'pkl':
         with open(progress_file, 'rb') as f:
           progress = load(f)
+        self.config = progress['config']
         self.dataset = progress['dataset']
         self.model_params = progress['model_params']
         self.iteration = progress['dataset'].N - progress['dataset'].start_N - 1
       elif progress_file.split(".")[-1] == 'json':
         with open(progress_file, 'rb') as f:
           progress_dict = json.load(f)
+          self.config = progress_dict['config']
           dataset_cls = registry.get_dataset_class(
             self.config['aso_params']['dataset']['name'])
           self.dataset = dataset_cls(simfunc, self.sampler, initial_structure, 
@@ -65,6 +60,12 @@ class ActiveLearning():
       else:
         raise Exception("Progress file should be .pkl or .json") 
     else:
+      self.iteration = 0
+      self.config = simfunc.setup_config(config)
+      sampler_cls = registry.get_sampler_class(
+        self.config['aso_params']['sampler']['name'])
+      self.sampler = sampler_cls(initial_structure, 
+        **(self.config['aso_params']['sampler']['args']))
       dataset_cls = registry.get_dataset_class(
         self.config['aso_params']['dataset']['name'])
       self.dataset = dataset_cls(simfunc, self.sampler, initial_structure, 
@@ -82,14 +83,17 @@ class ActiveLearning():
 
     self.traceback = None
     self.error = None
+    self.last_prog_file = None
 
-    if save_progress_dir is not None:
+    if save_progress_dir is not None and save_initialization:
       if self.verbosity == 0 or self.verbosity == 0.5:
-        self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
-          0) + ".json"))
+        self.save(pathjoin(save_progress_dir, str(self.index) + "_0.json"))
+        self.last_prog_file = pathjoin(save_progress_dir, 
+          str(self.index) + "_0.json")
       else:
-        self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
-          0) + ".pkl"))
+        self.save(pathjoin(save_progress_dir, str(self.index) + "_0.pkl"))
+        self.last_prog_file = pathjoin(save_progress_dir, 
+          str(self.index) + "_0.pkl")
   
   def optimize(self, print_mismatches = True, save_progress_dir = None, 
     predict_target = False, new_structure_predict = False):
@@ -99,9 +103,36 @@ class ActiveLearning():
 
       for i in range(len(self.dataset.mismatches), 
         self.config['aso_params']['max_forward_calls']):
+        train_profile = self.config['aso_params']['model']['profiles'][
+          np.searchsorted(-np.array(
+            self.config['aso_params']['model']['switch_profiles']), 
+            -(self.config['aso_params']['max_forward_calls'] - i))]
+        opt_profile = self.config['aso_params']['optimizer']['profiles'][
+          np.searchsorted(-np.array(
+            self.config['aso_params']['optimizer']['switch_profiles']), 
+            -(self.config['aso_params']['max_forward_calls'] - i))]
         
-        new_structure = self.opt_step(self, i, predict_target = predict_target, 
-          save_file = None)
+        model_err, metrics, self.model_params = self.model.train(
+          self.dataset, **(train_profile))
+        self.model_errs.append(model_err)
+        self.model_metrics.append(metrics)
+
+        if not (self.target_structure is None) and predict_target:
+          with inference_mode():
+            self.target_predictions.append(self.model.predict(
+              self.target_structure, 
+              mask = self.dataset.simfunc.mask).cpu().numpy())
+
+        objective_cls = registry.get_objective_class(opt_profile['name'])
+        objective = objective_cls(**(opt_profile['args']))
+
+        optimizer_cls = registry.get_optimizer_class(
+          self.config['aso_params']['optimizer']['name'])
+
+        new_structure, obj_values = optimizer_cls().run(self.model, 
+          self.dataset, objective, self.sampler, 
+          **(self.config['aso_params']['optimizer']['args']))
+        self.opt_obj_values.append(obj_values)
         
         #print(new_structure)
         #for ensemble_i in range(len(metrics)):
@@ -123,11 +154,15 @@ class ActiveLearning():
           if self.verbosity == 0 or self.verbosity == 0.5:
             self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
               i) + ".json"))
+            self.last_prog_file = pathjoin(save_progress_dir, 
+              str(self.index) + "_" + str(i) + ".json")
             prev_progress_file = pathjoin(save_progress_dir, str(self.index
               ) + "_" + str(i - 1) + ".json")
           else:
             self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
               i) + ".pkl"))
+            self.last_prog_file = pathjoin(save_progress_dir, 
+              str(self.index) + "_" + str(i) + ".pkl")
             prev_progress_file = pathjoin(save_progress_dir, str(self.index
               ) + "_" + str(i - 1) + ".pkl")
           if pathexists(prev_progress_file):
@@ -137,57 +172,6 @@ class ActiveLearning():
       self.error = err
       print(self.traceback)
       print(self.error)
-
-  def opt_step(self, stepi, predict_target = False, save_file = None):
-    train_profile = self.config['aso_params']['model']['profiles'][
-      np.searchsorted(-np.array(
-        self.config['aso_params']['model']['switch_profiles']), 
-        -(self.config['aso_params']['max_forward_calls'] - stepi))]
-    opt_profile = self.config['aso_params']['optimizer']['profiles'][
-      np.searchsorted(-np.array(
-        self.config['aso_params']['optimizer']['switch_profiles']), 
-        -(self.config['aso_params']['max_forward_calls'] - stepi))]
-    
-    model_err, metrics, self.model_params = self.model.train(
-      self.dataset, **(train_profile))
-    self.model_errs.append(model_err)
-    self.model_metrics.append(metrics)
-
-    if not (self.target_structure is None) and predict_target:
-      with inference_mode():
-        self.target_predictions.append(self.model.predict(
-          self.target_structure, 
-          mask = self.dataset.simfunc.mask).cpu().numpy())
-
-    objective_cls = registry.get_objective_class(opt_profile['name'])
-    objective = objective_cls(**(opt_profile['args']))
-
-    optimizer_cls = registry.get_optimizer_class(
-      self.config['aso_params']['optimizer']['name'])
-
-    new_structure, obj_values = optimizer_cls().run(self.model, 
-      self.dataset, objective, self.sampler, 
-      **(self.config['aso_params']['optimizer']['args']))
-    self.opt_obj_values.append(obj_values)
-    
-    if not (save_file is None):
-      model_params = []
-      for i in range(len(self.model_params)):
-        model_dict = {}
-        state_dict = self.model_params[i]
-        for param_tensor in state_dict:
-          model_dict[param_tensor] = state_dict[param_tensor].detach().cpu(
-            ).tolist()
-        model_params.append(model_dict)
-      res = {'index': self.index,
-            'structure': new_structure,
-            'model_params': model_params,
-      }
-      with open(save_file, "w") as file: 
-        json.dump(res, file)
-        
-    return new_structure
-
 
   def save(self, filename, additional_data = {}):
     cpu_model_params = deepcopy(self.model_params)
@@ -209,6 +193,7 @@ class ActiveLearning():
       res = {'index': self.index,
             'dataset': self.dataset.toJSONDict(),
             'model_params': model_params,
+            'config': self.config,
       }
       with open(filename, "w") as file: 
         json.dump(res, file)
@@ -219,6 +204,7 @@ class ActiveLearning():
             'mismatches': self.dataset.mismatches,
             'structures': [s.as_dict() for s in self.dataset.structures],
             'obj_values': [x.tolist() for x in self.opt_obj_values],
+            'config': self.config,
       }
       with open(filename, "w") as file: 
         json.dump(res, file)
