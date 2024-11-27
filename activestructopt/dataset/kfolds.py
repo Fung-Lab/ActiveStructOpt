@@ -37,6 +37,8 @@ class KFoldsDataset(BaseDataset):
       trainval_indices = structure_indices[:int(np.round(split * N) - 1)]
       trainval_indices = np.append(trainval_indices, [0])
       self.kfolds = np.array_split(trainval_indices, k)
+      for i in range(self.k):
+        self.kfolds[i] = self.kfolds[i].tolist()
       self.test_indices = structure_indices[int(np.round(split * N) - 1):]
       train_indices = [np.concatenate(
         [self.kfolds[j] for j in range(k) if j != i]) for i in range(k)]
