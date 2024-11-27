@@ -83,14 +83,17 @@ class ActiveLearning():
 
     self.traceback = None
     self.error = None
+    self.last_prog_file = None
 
     if save_progress_dir is not None and save_initialization:
       if self.verbosity == 0 or self.verbosity == 0.5:
-        self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
-          0) + ".json"))
+        self.save(pathjoin(save_progress_dir, str(self.index) + "_0.json"))
+        self.last_prog_file = pathjoin(save_progress_dir, 
+          str(self.index) + "_0.json")
       else:
-        self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
-          0) + ".pkl"))
+        self.save(pathjoin(save_progress_dir, str(self.index) + "_0.pkl"))
+        self.last_prog_file = pathjoin(save_progress_dir, 
+          str(self.index) + "_0.pkl")
   
   def optimize(self, print_mismatches = True, save_progress_dir = None, 
     predict_target = False, new_structure_predict = False):
@@ -151,11 +154,15 @@ class ActiveLearning():
           if self.verbosity == 0 or self.verbosity == 0.5:
             self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
               i) + ".json"))
+            self.last_prog_file = pathjoin(save_progress_dir, 
+              str(self.index) + "_" + str(i) + ".json")
             prev_progress_file = pathjoin(save_progress_dir, str(self.index
               ) + "_" + str(i - 1) + ".json")
           else:
             self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
               i) + ".pkl"))
+            self.last_prog_file = pathjoin(save_progress_dir, 
+              str(self.index) + "_" + str(i) + ".pkl")
             prev_progress_file = pathjoin(save_progress_dir, str(self.index
               ) + "_" + str(i - 1) + ".pkl")
           if pathexists(prev_progress_file):
