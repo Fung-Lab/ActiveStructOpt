@@ -87,7 +87,6 @@ torchmd_config = {
    'perturbrmin': 0.0, 
    'perturbrmax': 1.0, 
    'split': 1/3, 
-   'device': 'cuda', 
    'seed': 0}},
   'model': {'name': 'GNNEnsemble', 'args': {'k': 5}, 
     'switch_profiles': [], 
