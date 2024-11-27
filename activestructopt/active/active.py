@@ -15,13 +15,15 @@ import torch
 import os
 
 class ActiveLearning():
-  def __init__(self, simfunc, target, initial_structure, index = -1, 
-    config = None, target_structure = None, progress_file = None, verbosity = 2,
-    save_progress_dir = None, save_initialization = False):
+  def __init__(self, simfunc, target, config, initial_structure, 
+    index = -1, target_structure = None, progress_file = None, verbosity = 2,
+    save_progress_dir = None):
     setup_imports()
 
     self.simfunc = simfunc
+    self.config = simfunc.setup_config(config)
     self.index = index
+    self.iteration = 0
     self.verbosity = verbosity
 
     self.model_params = None
@@ -33,18 +35,21 @@ class ActiveLearning():
     if not (target_structure is None):
       self.target_predictions = []
 
+    sampler_cls = registry.get_sampler_class(
+      self.config['aso_params']['sampler']['name'])
+    self.sampler = sampler_cls(initial_structure, 
+      **(self.config['aso_params']['sampler']['args']))
+
     if progress_file is not None:
       if progress_file.split(".")[-1] == 'pkl':
         with open(progress_file, 'rb') as f:
           progress = load(f)
-        self.config = progress['config']
         self.dataset = progress['dataset']
         self.model_params = progress['model_params']
         self.iteration = progress['dataset'].N - progress['dataset'].start_N - 1
       elif progress_file.split(".")[-1] == 'json':
         with open(progress_file, 'rb') as f:
           progress_dict = json.load(f)
-          self.config = progress_dict['config']
           dataset_cls = registry.get_dataset_class(
             self.config['aso_params']['dataset']['name'])
           self.dataset = dataset_cls(simfunc, self.sampler, initial_structure, 
@@ -60,12 +65,6 @@ class ActiveLearning():
       else:
         raise Exception("Progress file should be .pkl or .json") 
     else:
-      self.iteration = 0
-      self.config = simfunc.setup_config(config)
-      sampler_cls = registry.get_sampler_class(
-        self.config['aso_params']['sampler']['name'])
-      self.sampler = sampler_cls(initial_structure, 
-        **(self.config['aso_params']['sampler']['args']))
       dataset_cls = registry.get_dataset_class(
         self.config['aso_params']['dataset']['name'])
       self.dataset = dataset_cls(simfunc, self.sampler, initial_structure, 
@@ -83,17 +82,14 @@ class ActiveLearning():
 
     self.traceback = None
     self.error = None
-    self.last_prog_file = None
 
-    if save_progress_dir is not None and save_initialization:
+    if save_progress_dir is not None:
       if self.verbosity == 0 or self.verbosity == 0.5:
-        self.save(pathjoin(save_progress_dir, str(self.index) + "_0.json"))
-        self.last_prog_file = pathjoin(save_progress_dir, 
-          str(self.index) + "_0.json")
+        self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
+          0) + ".json"))
       else:
-        self.save(pathjoin(save_progress_dir, str(self.index) + "_0.pkl"))
-        self.last_prog_file = pathjoin(save_progress_dir, 
-          str(self.index) + "_0.pkl")
+        self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
+          0) + ".pkl"))
   
   def optimize(self, print_mismatches = True, save_progress_dir = None, 
     predict_target = False, new_structure_predict = False):
@@ -154,15 +150,11 @@ class ActiveLearning():
           if self.verbosity == 0 or self.verbosity == 0.5:
             self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
               i) + ".json"))
-            self.last_prog_file = pathjoin(save_progress_dir, 
-              str(self.index) + "_" + str(i) + ".json")
             prev_progress_file = pathjoin(save_progress_dir, str(self.index
               ) + "_" + str(i - 1) + ".json")
           else:
             self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
               i) + ".pkl"))
-            self.last_prog_file = pathjoin(save_progress_dir, 
-              str(self.index) + "_" + str(i) + ".pkl")
             prev_progress_file = pathjoin(save_progress_dir, str(self.index
               ) + "_" + str(i - 1) + ".pkl")
           if pathexists(prev_progress_file):
@@ -193,7 +185,6 @@ class ActiveLearning():
       res = {'index': self.index,
             'dataset': self.dataset.toJSONDict(),
             'model_params': model_params,
-            'config': self.config,
       }
       with open(filename, "w") as file: 
         json.dump(res, file)
@@ -204,7 +195,6 @@ class ActiveLearning():
             'mismatches': self.dataset.mismatches,
             'structures': [s.as_dict() for s in self.dataset.structures],
             'obj_values': [x.tolist() for x in self.opt_obj_values],
-            'config': self.config,
       }
       with open(filename, "w") as file: 
         json.dump(res, file)
