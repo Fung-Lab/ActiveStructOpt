@@ -103,37 +103,9 @@ class ActiveLearning():
 
       for i in range(len(self.dataset.mismatches), 
         self.config['aso_params']['max_forward_calls']):
-        train_profile = self.config['aso_params']['model']['profiles'][
-          np.searchsorted(-np.array(
-            self.config['aso_params']['model']['switch_profiles']), 
-            -(self.config['aso_params']['max_forward_calls'] - i))]
-        opt_profile = self.config['aso_params']['optimizer']['profiles'][
-          np.searchsorted(-np.array(
-            self.config['aso_params']['optimizer']['switch_profiles']), 
-            -(self.config['aso_params']['max_forward_calls'] - i))]
         
-        model_err, metrics, self.model_params = self.model.train(
-          self.dataset, **(train_profile))
-        self.model_errs.append(model_err)
-        self.model_metrics.append(metrics)
-
-        if not (self.target_structure is None) and predict_target:
-          with inference_mode():
-            self.target_predictions.append(self.model.predict(
-              self.target_structure, 
-              mask = self.dataset.simfunc.mask).cpu().numpy())
-
-        objective_cls = registry.get_objective_class(opt_profile['name'])
-        objective = objective_cls(**(opt_profile['args']))
-
-        optimizer_cls = registry.get_optimizer_class(
-          self.config['aso_params']['optimizer']['name'])
-
-        new_structure, obj_values = optimizer_cls().run(self.model, 
-          self.dataset, objective, self.sampler, 
-          **(self.config['aso_params']['optimizer']['args']))
-        self.opt_obj_values.append(obj_values)
-        
+        new_structure = self.opt_step(self, i, predict_target = predict_target, 
+          save_file = None)
         #print(new_structure)
         #for ensemble_i in range(len(metrics)):
         #  print(metrics[ensemble_i]['val_error'])
@@ -172,6 +144,56 @@ class ActiveLearning():
       self.error = err
       print(self.traceback)
       print(self.error)
+
+  def opt_step(self, stepi, predict_target = False, save_file = None):
+    train_profile = self.config['aso_params']['model']['profiles'][
+      np.searchsorted(-np.array(
+        self.config['aso_params']['model']['switch_profiles']), 
+        -(self.config['aso_params']['max_forward_calls'] - i))]
+    opt_profile = self.config['aso_params']['optimizer']['profiles'][
+      np.searchsorted(-np.array(
+        self.config['aso_params']['optimizer']['switch_profiles']), 
+        -(self.config['aso_params']['max_forward_calls'] - i))]
+    
+    model_err, metrics, self.model_params = self.model.train(
+      self.dataset, **(train_profile))
+    self.model_errs.append(model_err)
+    self.model_metrics.append(metrics)
+
+    if not (self.target_structure is None) and predict_target:
+      with inference_mode():
+        self.target_predictions.append(self.model.predict(
+          self.target_structure, 
+          mask = self.dataset.simfunc.mask).cpu().numpy())
+
+    objective_cls = registry.get_objective_class(opt_profile['name'])
+    objective = objective_cls(**(opt_profile['args']))
+
+    optimizer_cls = registry.get_optimizer_class(
+      self.config['aso_params']['optimizer']['name'])
+
+    new_structure, obj_values = optimizer_cls().run(self.model, 
+      self.dataset, objective, self.sampler, 
+      **(self.config['aso_params']['optimizer']['args']))
+    self.opt_obj_values.append(obj_values)
+
+    if not (save_file is None):
+      model_params = []
+      for i in range(len(self.model_params)):
+        model_dict = {}
+        state_dict = self.model_params[i]
+        for param_tensor in state_dict:
+          model_dict[param_tensor] = state_dict[param_tensor].detach().cpu(
+            ).tolist()
+        model_params.append(model_dict)
+      res = {'index': self.index,
+            'structure': new_structure,
+            'model_params': model_params,
+      }
+      with open(save_file, "w") as file: 
+        json.dump(res, file)
+        
+    return new_structure
 
   def save(self, filename, additional_data = {}):
     cpu_model_params = deepcopy(self.model_params)
