@@ -149,11 +149,11 @@ class ActiveLearning():
     train_profile = self.config['aso_params']['model']['profiles'][
       np.searchsorted(-np.array(
         self.config['aso_params']['model']['switch_profiles']), 
-        -(self.config['aso_params']['max_forward_calls'] - i))]
+        -(self.config['aso_params']['max_forward_calls'] - stepi))]
     opt_profile = self.config['aso_params']['optimizer']['profiles'][
       np.searchsorted(-np.array(
         self.config['aso_params']['optimizer']['switch_profiles']), 
-        -(self.config['aso_params']['max_forward_calls'] - i))]
+        -(self.config['aso_params']['max_forward_calls'] - stepi))]
     
     model_err, metrics, self.model_params = self.model.train(
       self.dataset, **(train_profile))
