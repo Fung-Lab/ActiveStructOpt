@@ -38,6 +38,8 @@ class KFoldsDataset(BaseDataset):
       trainval_indices = structure_indices[:int(np.round(split * N) - 1)]
       trainval_indices = np.append(trainval_indices, [0])
       self.kfolds = np.array_split(trainval_indices, k)
+      for i in range(self.k):
+        self.kfolds[i] = self.kfolds[i].tolist()
       self.test_indices = structure_indices[int(np.round(split * N) - 1):]
       self.test_data = [data[i] for i in self.test_indices]
       self.test_targets = [self.ys[i] for i in self.test_indices]
@@ -54,7 +56,7 @@ class KFoldsDataset(BaseDataset):
       self.structures = [Structure.from_dict(
         s) for s in progress_dict['structures']]
       self.ys = [np.array(y) for y in progress_dict['ys']]
-      self.kfolds = [np.array(kfold) for kfold in progress_dict['kfolds']]
+      self.kfolds = progress_dict['kfolds']
       self.test_indices = np.array(progress_dict['test_indices'])
       self.mismatches = progress_dict['mismatches']
       data = [prepare_data_pmg(self.structures[i], config, y = self.ys[i]).to(
@@ -94,7 +96,7 @@ class KFoldsDataset(BaseDataset):
       'N': self.N,
       'structures': [s.as_dict() for s in self.structures],
       'ys': [y.tolist() for y in self.ys],
-      'kfolds': [t.tolist() for t in self.kfolds],
+      'kfolds': self.kfolds,
       'test_indices': [t.tolist() for t in self.test_indices],
       'mismatches': self.mismatches
     }
