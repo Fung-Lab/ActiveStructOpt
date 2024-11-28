@@ -10,9 +10,12 @@ from os import remove
 from copy import deepcopy
 from traceback import format_exc
 from collections import OrderedDict
+from pymatgen.core.structure import Structure
 import json
 import torch
 import os
+import time
+import subprocess
 
 class ActiveLearning():
   def __init__(self, simfunc, target, initial_structure, index = -1, 
@@ -144,6 +147,32 @@ class ActiveLearning():
       self.error = err
       print(self.traceback)
       print(self.error)
+
+  def opt_step_sbatch(self, sbatch_template):
+    with open(sbatch_template, 'r') as file:
+      sbatch_data = file.read()
+    sbatch_data = sbatch_data.replace('##PROG_FILE##', self.last_prog_file)
+    new_job_file = f'gpu_job_{self.index}.sbatch'
+    with open(new_job_file, 'w') as file:
+      file.write(sbatch_data)
+    subprocess.Popen(f"sbatch {new_job_file}", shell = True)
+    opened = False
+    while not opened:
+      try:
+        f = open(os.path.join(f"gpu_job_{self.index}.json"), "r")
+        opened = True
+        f.close()
+      except:
+        time.sleep(10)
+    with open(f"gpu_job_{self.index}.json", 'rb') as f:
+      progress_dict = json.load(f)
+      self.model_params = []
+      for i in range(len(progress_dict['model_params'])):
+        kparams = OrderedDict()
+        for key, value in progress_dict['model_params'][i].items():
+          kparams[key] = torch.tensor(value)
+        self.model_params.append(kparams)
+    return Structure.from_dict(progress_dict['new_structure'])
 
   def opt_step(self, stepi, predict_target = False, save_file = None):
     train_profile = self.config['aso_params']['model']['profiles'][
