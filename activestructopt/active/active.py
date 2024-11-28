@@ -172,7 +172,7 @@ class ActiveLearning():
         for key, value in progress_dict['model_params'][i].items():
           kparams[key] = torch.tensor(value)
         self.model_params.append(kparams)
-    return Structure.from_dict(progress_dict['new_structure'])
+    return Structure.from_dict(progress_dict['structure'])
 
   def opt_step(self, stepi, predict_target = False, save_file = None):
     train_profile = self.config['aso_params']['model']['profiles'][
