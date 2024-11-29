@@ -99,7 +99,7 @@ class ActiveLearning():
           str(self.index) + "_0.pkl")
   
   def optimize(self, print_mismatches = True, save_progress_dir = None, 
-    predict_target = False, new_structure_predict = False):
+    predict_target = False, new_structure_predict = False, sbatch_template = None):
     try:
       if print_mismatches:
         print(self.dataset.mismatches)
@@ -107,8 +107,11 @@ class ActiveLearning():
       for i in range(len(self.dataset.mismatches), 
         self.config['aso_params']['max_forward_calls']):
         
-        new_structure = self.opt_step(self, predict_target = predict_target, 
-          save_file = None)
+        if sbatch_template is None:
+          new_structure = self.opt_step(self, predict_target = predict_target, 
+            save_file = None)
+        else:
+          new_structure = self.opt_step_sbatch(sbatch_template)
         #print(new_structure)
         #for ensemble_i in range(len(metrics)):
         #  print(metrics[ensemble_i]['val_error'])
