@@ -107,7 +107,7 @@ class ActiveLearning():
       for i in range(len(self.dataset.mismatches), 
         self.config['aso_params']['max_forward_calls']):
         
-        new_structure = self.opt_step(self, i, predict_target = predict_target, 
+        new_structure = self.opt_step(self, predict_target = predict_target, 
           save_file = None)
         #print(new_structure)
         #for ensemble_i in range(len(metrics)):
@@ -174,7 +174,8 @@ class ActiveLearning():
         self.model_params.append(kparams)
     return Structure.from_dict(progress_dict['structure'])
 
-  def opt_step(self, stepi, predict_target = False, save_file = None):
+  def opt_step(self, predict_target = False, save_file = None):
+    stepi = len(self.dataset.mismatches)
     train_profile = self.config['aso_params']['model']['profiles'][
       np.searchsorted(-np.array(
         self.config['aso_params']['model']['switch_profiles']), 
