@@ -57,6 +57,10 @@ class KFoldsDataset(BaseDataset):
         s) for s in progress_dict['structures']]
       self.ys = [np.array(y) for y in progress_dict['ys']]
       self.kfolds = progress_dict['kfolds']
+      for i in range(self.k):
+        for j in range(len(self.kfolds[i])):
+          if self.kfolds[i][j] > self.start_N:
+            self.kfolds[i][j] = self.kfolds[i][j] - 1
       self.test_indices = np.array(progress_dict['test_indices'])
       self.mismatches = progress_dict['mismatches']
       data = [prepare_data_pmg(self.structures[i], config, y = self.ys[i]).to(
@@ -66,7 +70,6 @@ class KFoldsDataset(BaseDataset):
         [data[j] for j in self.kfolds[i]]) for i in range(k)]
       self.test_data = [data[i] for i in self.test_indices]
       self.test_targets = [self.ys[i] for i in self.test_indices]
-
 
   def update(self, new_structure: IStructure):
     self.structures.append(new_structure)
