@@ -12,9 +12,8 @@ import copy
 class KFoldsDataset(BaseDataset):
   def __init__(self, simulation: BaseSimulation, sampler: BaseSampler, 
     initial_structure: IStructure, target, config, N = 100, split = 0.85, 
-    k = 5, device = 'cuda', seed = 0, progress_dict = None, **kwargs) -> None:
+    k = 5, seed = 0, progress_dict = None, **kwargs) -> None:
     np.random.seed(seed)
-    self.device = device
     self.config = config
     self.target = target
     self.initial_structure = initial_structure
@@ -31,8 +30,6 @@ class KFoldsDataset(BaseDataset):
       for i, s in enumerate(self.structures):
         y_promises[i].get(s, group = True, separator = ' ')
       self.ys = [yp.resolve() for yp in y_promises]
-      data = [prepare_data_pmg(self.structures[i], config, y = self.ys[i]).to(
-        self.device) for i in range(N)]
           
       structure_indices = np.random.permutation(np.arange(1, N))
       trainval_indices = structure_indices[:int(np.round(split * N) - 1)]
@@ -41,14 +38,6 @@ class KFoldsDataset(BaseDataset):
       for i in range(self.k):
         self.kfolds[i] = self.kfolds[i].tolist()
       self.test_indices = structure_indices[int(np.round(split * N) - 1):]
-      self.test_data = [data[i] for i in self.test_indices]
-      self.test_targets = [self.ys[i] for i in self.test_indices]
-      train_indices = [np.concatenate(
-        [self.kfolds[j] for j in range(k) if j != i]) for i in range(k)]
-      
-      self.datasets = [([data[j] for j in train_indices[i]], 
-        [data[j] for j in self.kfolds[i]]) for i in range(k)]
-
       self.mismatches = [simulation.get_mismatch(y, target) for y in self.ys]
     else:
       self.start_N = progress_dict['start_N']
@@ -59,14 +48,6 @@ class KFoldsDataset(BaseDataset):
       self.kfolds = progress_dict['kfolds']
       self.test_indices = np.array(progress_dict['test_indices'])
       self.mismatches = progress_dict['mismatches']
-      data = [prepare_data_pmg(self.structures[i], config, y = self.ys[i]).to(
-        self.device) for i in range(len(self.structures))]
-      trainval_indices = np.setxor1d(np.arange(len(self.structures)), self.test_indices)
-      self.datasets = [([data[j] for j in np.setxor1d(trainval_indices, self.kfolds[i])], 
-        [data[j] for j in self.kfolds[i]]) for i in range(k)]
-      self.test_data = [data[i] for i in self.test_indices]
-      self.test_targets = [self.ys[i] for i in self.test_indices]
-
 
   def update(self, new_structure: IStructure):
     self.structures.append(new_structure)
