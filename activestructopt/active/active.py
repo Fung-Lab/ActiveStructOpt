@@ -224,6 +224,9 @@ class ActiveLearning():
     self.opt_obj_values.append(obj_values)
 
     if not (save_file is None):
+      split_save_file = save_file.split('.')
+      save_file = split_save_file[0] + '_' + str(len(
+        self.dataset.structures)) + '.' + split_save_file[1]
       model_params = []
       for i in range(len(self.model_params)):
         model_dict = {}
