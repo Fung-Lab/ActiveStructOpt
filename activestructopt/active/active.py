@@ -19,7 +19,8 @@ import subprocess
 
 class ActiveLearning():
   def __init__(self, simfunc, target, initial_structure, index = -1, 
-    config = None, target_structure = None, progress_file = None, verbosity = 2,
+    config = None, target_structure = None, progress_file = None, 
+    model_params_file = None, verbosity = 2,
     save_progress_dir = None, save_initialization = False):
     setup_imports()
 
@@ -54,12 +55,22 @@ class ActiveLearning():
             target, self.config['dataset'], 
             progress_dict = progress_dict['dataset'], **(
             self.config['aso_params']['dataset']['args']))
-          self.model_params = []
-          for i in range(len(progress_dict['model_params'])):
-            kparams = OrderedDict()
-            for key, value in progress_dict['model_params'][i].items():
-              kparams[key] = torch.tensor(value)
-            self.model_params.append(kparams)
+          if model_params_file is not None:
+            with open(progress_file, 'rb') as f2:
+              model_params_dict = json.load(f)
+              self.model_params = []
+              for i in range(len(model_params_dict['model_params'])):
+                kparams = OrderedDict()
+                for key, value in model_params_dict['model_params'][i].items():
+                  kparams[key] = torch.tensor(value)
+                self.model_params.append(kparams)
+          else:
+            self.model_params = []
+            for i in range(len(progress_dict['model_params'])):
+              kparams = OrderedDict()
+              for key, value in progress_dict['model_params'][i].items():
+                kparams[key] = torch.tensor(value)
+              self.model_params.append(kparams)
       else:
         raise Exception("Progress file should be .pkl or .json") 
     else:
@@ -87,6 +98,7 @@ class ActiveLearning():
     self.traceback = None
     self.error = None
     self.last_prog_file = None
+    self.model_params_file = None
 
     if save_progress_dir is not None and save_initialization:
       if self.verbosity == 0 or self.verbosity == 0.5:
@@ -111,7 +123,7 @@ class ActiveLearning():
           new_structure = self.opt_step(self, predict_target = predict_target, 
             save_file = None)
         else:
-          new_structure = self.opt_step_sbatch(sbatch_template)
+          new_structure = self.opt_step_sbatch(sbatch_template, i)
         #print(new_structure)
         #for ensemble_i in range(len(metrics)):
         #  print(metrics[ensemble_i]['val_error'])
@@ -151,10 +163,12 @@ class ActiveLearning():
       print(self.traceback)
       print(self.error)
 
-  def opt_step_sbatch(self, sbatch_template):
+  def opt_step_sbatch(self, sbatch_template, stepi):
     with open(sbatch_template, 'r') as file:
       sbatch_data = file.read()
     sbatch_data = sbatch_data.replace('##PROG_FILE##', self.last_prog_file)
+    sbatch_data = sbatch_data.replace('##MODEL_PARAMS_FILE##', 
+      self.model_params_file)
     new_job_file = f'gpu_job_{self.index}.sbatch'
     with open(new_job_file, 'w') as file:
       file.write(sbatch_data)
@@ -162,20 +176,19 @@ class ActiveLearning():
     opened = False
     while not opened:
       try:
-        f = open(os.path.join(f"gpu_job_{self.index}.json"), "r")
+        f = open(os.path.join(f"gpu_job_{self.index}_{stepi}.json"), "r")
         opened = True
         f.close()
       except:
         time.sleep(10)
-    with open(f"gpu_job_{self.index}.json", 'rb') as f:
-      progress_dict = json.load(f)
-      self.model_params = []
-      for i in range(len(progress_dict['model_params'])):
-        kparams = OrderedDict()
-        for key, value in progress_dict['model_params'][i].items():
-          kparams[key] = torch.tensor(value)
-        self.model_params.append(kparams)
-    return Structure.from_dict(progress_dict['structure'])
+    with open(f"gpu_job_{self.index}_{stepi}.json", 'rb') as f:
+      new_structure = Structure.from_dict(json.load(f)['structure'])
+    
+    self.model_params_file = f"gpu_job_{self.index}_{stepi}.json"
+    prev_gpu_file = f"gpu_job_{self.index}_{stepi-1}.json"
+    if pathexists(prev_gpu_file):
+      remove(prev_gpu_file)
+    return new_structure
 
   def opt_step(self, predict_target = False, save_file = None):
     stepi = len(self.dataset.mismatches)
