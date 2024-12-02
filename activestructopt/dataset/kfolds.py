@@ -29,7 +29,7 @@ class KFoldsDataset(BaseDataset):
       
       y_promises = [copy.deepcopy(simulation) for _ in self.structures]
       for i, s in enumerate(self.structures):
-        y_promises[i].get(s)
+        y_promises[i].get(s, group = True, separator = ' ')
       self.ys = [yp.resolve() for yp in y_promises]
       data = [prepare_data_pmg(self.structures[i], config, y = self.ys[i]).to(
         self.device) for i in range(N)]

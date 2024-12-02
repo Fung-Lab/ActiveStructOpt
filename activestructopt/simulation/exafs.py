@@ -14,6 +14,7 @@ class EXAFS(BaseSimulation):
   def __init__(self, initial_structure, feff_location = "", folder = "", 
     absorber = 'Co', edge = 'K', radius = 10.0, kmax = 12.0, 
     scf = '4.5 0 30 .2 1', rgrid = 0.05, sbatch_template = None, 
+    sbatch_group_template = None,
     **kwargs) -> None:
     self.feff_location = feff_location
     self.parent_folder = folder
@@ -27,6 +28,7 @@ class EXAFS(BaseSimulation):
       for x in initial_structure.species]
     self.N = len(self.mask)
     self.sbatch_template = sbatch_template
+    self.sbatch_group_template = sbatch_group_template
 
   def setup_config(self, config):
     config['dataset']['preprocess_params']['prediction_level'] = 'node'
@@ -40,7 +42,7 @@ class EXAFS(BaseSimulation):
     config['dataset']['preprocess_params']['output_dim'] = 181
     return config
 
-  def get(self, struct):
+  def get(self, struct, group = False, separator = ','):
     structure = struct.copy()
 
     # get all indices of the absorber
@@ -91,11 +93,12 @@ class EXAFS(BaseSimulation):
       os.remove(pot_loc)
       os.remove(params_loc)
 
-    with open(self.sbatch_template, 'r') as file:
+    with open(self.sbatch_group_template if group else self.sbatch_template, 
+      'r') as file:
       sbatch_data = file.read()
     index_str = str(absorber_indices[0])
     for i in range(1, len(absorber_indices)):
-      index_str += ',' + str(absorber_indices[i])
+      index_str += separator + str(absorber_indices[i])
     sbatch_data = sbatch_data.replace('##ARRAY_INDS##', index_str)
     sbatch_data = sbatch_data.replace('##DIRECTORY##', new_folder)
     new_job_file = os.path.join(new_folder, 'job.sbatch')
