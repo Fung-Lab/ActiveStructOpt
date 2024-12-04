@@ -42,7 +42,7 @@ class GNNEnsemble(BaseModel):
         'cuda') for j in np.setxor1d(trainval_indices, dataset.kfolds[i])]
       val_dataset = [prepare_data_pmg(dataset.structures[j], 
         dataset.config, y = dataset.ys[j]).to(
-        'cuda') for j in self.kfolds[i]]
+        'cuda') for j in dataset.kfolds[i]]
       
       new_runner(self.config, ConfigSetup('train'), train_dataset, val_dataset)
 
@@ -157,7 +157,7 @@ class GNNEnsemble(BaseModel):
         'cuda') for j in np.setxor1d(trainval_indices, dataset.kfolds[i])]
       val_dataset = [prepare_data_pmg(dataset.structures[j], 
         dataset.config, y = dataset.ys[j]).to(
-        'cuda') for j in self.kfolds[i]]
+        'cuda') for j in dataset.kfolds[i]]
 
       new_runner(self.config, ConfigSetup('train'), train_dataset, val_dataset)
 
