@@ -245,21 +245,16 @@ class ActiveLearning():
     return new_structure
 
   def save(self, filename, additional_data = {}):
-    cpu_model_params = deepcopy(self.model_params)
-    for i in range(len(cpu_model_params)):
-      for param_tensor in cpu_model_params[i]:
-        cpu_model_params[i][param_tensor] = cpu_model_params[i][
-          param_tensor].detach().cpu()
-
     if self.verbosity == 0:
       model_params = []
-      for i in range(len(self.model_params)):
-        model_dict = {}
-        state_dict = self.model_params[i]
-        for param_tensor in state_dict:
-          model_dict[param_tensor] = state_dict[param_tensor].detach().cpu(
-            ).tolist()
-        model_params.append(model_dict)
+      if self.model_params is not None:
+        for i in range(len(self.model_params)):
+          model_dict = {}
+          state_dict = self.model_params[i]
+          for param_tensor in state_dict:
+            model_dict[param_tensor] = state_dict[param_tensor].detach().cpu(
+              ).tolist()
+          model_params.append(model_dict)
 
       res = {'index': self.index,
             'dataset': self.dataset.toJSONDict(),
