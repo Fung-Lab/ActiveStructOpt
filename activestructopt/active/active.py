@@ -61,7 +61,7 @@ class ActiveLearning():
             self.config['aso_params']['dataset']['args']))
           if model_params_file is not None:
             with open(progress_file, 'rb') as f2:
-              model_params_dict = json.load(f)
+              model_params_dict = json.load(f2)
               self.model_params = []
               for i in range(len(model_params_dict['model_params'])):
                 kparams = OrderedDict()
