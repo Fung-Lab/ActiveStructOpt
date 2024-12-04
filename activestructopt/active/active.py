@@ -240,7 +240,7 @@ class ActiveLearning():
             ).tolist()
         model_params.append(model_dict)
       res = {'index': self.index,
-            'structure': new_structure,
+            'structure': new_structure.as_dict(),
             'model_params': model_params,
       }
       with open(save_file, "w") as file: 
