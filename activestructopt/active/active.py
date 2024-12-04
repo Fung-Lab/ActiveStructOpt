@@ -181,6 +181,7 @@ class ActiveLearning():
     while not opened:
       try:
         f = open(os.path.join(f"gpu_job_{self.index}_{stepi}.json"), "r")
+        json.load(f)
         opened = True
         f.close()
       except:
