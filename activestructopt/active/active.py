@@ -49,6 +49,10 @@ class ActiveLearning():
         with open(progress_file, 'rb') as f:
           progress_dict = json.load(f)
           self.config = progress_dict['config']
+          sampler_cls = registry.get_sampler_class(
+            self.config['aso_params']['sampler']['name'])
+          self.sampler = sampler_cls(initial_structure, 
+            **(self.config['aso_params']['sampler']['args']))
           dataset_cls = registry.get_dataset_class(
             self.config['aso_params']['dataset']['name'])
           self.dataset = dataset_cls(simfunc, self.sampler, initial_structure, 
