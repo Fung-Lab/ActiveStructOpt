@@ -56,17 +56,12 @@ class KFoldsDataset(BaseDataset):
     y = y_promise.resolve()
     new_mismatch = self.simfunc.get_mismatch(y, self.target)
     y_promise.garbage_collect(new_mismatch <= min(self.mismatches))
-    new_data = prepare_data_pmg(new_structure, self.config, y = y).to(self.device)
     fold = len(self.datasets) - 1
     for i in range(len(self.datasets) - 1):
       if len(self.datasets[i][1]) < len(self.datasets[i + 1][1]):
         fold = i
         break
     self.kfolds[fold].append(len(self.structures) - 1)
-    self.datasets[fold][1].append(new_data)
-    for i in range(len(self.datasets)):
-      if fold != i:
-        self.datasets[i][0].append(new_data)
     self.ys.append(y)
     self.mismatches.append(new_mismatch)
     self.N += 1
