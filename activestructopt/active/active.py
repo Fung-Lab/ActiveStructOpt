@@ -167,11 +167,12 @@ class ActiveLearning():
       print(self.traceback)
       print(self.error)
 
-  def read_opt_step_sbatch(self, file):
+  def read_opt_step_sbatch(self, file, stepi):
     with open(file, 'rb') as f:
       new_structure = Structure.from_dict(json.load(f)['structure'])
     self.model_params_file = file
     self.dataset.update(new_structure)
+    self.model_params_file = f"gpu_job_{self.index}_{stepi}.json"
 
   def opt_step_sbatch(self, sbatch_template, stepi):
     with open(sbatch_template, 'r') as file:
