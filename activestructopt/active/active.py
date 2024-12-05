@@ -102,7 +102,6 @@ class ActiveLearning():
 
     self.traceback = None
     self.error = None
-    self.last_prog_file = None
     self.model_params_file = 'None'
 
     if save_progress_dir is not None and save_initialization:
