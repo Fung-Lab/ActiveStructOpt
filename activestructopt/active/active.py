@@ -28,7 +28,7 @@ class ActiveLearning():
     self.index = index
     self.verbosity = verbosity
 
-    self.progress_file = progress_file
+    self.last_prog_file = progress_file
     self.model_params = None
     self.model_errs = []
     self.model_metrics = []
