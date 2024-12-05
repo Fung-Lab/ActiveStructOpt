@@ -28,6 +28,7 @@ class ActiveLearning():
     self.index = index
     self.verbosity = verbosity
 
+    self.progress_file = progress_file
     self.model_params = None
     self.model_errs = []
     self.model_metrics = []
@@ -166,6 +167,12 @@ class ActiveLearning():
       self.error = err
       print(self.traceback)
       print(self.error)
+
+  def read_opt_step_sbatch(self, file):
+    with open(file, 'rb') as f:
+      new_structure = Structure.from_dict(json.load(f)['structure'])
+    self.model_params_file = file
+    self.dataset.update(new_structure)
 
   def opt_step_sbatch(self, sbatch_template, stepi):
     with open(sbatch_template, 'r') as file:
