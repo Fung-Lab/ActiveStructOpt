@@ -115,15 +115,20 @@ class EXAFS(BaseSimulation):
     for absorb_ind in self.inds:
       new_abs_folder = os.path.join(self.folder, str(absorb_ind))
       opened = False
+      print_waited = False
       while not opened:
+        xmu_file = os.path.join(new_abs_folder, "xmu.dat")
         try:
-          f = open(os.path.join(new_abs_folder, "xmu.dat"), "r")
+          f = open(xmu_file, "r")
           opened = True
           f.close()
         except:
+          if not print_waited:
+            print(f"Waiting on {xmu_file}...")
+            print_waited = True
           time.sleep(10)
       time.sleep(1)
-      f = open(os.path.join(new_abs_folder, "xmu.dat"), "r")
+      f = open(xmu_file, "r")
       start = 0
       i = 0
       while start == 0:

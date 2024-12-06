@@ -184,18 +184,23 @@ class ActiveLearning():
       file.write(sbatch_data)
     subprocess.Popen(f"sbatch {new_job_file}", shell = True)
     opened = False
+    print_waited = False
+    gpu_job_file = f"gpu_job_{self.index}_{stepi}.json"
     while not opened:
       try:
-        f = open(os.path.join(f"gpu_job_{self.index}_{stepi}.json"), "r")
+        f = open(os.path.join(gpu_job_file), "r")
         json.load(f)
         opened = True
         f.close()
       except:
+        if not print_waited:
+          print(f"Waiting on {gpu_job_file}...")
+          print_waited = True
         time.sleep(10)
-    with open(f"gpu_job_{self.index}_{stepi}.json", 'rb') as f:
+    with open(gpu_job_file, 'rb') as f:
       new_structure = Structure.from_dict(json.load(f)['structure'])
     
-    self.model_params_file = f"gpu_job_{self.index}_{stepi}.json"
+    self.model_params_file = gpu_job_file
     prev_gpu_file = f"gpu_job_{self.index}_{stepi-1}.json"
     if pathexists(prev_gpu_file):
       remove(prev_gpu_file)
