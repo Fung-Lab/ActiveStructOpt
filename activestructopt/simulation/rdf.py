@@ -24,7 +24,7 @@ class RDF(BaseSimulation):
     config['dataset']['preprocess_params']['output_dim'] = self.outdim
     return config
 
-  def get(self, struct, group = False, seperator = None):
+  def get(self, struct, group = False, separator = None):
     self.normalization = 4 * self.natoms / struct.volume * np.pi * (
       self.rs[:-1]) ** 2
     self.cart_coords = np.array(struct.cart_coords, dtype=float)
