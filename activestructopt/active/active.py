@@ -124,7 +124,7 @@ class ActiveLearning():
         self.config['aso_params']['max_forward_calls']):
         
         if sbatch_template is None:
-          new_structure = self.opt_step(self, predict_target = predict_target, 
+          new_structure = self.opt_step(predict_target = predict_target, 
             save_file = None)
         else:
           new_structure = self.opt_step_sbatch(sbatch_template, i)
