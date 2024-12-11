@@ -13,8 +13,8 @@ import shutil
 class EXAFS(BaseSimulation):
   def __init__(self, initial_structure, feff_location = "", folder = "", 
     absorber = 'Co', edge = 'K', radius = 10.0, kmax = 12.0, 
-    scf = '4.5 0 30 .2 1', rgrid = 0.05, sbatch_template = None, 
-    sbatch_group_template = None,
+    scf = '4.5 0 30 .2 1', rgrid = 0.05, ldos = '-20 20 -1', 
+    sbatch_template = None, sbatch_group_template = None,
     **kwargs) -> None:
     self.feff_location = feff_location
     self.parent_folder = folder
@@ -70,7 +70,7 @@ class EXAFS(BaseSimulation):
         edge = self.edge,
         radius = self.radius,
         user_tag_settings = {'EXAFS': self.kmax, 'SCF': self.scf, 
-          'RGRID': self.rgrid})
+          'RGRID': self.rgrid, 'LDOS': self.ldos})
 
       atoms_loc = os.path.join(new_abs_folder, 'ATOMS')
       pot_loc = os.path.join(new_abs_folder, 'POTENTIALS')
