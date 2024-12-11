@@ -23,6 +23,7 @@ class EXAFS(BaseSimulation):
     self.radius = radius
     self.kmax = kmax
     self.scf = scf
+    self.ldos = ldos
     self.rgrid = rgrid
     self.mask = [x.symbol == self.absorber 
       for x in initial_structure.species]
