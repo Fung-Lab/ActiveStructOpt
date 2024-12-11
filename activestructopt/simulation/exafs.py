@@ -12,8 +12,8 @@ import shutil
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
   def __init__(self, initial_structure, feff_location = "", folder = "", 
-    absorber = 'Co', edge = 'K', radius = 10.0, kmax = 12.0, 
-    scf = '4.5 0 30 .2 1', rgrid = 0.05, ldos = '-20 20 -1', 
+    absorber = 'Co', edge = 'K', radius = 10.0, 
+    additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1'},
     sbatch_template = None, sbatch_group_template = None,
     **kwargs) -> None:
     self.feff_location = feff_location
@@ -21,10 +21,7 @@ class EXAFS(BaseSimulation):
     self.absorber = absorber
     self.edge = edge
     self.radius = radius
-    self.kmax = kmax
-    self.scf = scf
-    self.ldos = ldos
-    self.rgrid = rgrid
+    self.additional_settings = additional_settings
     self.mask = [x.symbol == self.absorber 
       for x in initial_structure.species]
     self.N = len(self.mask)
@@ -70,8 +67,7 @@ class EXAFS(BaseSimulation):
         structure,
         edge = self.edge,
         radius = self.radius,
-        user_tag_settings = {'EXAFS': self.kmax, 'SCF': self.scf, 
-          'RGRID': self.rgrid, 'LDOS': self.ldos})
+        user_tag_settings = self.additional_settings)
 
       atoms_loc = os.path.join(new_abs_folder, 'ATOMS')
       pot_loc = os.path.join(new_abs_folder, 'POTENTIALS')
