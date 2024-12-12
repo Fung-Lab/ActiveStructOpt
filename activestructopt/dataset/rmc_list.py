@@ -45,3 +45,14 @@ class RMCList(BaseDataset):
     if accept:
       self.curr_structure = new_structure
       self.curr_mismatch = new_mismatch
+  
+  def toJSONDict(self, save_structures = True):
+    return {
+      'start_N': self.start_N,
+      'N': self.N,
+      'structures': [s.as_dict() for s in self.structures] if (
+        save_structures) else self.structures[np.argmin(self.mismatches)],
+      'ys': [y.tolist() for y in self.ys] if (
+        save_structures) else self.ys[np.argmin(self.mismatches).tolist()],
+      'mismatches': self.mismatches
+    }

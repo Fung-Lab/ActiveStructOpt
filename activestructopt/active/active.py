@@ -20,7 +20,7 @@ import subprocess
 class ActiveLearning():
   def __init__(self, simfunc, target, initial_structure, index = -1, 
     config = None, target_structure = None, progress_file = None, 
-    model_params_file = None, verbosity = 2,
+    model_params_file = None, verbosity = 2, save_structures = True,
     save_progress_dir = None, save_initialization = False):
     setup_imports()
 
@@ -35,6 +35,7 @@ class ActiveLearning():
     self.opt_obj_values = []
     self.new_structure_predictions = []
     self.target_structure = target_structure
+    self.save_structures = save_structures
     if not (target_structure is None):
       self.target_predictions = []
 
@@ -273,7 +274,8 @@ class ActiveLearning():
           model_params.append(model_dict)
 
       res = {'index': self.index,
-            'dataset': self.dataset.toJSONDict(),
+            'dataset': self.dataset.toJSONDict(
+              save_structures = self.save_structures),
             'model_params': model_params,
             'config': self.config,
       }
