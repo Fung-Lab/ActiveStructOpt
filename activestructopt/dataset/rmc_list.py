@@ -53,6 +53,6 @@ class RMCList(BaseDataset):
       'structures': [s.as_dict() for s in self.structures] if (
         save_structures) else self.structures[np.argmin(self.mismatches)].as_dict(),
       'ys': [y.tolist() for y in self.ys] if (
-        save_structures) else self.ys[np.argmin(self.mismatches).tolist()],
+        save_structures) else self.ys[np.argmin(self.mismatches).tolist()].tolist(),
       'mismatches': self.mismatches
     }
