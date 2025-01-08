@@ -183,21 +183,22 @@ class ActiveLearning():
     new_job_file = f'gpu_job_{self.index}.sbatch'
     with open(new_job_file, 'w') as file:
       file.write(sbatch_data)
-    subprocess.Popen(f"sbatch {new_job_file}", shell = True)
-    opened = False
-    print_waited = False
-    gpu_job_file = f"gpu_job_{self.index}_{stepi}.json"
-    while not opened:
+    slurm_response = subprocess.check_output(["sbatch", f"{new_job_file}"])
+    slurm_job_number = int(str(slurm_response).split('\\n')[0].split()[-1])
+    finished = False
+    while not finished:
+      time.sleep(30)
       try:
-        f = open(os.path.join(gpu_job_file), "r")
-        json.load(f)
-        opened = True
-        f.close()
+        sacct_check_output = subprocess.check_output(
+          ["sacct", f"--jobs={slurm_job_number}", "--format=state"])
+        job_status = str(sacct_check_output).split('\\n')[2]
+        if 'FAILED' in job_status or 'COMPLETED' in job_status or (
+          'CANCELLED' in job_status):
+          finished = True
       except:
-        if not print_waited:
-          print(f"Waiting on {gpu_job_file}...")
-          print_waited = True
-        time.sleep(10)
+        print('Probably a temporary slurm issue')
+        print(format_exc())
+    gpu_job_file = f"gpu_job_{self.index}_{stepi}.json"
     with open(gpu_job_file, 'rb') as f:
       new_structure = Structure.from_dict(json.load(f)['structure'])
     
