@@ -1,4 +1,4 @@
-from activestructopt.simulation.base import BaseSimulation
+from activestructopt.simulation.base import BaseSimulation, ASOSimulationException
 from activestructopt.common.registry import registry
 from pymatgen.io import feff
 from pymatgen.io.feff.sets import MPEXAFSSet
@@ -8,6 +8,7 @@ import os
 import time
 import subprocess
 import shutil
+import traceback
 
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
@@ -101,42 +102,48 @@ class EXAFS(BaseSimulation):
     new_job_file = os.path.join(new_folder, 'job.sbatch')
     with open(new_job_file, 'w') as file:
       file.write(sbatch_data)
-    subprocess.Popen(f"sbatch {new_job_file}", shell = True)
+    subprocess.Popen(["sbatch", f"{new_job_file}"])
     
     self.folder = new_folder
     self.params = params
     self.inds = absorber_indices 
 
   def resolve(self):
+    finished = False
+    while not finished:
+      time.sleep(30)
+      try:
+        sacct_check_output = subprocess.check_output(
+          ["sacct", f"--jobs={self.slurm_job_number}", "--format=state"])
+        job_status = str(sacct_check_output).split('\\n')[2]
+        if 'FAILED' in job_status or 'COMPLETED' in job_status or (
+          'CANCELLED' in job_status):
+          finished = True
+      except:
+        print('Probably a temporary slurm issue')
+        print(traceback.format_exc())
+
     chi_ks = np.zeros((self.N, 181))
     for absorb_ind in self.inds:
       new_abs_folder = os.path.join(self.folder, str(absorb_ind))
-      opened = False
-      print_waited = False
-      while not opened:
-        xmu_file = os.path.join(new_abs_folder, "xmu.dat")
-        try:
-          f = open(xmu_file, "r")
-          opened = True
-          f.close()
-        except:
-          if not print_waited:
-            print(f"Waiting on {xmu_file}...")
-            print_waited = True
-          time.sleep(10)
-      time.sleep(1)
-      f = open(xmu_file, "r")
-      start = 0
-      i = 0
-      while start == 0:
-        i += 1
-        if f.readline().startswith("#  omega"):
-          start = i
-      f.close()
+      xmu_file = os.path.join(new_abs_folder, "xmu.dat")
+      try:
+        f = open(xmu_file, "r")
+        start = 0
+        i = 0
+        while start == 0:
+          i += 1
+          if f.readline().startswith("#  omega"):
+            start = i
+        f.close()
+      except:
+        raise ASOSimulationException(f"Could not open {xmu_file}")
 
-      xmu = Xmu(self.params.header, feff.inputs.Tags(self.params.tags), 
-        int(absorb_ind), np.genfromtxt(os.path.join(
-        new_abs_folder, "xmu.dat"), skip_header = start))
+      try:
+        xmu = Xmu(self.params.header, feff.inputs.Tags(self.params.tags), 
+          int(absorb_ind), np.genfromtxt(xmu_file, skip_header = start))
+      except:
+        raise ASOSimulationException(f"Could not parse {xmu_file}")
       
       chi_ks[int(np.round(absorb_ind / 8))] = xmu.chi[60:]
     return chi_ks #np.mean(np.array(chi_ks), axis = 0)
