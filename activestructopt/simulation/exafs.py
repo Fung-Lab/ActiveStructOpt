@@ -102,7 +102,8 @@ class EXAFS(BaseSimulation):
     new_job_file = os.path.join(new_folder, 'job.sbatch')
     with open(new_job_file, 'w') as file:
       file.write(sbatch_data)
-    subprocess.Popen(["sbatch", f"{new_job_file}"])
+    slurm_response = subprocess.check_output(["sbatch", f"{new_job_file}"])
+    self.slurm_job_number = int(str(slurm_response).split('\\n')[0].split()[-1])
     
     self.folder = new_folder
     self.params = params
