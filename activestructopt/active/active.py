@@ -1,4 +1,5 @@
 from activestructopt.common.registry import registry, setup_imports
+from activestructopt.simulation.base import ASOSimulationException
 from torch.cuda import empty_cache
 from torch import inference_mode
 import numpy as np
@@ -116,7 +117,8 @@ class ActiveLearning():
           str(self.index) + "_0.pkl")
   
   def optimize(self, print_mismatches = True, save_progress_dir = None, 
-    predict_target = False, new_structure_predict = False, sbatch_template = None):
+    predict_target = False, new_structure_predict = False, 
+    sbatch_template = None, max_sim_calls = 5):
     try:
       if print_mismatches:
         print(self.dataset.mismatches)
@@ -132,7 +134,23 @@ class ActiveLearning():
         #print(new_structure)
         #for ensemble_i in range(len(metrics)):
         #  print(metrics[ensemble_i]['val_error'])
-        self.dataset.update(new_structure)
+        
+        sim_calculated = False
+        sim_calls = 0
+
+        while not sim_calculated:
+          try:
+            sim_calls += 1
+            self.dataset.update(new_structure)
+          except ASOSimulationException:
+            if sim_calls <= max_sim_calls:
+              if sbatch_template is None:
+                new_structure = self.opt_step(predict_target = predict_target, 
+                  save_file = None, retrain = False)
+              else:
+                new_structure = self.opt_step_sbatch(sbatch_template, i, 
+                  retrain = False)
+
         if new_structure_predict:
           with inference_mode():
             self.new_structure_predictions.append(self.model.predict(
@@ -174,12 +192,13 @@ class ActiveLearning():
     self.model_params_file = file
     self.dataset.update(new_structure)
 
-  def opt_step_sbatch(self, sbatch_template, stepi):
+  def opt_step_sbatch(self, sbatch_template, stepi, retrain = True):
     with open(sbatch_template, 'r') as file:
       sbatch_data = file.read()
     sbatch_data = sbatch_data.replace('##PROG_FILE##', self.last_prog_file)
     sbatch_data = sbatch_data.replace('##MODEL_PARAMS_FILE##', 
       self.model_params_file)
+    sbatch_data = sbatch_data.replace('##RETRAIN##', retrain)
     new_job_file = f'gpu_job_{self.index}.sbatch'
     with open(new_job_file, 'w') as file:
       file.write(sbatch_data)
@@ -208,27 +227,30 @@ class ActiveLearning():
       remove(prev_gpu_file)
     return new_structure
 
-  def opt_step(self, predict_target = False, save_file = None):
+  def opt_step(self, predict_target = False, save_file = None, retrain = True):
     stepi = len(self.dataset.mismatches)
-    train_profile = self.config['aso_params']['model']['profiles'][
-      np.searchsorted(-np.array(
-        self.config['aso_params']['model']['switch_profiles']), 
-        -(self.config['aso_params']['max_forward_calls'] - stepi))]
-    opt_profile = self.config['aso_params']['optimizer']['profiles'][
-      np.searchsorted(-np.array(
-        self.config['aso_params']['optimizer']['switch_profiles']), 
-        -(self.config['aso_params']['max_forward_calls'] - stepi))]
-    
-    model_err, metrics, self.model_params = self.model.train(
-      self.dataset, **(train_profile))
-    self.model_errs.append(model_err)
-    self.model_metrics.append(metrics)
 
-    if not (self.target_structure is None) and predict_target:
-      with inference_mode():
-        self.target_predictions.append(self.model.predict(
-          self.target_structure, 
-          mask = self.dataset.simfunc.mask).cpu().numpy())
+    if retrain:
+      train_profile = self.config['aso_params']['model']['profiles'][
+        np.searchsorted(-np.array(
+          self.config['aso_params']['model']['switch_profiles']), 
+          -(self.config['aso_params']['max_forward_calls'] - stepi))]
+      
+      model_err, metrics, self.model_params = self.model.train(
+        self.dataset, **(train_profile))
+      self.model_errs.append(model_err)
+      self.model_metrics.append(metrics)
+
+      if not (self.target_structure is None) and predict_target:
+        with inference_mode():
+          self.target_predictions.append(self.model.predict(
+            self.target_structure, 
+            mask = self.dataset.simfunc.mask).cpu().numpy())
+
+    opt_profile = self.config['aso_params']['optimizer']['profiles'][
+        np.searchsorted(-np.array(
+          self.config['aso_params']['optimizer']['switch_profiles']), 
+          -(self.config['aso_params']['max_forward_calls'] - stepi))]
 
     objective_cls = registry.get_objective_class(opt_profile['name'])
     objective = objective_cls(**(opt_profile['args']))
