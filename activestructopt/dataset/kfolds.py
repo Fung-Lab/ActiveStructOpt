@@ -1,8 +1,6 @@
-from activestructopt.common.dataloader import prepare_data_pmg
-from activestructopt.common.constraints import lj_reject
 from activestructopt.common.registry import registry
 from activestructopt.dataset.base import BaseDataset
-from activestructopt.simulation.base import BaseSimulation
+from activestructopt.simulation.base import BaseSimulation, ASOSimulationException
 from activestructopt.sampler.base import BaseSampler
 from pymatgen.core.structure import IStructure, Structure
 import numpy as np
@@ -12,7 +10,7 @@ import copy
 class KFoldsDataset(BaseDataset):
   def __init__(self, simulation: BaseSimulation, sampler: BaseSampler, 
     initial_structure: IStructure, target, config, N = 100, split = 0.85, 
-    k = 5, seed = 0, progress_dict = None, **kwargs) -> None:
+    k = 5, seed = 0, progress_dict = None, max_sim_calls = 5, **kwargs) -> None:
     np.random.seed(seed)
     self.config = config
     self.target = target
@@ -29,6 +27,22 @@ class KFoldsDataset(BaseDataset):
       y_promises = [copy.deepcopy(simulation) for _ in self.structures]
       for i, s in enumerate(self.structures):
         y_promises[i].get(s, group = True, separator = ' ')
+      self.ys = [None for _ in y_promises]
+      
+      sim_calls = 0
+      while None in self.ys:
+        sim_calls += 1
+        for i in range(len(self.structures)):
+          try:
+            self.ys[i] = y_promises[i].resolve()
+          except ASOSimulationException:
+            if sim_calls <= max_sim_calls:
+              # resample and try again
+              self.structures[i] = sampler.sample()
+              y_promises[i] = copy.deepcopy(simulation)
+              y_promises[i].get(self.structures[i], group = True, 
+                separator = ' ')
+
       self.ys = [yp.resolve() for yp in y_promises]
           
       structure_indices = np.random.permutation(np.arange(1, N))
