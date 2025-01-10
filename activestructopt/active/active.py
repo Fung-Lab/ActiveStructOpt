@@ -142,6 +142,7 @@ class ActiveLearning():
           try:
             sim_calls += 1
             self.dataset.update(new_structure)
+            sim_calculated = True
           except ASOSimulationException:
             if sim_calls <= max_sim_calls:
               if sbatch_template is None:
@@ -150,6 +151,9 @@ class ActiveLearning():
               else:
                 new_structure = self.opt_step_sbatch(sbatch_template, i, 
                   retrain = False)
+            else:
+              raise ASOSimulationException("Max sim calls exceeded")
+
 
         if new_structure_predict:
           with inference_mode():
