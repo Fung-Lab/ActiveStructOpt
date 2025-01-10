@@ -1,22 +1,16 @@
 from activestructopt.common.registry import registry, setup_imports
 from activestructopt.simulation.base import ASOSimulationException
-from torch.cuda import empty_cache
-from torch import inference_mode
-import numpy as np
-from gc import collect
-from pickle import dump, load
-from os.path import join as pathjoin
-from os.path import exists as pathexists
-from os import remove
-from copy import deepcopy
-from traceback import format_exc
-from collections import OrderedDict
 from pymatgen.core.structure import Structure
-import json
-import torch
-import os
-import time
+from collections import OrderedDict
+from traceback import format_exc
+from pickle import dump, load
+import numpy as np
 import subprocess
+import torch
+import json
+import time
+import os
+import gc
 
 class ActiveLearning():
   def __init__(self, simfunc, target, initial_structure, index = -1, 
@@ -108,12 +102,12 @@ class ActiveLearning():
 
     if save_progress_dir is not None and save_initialization:
       if self.verbosity == 0 or self.verbosity == 0.5:
-        self.save(pathjoin(save_progress_dir, str(self.index) + "_0.json"))
-        self.last_prog_file = pathjoin(save_progress_dir, 
+        self.save(os.path.join(save_progress_dir, str(self.index) + "_0.json"))
+        self.last_prog_file = os.path.join(save_progress_dir, 
           str(self.index) + "_0.json")
       else:
-        self.save(pathjoin(save_progress_dir, str(self.index) + "_0.pkl"))
-        self.last_prog_file = pathjoin(save_progress_dir, 
+        self.save(os.path.join(save_progress_dir, str(self.index) + "_0.pkl"))
+        self.last_prog_file = os.path.join(save_progress_dir, 
           str(self.index) + "_0.pkl")
   
   def optimize(self, print_mismatches = True, save_progress_dir = None, 
@@ -156,7 +150,7 @@ class ActiveLearning():
 
 
         if new_structure_predict:
-          with inference_mode():
+          with torch.inference_mode():
             self.new_structure_predictions.append(self.model.predict(
               new_structure, 
               mask = self.dataset.simfunc.mask).cpu().numpy())
@@ -164,26 +158,26 @@ class ActiveLearning():
         if print_mismatches:
           print(self.dataset.mismatches[-1])
 
-        collect()
-        empty_cache()
+        gc.collect()
+        torch.cuda.empty_cache()
         
         if save_progress_dir is not None:
           if self.verbosity == 0 or self.verbosity == 0.5:
-            self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
-              i) + ".json"))
-            self.last_prog_file = pathjoin(save_progress_dir, 
+            self.save(os.path.join(save_progress_dir, str(self.index
+              ) + "_" + str(i) + ".json"))
+            self.last_prog_file = os.path.join(save_progress_dir, 
               str(self.index) + "_" + str(i) + ".json")
-            prev_progress_file = pathjoin(save_progress_dir, str(self.index
+            prev_progress_file = os.path.join(save_progress_dir, str(self.index
               ) + "_" + str(i - 1) + ".json")
           else:
-            self.save(pathjoin(save_progress_dir, str(self.index) + "_" + str(
-              i) + ".pkl"))
-            self.last_prog_file = pathjoin(save_progress_dir, 
+            self.save(os.path.join(save_progress_dir, str(self.index
+              ) + "_" + str(i) + ".pkl"))
+            self.last_prog_file = os.path.join(save_progress_dir, 
               str(self.index) + "_" + str(i) + ".pkl")
-            prev_progress_file = pathjoin(save_progress_dir, str(self.index
+            prev_progress_file = os.path.join(save_progress_dir, str(self.index
               ) + "_" + str(i - 1) + ".pkl")
-          if pathexists(prev_progress_file):
-            remove(prev_progress_file)
+          if os.path.exists(prev_progress_file):
+            os.remove(prev_progress_file)
     except Exception as err:
       self.traceback = format_exc()
       self.error = err
@@ -227,8 +221,8 @@ class ActiveLearning():
     
     self.model_params_file = gpu_job_file
     prev_gpu_file = f"gpu_job_{self.index}_{stepi-1}.json"
-    if pathexists(prev_gpu_file):
-      remove(prev_gpu_file)
+    if os.path.exists(prev_gpu_file):
+      os.remove(prev_gpu_file)
     return new_structure
 
   def opt_step(self, predict_target = False, save_file = None, retrain = True):
@@ -246,7 +240,7 @@ class ActiveLearning():
       self.model_metrics.append(metrics)
 
       if not (self.target_structure is None) and predict_target:
-        with inference_mode():
+        with torch.inference_mode():
           self.target_predictions.append(self.model.predict(
             self.target_structure, 
             mask = self.dataset.simfunc.mask).cpu().numpy())
