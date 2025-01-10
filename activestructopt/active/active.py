@@ -198,7 +198,7 @@ class ActiveLearning():
     sbatch_data = sbatch_data.replace('##PROG_FILE##', self.last_prog_file)
     sbatch_data = sbatch_data.replace('##MODEL_PARAMS_FILE##', 
       self.model_params_file)
-    sbatch_data = sbatch_data.replace('##RETRAIN##', retrain)
+    sbatch_data = sbatch_data.replace('##RETRAIN##', str(retrain))
     new_job_file = f'gpu_job_{self.index}.sbatch'
     with open(new_job_file, 'w') as file:
       file.write(sbatch_data)
