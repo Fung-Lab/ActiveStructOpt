@@ -30,18 +30,19 @@ class KFoldsDataset(BaseDataset):
       self.ys = [None for _ in y_promises]
       
       sim_calls = 0
-      while None in self.ys:
+      while any(y is None for y in self.ys):
         sim_calls += 1
         for i in range(len(self.structures)):
-          try:
-            self.ys[i] = y_promises[i].resolve()
-          except ASOSimulationException:
-            if sim_calls <= max_sim_calls:
-              # resample and try again
-              self.structures[i] = sampler.sample()
-              y_promises[i] = copy.deepcopy(simulation)
-              y_promises[i].get(self.structures[i], group = True, 
-                separator = ' ')
+          if self.ys[i] is None:
+            try:
+              self.ys[i] = y_promises[i].resolve()
+            except ASOSimulationException:
+              if sim_calls <= max_sim_calls:
+                # resample and try again
+                self.structures[i] = sampler.sample()
+                y_promises[i] = copy.deepcopy(simulation)
+                y_promises[i].get(self.structures[i], group = True, 
+                  separator = ' ')
 
       self.ys = [yp.resolve() for yp in y_promises]
           
