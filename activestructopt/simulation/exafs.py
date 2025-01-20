@@ -97,13 +97,28 @@ class EXAFS(BaseSimulation):
     index_str = str(absorber_indices[0])
     for i in range(1, len(absorber_indices)):
       index_str += separator + str(absorber_indices[i])
+    job_name = int(time.time()) % 604800
     sbatch_data = sbatch_data.replace('##ARRAY_INDS##', index_str)
     sbatch_data = sbatch_data.replace('##DIRECTORY##', new_folder)
+    sbatch_data = sbatch_data.replace('##JOB_NAME##', str(job_name))
     new_job_file = os.path.join(new_folder, 'job.sbatch')
     with open(new_job_file, 'w') as file:
       file.write(sbatch_data)
-    slurm_response = subprocess.check_output(["sbatch", f"{new_job_file}"])
-    self.slurm_job_number = int(str(slurm_response).split('\\n')[0].split()[-1])
+    
+    try:
+      slurm_response = subprocess.check_output(["sbatch", f"{new_job_file}"])
+      self.slurm_job_number = int(str(slurm_response).split('\\n')[0].split()[-1])
+    except subprocess.CalledProcessError as e:
+      print(e.output)
+      time.sleep(30)
+      slurm_response = subprocess.check_output(["sacct"])
+      slurm_response = str(slurm_response).split('\\n')
+      for i in range(len(slurm_response)):
+        if slurm_response[i].split()[1] == str(job_name):
+          slurm_job_number = slurm_response[i].split()[0]
+          if '_' in slurm_job_number:
+            slurm_job_number = slurm_job_number.split('_')[0]
+          self.slurm_job_number = int(slurm_job_number)
     
     self.folder = new_folder
     self.params = params

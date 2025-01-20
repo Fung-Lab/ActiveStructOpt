@@ -193,15 +193,29 @@ class ActiveLearning():
   def opt_step_sbatch(self, sbatch_template, stepi, retrain = True):
     with open(sbatch_template, 'r') as file:
       sbatch_data = file.read()
+    job_name = int(time.time()) % 604800
     sbatch_data = sbatch_data.replace('##PROG_FILE##', self.last_prog_file)
     sbatch_data = sbatch_data.replace('##MODEL_PARAMS_FILE##', 
       self.model_params_file)
     sbatch_data = sbatch_data.replace('##RETRAIN##', str(retrain))
+    sbatch_data = sbatch_data.replace('##JOB_NAME##', str(job_name))
     new_job_file = f'gpu_job_{self.index}.sbatch'
     with open(new_job_file, 'w') as file:
       file.write(sbatch_data)
-    slurm_response = subprocess.check_output(["sbatch", f"{new_job_file}"])
-    slurm_job_number = int(str(slurm_response).split('\\n')[0].split()[-1])
+    try:
+      slurm_response = subprocess.check_output(["sbatch", f"{new_job_file}"])
+      slurm_job_number = int(str(slurm_response).split('\\n')[0].split()[-1])
+    except subprocess.CalledProcessError as e:
+      print(e.output)
+      time.sleep(30)
+      slurm_response = subprocess.check_output(["sacct"])
+      slurm_response = str(slurm_response).split('\\n')
+      for i in range(len(slurm_response)):
+        if slurm_response[i].split()[1] == str(job_name):
+          slurm_job_number = slurm_response[i].split()[0]
+          if '_' in slurm_job_number:
+            slurm_job_number = slurm_job_number.split('_')[0]
+          slurm_job_number = int(slurm_job_number)
     finished = False
     while not finished:
       time.sleep(30)
