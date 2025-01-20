@@ -65,10 +65,10 @@ class KFoldsDataset(BaseDataset):
       self.mismatches = progress_dict['mismatches']
 
   def update(self, new_structure: IStructure):
-    self.structures.append(new_structure)
     y_promise = self.simfunc
     y_promise.get(new_structure)
     y = y_promise.resolve()
+    self.structures.append(new_structure)
     new_mismatch = self.simfunc.get_mismatch(y, self.target)
     y_promise.garbage_collect(new_mismatch <= min(self.mismatches))
     fold = self.k - 1
