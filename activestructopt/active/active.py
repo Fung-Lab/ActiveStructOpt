@@ -202,20 +202,28 @@ class ActiveLearning():
     new_job_file = f'gpu_job_{self.index}.sbatch'
     with open(new_job_file, 'w') as file:
       file.write(sbatch_data)
+
     try:
       slurm_response = subprocess.check_output(["sbatch", f"{new_job_file}"])
       slurm_job_number = int(str(slurm_response).split('\\n')[0].split()[-1])
     except subprocess.CalledProcessError as e:
       print(e.output)
       time.sleep(30)
+      slurm_job_number = 0
       slurm_response = subprocess.check_output(["sacct"])
       slurm_response = str(slurm_response).split('\\n')
       for i in range(len(slurm_response)):
-        if slurm_response[i].split()[1] == str(job_name):
-          slurm_job_number = slurm_response[i].split()[0]
-          if '_' in slurm_job_number:
-            slurm_job_number = slurm_job_number.split('_')[0]
-          slurm_job_number = int(slurm_job_number)
+        split_slurm_line = slurm_response[i].split()
+        if len(split_slurm_line) >= 2:
+          if split_slurm_line[1] == str(job_name):
+            slurm_job_number = split_slurm_line[0]
+            if '_' in slurm_job_number:
+              slurm_job_number = slurm_job_number.split('_')[0]
+            slurm_job_number = int(slurm_job_number)
+      if slurm_job_number == 0:
+        slurm_response = subprocess.check_output(["sbatch", f"{new_job_file}"])
+        slurm_job_number = int(str(slurm_response).split('\\n')[0].split()[-1])
+    
     finished = False
     while not finished:
       time.sleep(30)

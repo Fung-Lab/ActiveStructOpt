@@ -113,6 +113,19 @@ class EXAFS(BaseSimulation):
       time.sleep(30)
       slurm_response = subprocess.check_output(["sacct"])
       slurm_response = str(slurm_response).split('\\n')
+      self.slurm_job_number = 0
+      for i in range(len(slurm_response)):
+        split_slurm_line = slurm_response[i].split()
+        if len(split_slurm_line) >= 2:
+          if split_slurm_line[1] == str(job_name):
+            slurm_job_number = split_slurm_line[0]
+            if '_' in slurm_job_number:
+              slurm_job_number = slurm_job_number.split('_')[0]
+            self.slurm_job_number = int(slurm_job_number)
+      if self.slurm_job_number == 0:
+        slurm_response = subprocess.check_output(["sbatch", f"{new_job_file}"])
+        self.slurm_job_number = int(str(slurm_response).split('\\n')[0].split()[-1])
+
       for i in range(len(slurm_response)):
         if slurm_response[i].split()[1] == str(job_name):
           slurm_job_number = slurm_response[i].split()[0]
@@ -135,6 +148,7 @@ class EXAFS(BaseSimulation):
         if 'FAILED' in job_status or 'COMPLETED' in job_status or (
           'CANCELLED' in job_status):
           finished = True
+        time.sleep(10) # Pause a little for writing to finish up
       except:
         print('Probably a temporary slurm issue')
         print(traceback.format_exc())
