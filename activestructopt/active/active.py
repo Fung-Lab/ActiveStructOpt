@@ -112,22 +112,30 @@ class ActiveLearning():
   
   def optimize(self, print_mismatches = True, save_progress_dir = None, 
     predict_target = False, new_structure_predict = False, 
-    sbatch_template = None, max_sim_calls = 5):
+    sbatch_template = None, max_sim_calls = 5, model_params_file = None):
     try:
+      if model_params_file != None:
+        self.model_params_file = model_params_file
+
       if print_mismatches:
         print(self.dataset.mismatches)
 
       for i in range(len(self.dataset.mismatches), 
         self.config['aso_params']['max_forward_calls']):
         
-        if sbatch_template is None:
-          new_structure = self.opt_step(predict_target = predict_target, 
-            save_file = None)
+        if int(self.model_params_file.split('.')[0].split('_')[-1]) < len(
+          self.dataset.mismatches):
+          if sbatch_template is None:
+            new_structure = self.opt_step(predict_target = predict_target, 
+              save_file = None)
+          else:
+            new_structure = self.opt_step_sbatch(sbatch_template, i)
+          #print(new_structure)
+          #for ensemble_i in range(len(metrics)):
+          #  print(metrics[ensemble_i]['val_error'])
         else:
-          new_structure = self.opt_step_sbatch(sbatch_template, i)
-        #print(new_structure)
-        #for ensemble_i in range(len(metrics)):
-        #  print(metrics[ensemble_i]['val_error'])
+          with open(self.model_params_file, 'rb') as f:
+            new_structure = Structure.from_dict(json.load(f)['structure'])
         
         sim_calculated = False
         sim_calls = 0
@@ -191,6 +199,8 @@ class ActiveLearning():
     self.dataset.update(new_structure)
 
   def opt_step_sbatch(self, sbatch_template, stepi, retrain = True):
+    #if self.model_params_file == f"gpu_job_{self.index}_{stepi}.json":
+    #  retrain = False
     with open(sbatch_template, 'r') as file:
       sbatch_data = file.read()
     job_name = int(time.time()) % 604800
