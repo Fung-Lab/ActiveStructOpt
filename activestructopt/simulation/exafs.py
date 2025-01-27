@@ -16,6 +16,7 @@ class EXAFS(BaseSimulation):
     absorber = 'Co', edge = 'K', radius = 10.0, 
     additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1'},
     sbatch_template = None, sbatch_group_template = None,
+    number_absorbers = None,
     **kwargs) -> None:
     self.feff_location = feff_location
     self.parent_folder = folder
@@ -28,6 +29,7 @@ class EXAFS(BaseSimulation):
     self.N = len(self.mask)
     self.sbatch_template = sbatch_template
     self.sbatch_group_template = sbatch_group_template
+    self.number_absorbers = number_absorbers
 
   def setup_config(self, config):
     config['dataset']['preprocess_params']['prediction_level'] = 'node'
@@ -47,6 +49,10 @@ class EXAFS(BaseSimulation):
     # get all indices of the absorber
     absorber_indices = 8 * np.argwhere(
       [x.symbol == self.absorber for x in structure.species]).flatten()
+
+    if self.number_absorbers is not None:
+      absorber_indices = list(np.random.RandomState.choice(absorber_indices, 
+        self.number_absorbers, replace = False))
 
     assert len(absorber_indices) > 0
 
