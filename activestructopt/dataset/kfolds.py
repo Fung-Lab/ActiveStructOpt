@@ -47,6 +47,8 @@ class KFoldsDataset(BaseDataset):
                 for j in range(len(self.structures)):
                   if self.ys[j] is not None and i != j:
                     y_promises[j].garbage_collect(False)
+              else:
+                y_promises[i].garbage_collect(False)
             except ASOSimulationException:
               if sim_calls <= max_sim_calls:
                 # resample and try again
