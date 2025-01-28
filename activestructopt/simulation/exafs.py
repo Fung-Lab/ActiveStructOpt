@@ -102,9 +102,9 @@ class EXAFS(BaseSimulation):
     with open(self.sbatch_group_template if group else self.sbatch_template, 
       'r') as file:
       sbatch_data = file.read()
-    index_str = str(absorber_indices[0])
+    index_str = str(0)
     for i in range(1, len(absorber_indices)):
-      index_str += separator + str(absorber_indices[i])
+      index_str += separator + str(i)
     job_name = int(time.time()) % 604800
     sbatch_data = sbatch_data.replace('##ARRAY_INDS##', index_str)
     sbatch_data = sbatch_data.replace('##DIRECTORY##', new_folder)
