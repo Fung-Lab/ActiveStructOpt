@@ -51,8 +51,8 @@ class EXAFS(BaseSimulation):
       [x.symbol == self.absorber for x in structure.species]).flatten()
 
     if self.number_absorbers is not None:
-      absorber_indices = np.random.choice(absorber_indices, 
-        self.number_absorbers, replace = False)
+      absorber_indices = np.sort(np.random.choice(absorber_indices, 
+        self.number_absorbers, replace = False))
 
     assert len(absorber_indices) > 0
 
