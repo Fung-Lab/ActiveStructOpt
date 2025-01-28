@@ -44,8 +44,15 @@ class KFoldsDataset(BaseDataset):
                 y_promises[i].get(self.structures[i], group = True, 
                   separator = ' ')
 
-      self.ys = [yp.resolve() for yp in y_promises]
-          
+      self.ys = []
+      self.mismatches = []
+      for yp in y_promises:
+        new_y = yp.resolve()
+        self.ys.append(new_y)
+        new_mismatch = simulation.get_mismatch(new_y, target)
+        self.mismatches.append(simulation.get_mismatch(new_y, target))
+        yp.garbage_collect(new_mismatch <= min(self.mismatches))
+
       structure_indices = np.random.permutation(np.arange(1, N))
       trainval_indices = structure_indices[:int(np.round(split * N) - 1)]
       trainval_indices = np.append(trainval_indices, [0])
@@ -53,7 +60,6 @@ class KFoldsDataset(BaseDataset):
       for i in range(self.k):
         self.kfolds[i] = self.kfolds[i].tolist()
       self.test_indices = structure_indices[int(np.round(split * N) - 1):]
-      self.mismatches = [simulation.get_mismatch(y, target) for y in self.ys]
     else:
       self.start_N = progress_dict['start_N']
       self.N = progress_dict['N']
