@@ -193,7 +193,8 @@ class EXAFS(BaseSimulation):
         if to_delete != self.folder:
           shutil.rmtree(to_delete)
     else:
-      shutil.rmtree(self.folder)
+      if os.path.isdir(self.folder):
+        shutil.rmtree(self.folder)
 
   def get_mismatch(self, to_compare, target):
     return np.mean((
