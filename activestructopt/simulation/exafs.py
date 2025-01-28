@@ -54,6 +54,8 @@ class EXAFS(BaseSimulation):
       absorber_indices = np.sort(np.random.choice(absorber_indices, 
         self.number_absorbers, replace = False))
 
+      self.mask = [((8 * x) in absorber_indices) for x in range(len(structure))]
+
     assert len(absorber_indices) > 0
 
     # guarantees at least two atoms of the absorber,
