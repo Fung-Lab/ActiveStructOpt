@@ -10,7 +10,9 @@ import copy
 class KFoldsDataset(BaseDataset):
   def __init__(self, simulation: BaseSimulation, sampler: BaseSampler, 
     initial_structure: IStructure, target, config, N = 100, split = 0.85, 
-    k = 5, seed = 0, progress_dict = None, max_sim_calls = 5, **kwargs) -> None:
+    k = 5, seed = 0, progress_dict = None, max_sim_calls = 5, 
+    call_sequential = False,
+    **kwargs) -> None:
     np.random.seed(seed)
     self.config = config
     self.target = target
@@ -25,8 +27,9 @@ class KFoldsDataset(BaseDataset):
         ) if i == 0 else sampler.sample() for i in range(N)]
       
       y_promises = [copy.deepcopy(simulation) for _ in self.structures]
-      for i, s in enumerate(self.structures):
-        y_promises[i].get(s, group = True, separator = ' ')
+      if not call_sequential:
+        for i, s in enumerate(self.structures):
+          y_promises[i].get(s, group = True, separator = ' ')
       self.ys = [None for _ in y_promises]
       self.mismatches = [np.NaN for _ in y_promises]
       
@@ -36,6 +39,8 @@ class KFoldsDataset(BaseDataset):
         for i in range(len(self.structures)):
           if self.ys[i] is None:
             try:
+              if call_sequential:
+                y_promises[i].get(self.structures[i])
               self.ys[i] = y_promises[i].resolve()
               self.mismatches[i] = simulation.get_mismatch(self.ys[i], target)
               if self.mismatches[i] < np.nanmin(self.mismatches):
@@ -47,8 +52,9 @@ class KFoldsDataset(BaseDataset):
                 # resample and try again
                 self.structures[i] = sampler.sample()
                 y_promises[i] = copy.deepcopy(simulation)
-                y_promises[i].get(self.structures[i], group = True, 
-                  separator = ' ')
+                if not call_sequential:
+                  y_promises[i].get(self.structures[i], group = True, 
+                    separator = ' ')
 
       structure_indices = np.random.permutation(np.arange(1, N))
       trainval_indices = structure_indices[:int(np.round(split * N) - 1)]
