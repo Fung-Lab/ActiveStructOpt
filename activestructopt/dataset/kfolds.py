@@ -28,6 +28,7 @@ class KFoldsDataset(BaseDataset):
       for i, s in enumerate(self.structures):
         y_promises[i].get(s, group = True, separator = ' ')
       self.ys = [None for _ in y_promises]
+      self.mismatches = [np.NaN for _ in y_promises]
       
       sim_calls = 0
       while any(y is None for y in self.ys):
@@ -36,6 +37,11 @@ class KFoldsDataset(BaseDataset):
           if self.ys[i] is None:
             try:
               self.ys[i] = y_promises[i].resolve()
+              self.mismatches[i] = simulation.get_mismatch(self.ys[i], target)
+              if self.mismatches[i] < np.nanmin(self.mismatches):
+                for j in range(len(self.structures)):
+                  if self.ys[j] is not None and i != j:
+                    y_promises[j].garbage_collect(False)
             except ASOSimulationException:
               if sim_calls <= max_sim_calls:
                 # resample and try again
@@ -43,15 +49,6 @@ class KFoldsDataset(BaseDataset):
                 y_promises[i] = copy.deepcopy(simulation)
                 y_promises[i].get(self.structures[i], group = True, 
                   separator = ' ')
-
-      self.ys = []
-      self.mismatches = []
-      for yp in y_promises:
-        new_y = yp.resolve()
-        self.ys.append(new_y)
-        new_mismatch = simulation.get_mismatch(new_y, target)
-        self.mismatches.append(simulation.get_mismatch(new_y, target))
-        yp.garbage_collect(new_mismatch <= min(self.mismatches))
 
       structure_indices = np.random.permutation(np.arange(1, N))
       trainval_indices = structure_indices[:int(np.round(split * N) - 1)]
