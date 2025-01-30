@@ -188,6 +188,8 @@ class EXAFS(BaseSimulation):
     return chi_ks #np.mean(np.array(chi_ks), axis = 0)
 
   def garbage_collect(self, is_better):
+    print('In Garbage Collect')
+    print(f'folder: {self.folder}')
     parent_folder = os.path.dirname(self.folder)
     if is_better:
       subfolders = [int(x) for x in os.listdir(parent_folder)]
@@ -197,7 +199,9 @@ class EXAFS(BaseSimulation):
           shutil.rmtree(to_delete)
     else:
       if os.path.isdir(self.folder):
+        print('really tried to delete')
         shutil.rmtree(self.folder)
+    assert False
 
   def get_mismatch(self, to_compare, target):
     return np.mean((
