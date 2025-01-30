@@ -43,9 +43,9 @@ class KFoldsDataset(BaseDataset):
                 y_promises[i].get(self.structures[i])
               self.ys[i] = y_promises[i].resolve()
               self.mismatches[i] = simulation.get_mismatch(self.ys[i], target)
-              if self.mismatches[i] < np.nanmin(self.mismatches):
+              if self.mismatches[i] <= np.nanmin(self.mismatches):
                 for j in range(len(self.structures)):
-                  if self.ys[j] is not None and i != j:
+                  if (self.ys[j] is not None) and i != j:
                     y_promises[j].garbage_collect(False)
               else:
                 y_promises[i].garbage_collect(False)
