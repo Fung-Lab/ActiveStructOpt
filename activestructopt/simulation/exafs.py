@@ -198,7 +198,6 @@ class EXAFS(BaseSimulation):
     else:
       if os.path.isdir(self.folder):
         shutil.rmtree(self.folder)
-    assert False
 
   def get_mismatch(self, to_compare, target):
     return np.mean((
