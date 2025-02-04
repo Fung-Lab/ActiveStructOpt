@@ -146,21 +146,24 @@ class EXAFS(BaseSimulation):
     self.inds = absorber_indices 
 
   def resolve(self):
-    finished = False
-    while not finished:
-      time.sleep(30)
-      try:
-        sacct_check_output = subprocess.check_output(
-          ["sacct", f"--jobs={self.slurm_job_number}", "--format=state"])
-        job_status = str(sacct_check_output).split('\\n')[2]
-        if 'FAILED' in job_status or 'COMPLETED' in job_status or (
-          'CANCELLED' in job_status):
-          finished = True
-        time.sleep(10) # Pause a little for writing to finish up
-      except:
-        print('Probably a temporary slurm issue')
-        print(traceback.format_exc())
+    for i in range(len(self.inds)):
+      finished = False
+      while not finished:
+        time.sleep(30)
+        try:
+          sacct_check_output = subprocess.check_output(
+            ["sacct", f"--jobs={self.slurm_job_number}_{self.inds[i]}", 
+            "--format=state"])
+          job_status = str(sacct_check_output).split('\\n')[2]
+          if 'FAILED' in job_status or 'COMPLETED' in job_status or (
+            'CANCELLED' in job_status):
+            finished = True
+          time.sleep(10) # Pause a little for writing to finish up
+        except:
+          print('Probably a temporary slurm issue')
+          print(traceback.format_exc())
 
+    time.sleep(10)
     chi_ks = np.zeros((self.N, 181))
     for i in range(len(self.inds)):
       absorb_ind = self.inds[i]
