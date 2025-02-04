@@ -149,7 +149,6 @@ class EXAFS(BaseSimulation):
     for i in range(len(self.inds)):
       finished = False
       while not finished:
-        time.sleep(30)
         try:
           sacct_check_output = subprocess.check_output(
             ["sacct", f"--jobs={self.slurm_job_number}_{i}", 
@@ -158,12 +157,14 @@ class EXAFS(BaseSimulation):
           if 'FAILED' in job_status or 'COMPLETED' in job_status or (
             'CANCELLED' in job_status):
             finished = True
-          time.sleep(10) # Pause a little for writing to finish up
+          else:
+            time.sleep(30)
         except:
           print('Probably a temporary slurm issue')
           print(traceback.format_exc())
+          time.sleep(30)
 
-    time.sleep(10)
+    time.sleep(10) # Pause a little for writing to finish up
     chi_ks = np.zeros((self.N, 181))
     for i in range(len(self.inds)):
       absorb_ind = self.inds[i]
