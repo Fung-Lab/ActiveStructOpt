@@ -152,7 +152,7 @@ class EXAFS(BaseSimulation):
         time.sleep(30)
         try:
           sacct_check_output = subprocess.check_output(
-            ["sacct", f"--jobs={self.slurm_job_number}_{self.inds[i]}", 
+            ["sacct", f"--jobs={self.slurm_job_number}_{i}", 
             "--format=state"])
           job_status = str(sacct_check_output).split('\\n')[2]
           if 'FAILED' in job_status or 'COMPLETED' in job_status or (
