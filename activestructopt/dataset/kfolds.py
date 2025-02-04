@@ -79,7 +79,11 @@ class KFoldsDataset(BaseDataset):
   def update(self, new_structure: IStructure):
     y_promise = self.simfunc
     y_promise.get(new_structure)
-    y = y_promise.resolve()
+    try:
+      y = y_promise.resolve()
+    except ASOSimulationException:
+      y_promise.garbage_collect(False)
+      raise ASOSimulationException
     self.structures.append(new_structure)
     new_mismatch = self.simfunc.get_mismatch(y, self.target)
     y_promise.garbage_collect(new_mismatch <= min(self.mismatches))
