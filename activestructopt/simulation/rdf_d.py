@@ -19,6 +19,7 @@ class RDFD(BaseSimulation):
     self.natoms = len(initial_structure)
     self.normalization = 4 * self.natoms ** 2 * np.pi * np.sqrt(2 * np.pi * 
       self.σ ** 2) * torch.square(self.rs)
+    self.mask = [True for _ in initial_structure.species]
     
   def setup_config(self, config):
     self.config = config
