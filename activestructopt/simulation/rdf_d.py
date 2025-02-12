@@ -27,7 +27,7 @@ class RDFD(BaseSimulation):
     #config['dataset']['preprocess_params']['output_dim'] = self.outdim
     return config
 
-  def get(self, data):
+  def get(self, data, group = False, separator = None):
     if isinstance(data, IStructure):
       self.data = prepare_data_pmg(data, self.config['dataset'], 
         device = self.device, preprocess = True)
