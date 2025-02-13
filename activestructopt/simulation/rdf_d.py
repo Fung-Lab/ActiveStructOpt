@@ -27,6 +27,27 @@ class RDFD(BaseSimulation):
     #config['dataset']['preprocess_params']['output_dim'] = self.outdim
     return config
 
+  def get_and_resolve_prepared(self, data):
+    to_return = torch.zeros((len(data), self.rlen))
+
+    for i, datum in enumerate(data):
+      volume = torch.einsum("zi,zi->z", datum.cell[:, 0, :], 
+        torch.cross(datum.cell[:, 1, :], datum.cell[:, 2, :], dim = 1)
+        ).unsqueeze(-1)
+
+      ews = datum.edge_weight
+      elen = ews.size(0)
+      rs = self.rs.repeat(elen, 1)
+      ews = ews.unsqueeze(1)
+      ews = ews.repeat(1, self.rlen)
+      mdl_rdf = torch.sum(torch.exp(-torch.square((rs - ews) / (np.sqrt(2) * 
+        self.σ))), axis = 0) * volume / self.normalization
+
+      to_return[i, :] = mdl_rdf
+    
+    return to_return
+
+
   def get(self, data, group = False, separator = None):
     if isinstance(data, IStructure):
       self.data = prepare_data_pmg(data, self.config['dataset'], 
@@ -47,7 +68,7 @@ class RDFD(BaseSimulation):
     mdl_rdf = torch.sum(torch.exp(-torch.square((rs - ews) / (np.sqrt(2) * 
       self.σ))), axis = 0) * self.volume / self.normalization
 
-    return mdl_rdf.repeat(self.natoms, 1)
+    return mdl_rdf
 
   def garbage_collect(self, is_better):
     return

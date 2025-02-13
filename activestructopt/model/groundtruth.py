@@ -12,9 +12,8 @@ class GroundTruth(BaseModel):
   def train(self, dataset: BaseDataset, **kwargs):
     return None, None, torch.empty(0)
 
-  def predict(self, structure, **kwargs):
-    self.simfunc.get(structure[0])
-    gt = self.simfunc.resolve()
+  def predict(self, data, **kwargs):
+    gt = self.simfunc.get_and_resolve_prepared(data)
     unc = torch.zeros(gt.size(), device = gt.device)
 
-    return torch.stack((gt, unc)).unsqueeze(1)
+    return torch.stack((gt, unc))
