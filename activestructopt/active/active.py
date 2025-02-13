@@ -336,7 +336,8 @@ class ActiveLearning():
             'dataset': self.dataset.toJSONDict(
               save_structures = self.save_structures),
             'model_params': model_params,
-            'obj_values': [x.tolist() for x in self.opt_obj_values],
+            'obj_values': [[] if x is None else x.tolist(
+              ) for x in self.opt_obj_values],
             'config': self.config,
       }
       with open(filename, "w") as file: 
