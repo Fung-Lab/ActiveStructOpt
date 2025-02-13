@@ -68,7 +68,7 @@ class RDFD(BaseSimulation):
     mdl_rdf = torch.sum(torch.exp(-torch.square((rs - ews) / (np.sqrt(2) * 
       self.σ))), axis = 0) * self.volume / self.normalization
 
-    return mdl_rdf
+    return mdl_rdf.repeat(self.natoms, 1)
 
   def garbage_collect(self, is_better):
     return
