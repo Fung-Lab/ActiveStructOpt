@@ -22,10 +22,11 @@ class Torch(BaseOptimizer):
     optimizer_args = {}, optimize_atoms = True, 
     optimize_lattice = False, save_obj_values = False, 
     constraint_scale = 1.0, pos_lr = 0.001, cell_lr = 0.001,
-    constraint_buffer = 0.85,
+    constraint_buffer = 0.85, random_starts = False,
     **kwargs) -> IStructure:
     
-    starting_structures = [dataset.structures[j].copy(
+    starting_structures = [sampler.sample(
+      ) for j in range(starts)] if random_starts else [dataset.structures[j].copy(
       ) if j < dataset.N else sampler.sample(
       ) for j in range(starts)]
 
