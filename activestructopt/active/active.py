@@ -278,20 +278,25 @@ class ActiveLearning():
             self.target_structure, 
             mask = self.dataset.simfunc.mask).cpu().numpy())
 
-    opt_profile = self.config['aso_params']['optimizer']['profiles'][
+    acq_profile = self.config['aso_params']['optimizer']['acq_profiles'][
         np.searchsorted(-np.array(
-          self.config['aso_params']['optimizer']['switch_profiles']), 
+          self.config['aso_params']['optimizer']['switch_acq_profiles']), 
           -(self.config['aso_params']['max_forward_calls'] - stepi))]
 
-    objective_cls = registry.get_objective_class(opt_profile['name'])
-    objective = objective_cls(**(opt_profile['args']))
+    opt_profile = self.config['aso_params']['optimizer']['opt_profiles'][
+        np.searchsorted(-np.array(
+          self.config['aso_params']['optimizer']['switch_opt_profiles']), 
+          -(self.config['aso_params']['max_forward_calls'] - stepi))]
+
+    objective_cls = registry.get_objective_class(acq_profile['name'])
+    objective = objective_cls(**(acq_profile['args']), )
 
     optimizer_cls = registry.get_optimizer_class(
       self.config['aso_params']['optimizer']['name'])
 
     new_structure, obj_values = optimizer_cls().run(self.model, 
       self.dataset, objective, self.sampler, 
-      **(self.config['aso_params']['optimizer']['args']))
+      **(self.config['aso_params']['optimizer']['args']), **(opt_profile))
     self.opt_obj_values.append(obj_values)
 
     if not (save_file is None):
@@ -402,17 +407,19 @@ class ActiveLearning():
     self.model.load(self.dataset, model_params['model_params'], 
       model_params['model_scalar'])
 
-    opt_profile = self.config['aso_params']['optimizer']['profiles'][0]
+    acq_profile = self.config['aso_params']['optimizer']['acq_profiles'][0]
 
-    objective_cls = registry.get_objective_class(opt_profile['name'])
-    objective = objective_cls(**(opt_profile['args']))
+    objective_cls = registry.get_objective_class(acq_profile['name'])
+    objective = objective_cls(**(acq_profile['args']))
 
     optimizer_cls = registry.get_optimizer_class(
       self.config['aso_params']['optimizer']['name'])
 
+    opt_profile = self.config['aso_params']['optimizer']['opt_profiles'][0]
+    
     new_structure, obj_values = optimizer_cls().run(self.model, 
       self.dataset, objective, self.sampler, 
-      **(self.config['aso_params']['optimizer']['args']))
+      **(self.config['aso_params']['optimizer']['args']), **(opt_profile))
     self.opt_obj_values.append(obj_values)
     
     self.dataset.update(new_structure)
