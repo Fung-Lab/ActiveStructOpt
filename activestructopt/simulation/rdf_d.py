@@ -28,7 +28,7 @@ class RDFD(BaseSimulation):
     return config
 
   def get_and_resolve_prepared(self, data):
-    to_return = torch.zeros((len(data), self.rlen))
+    to_return = torch.zeros((len(data), self.rlen), device = self.device)
 
     for i, datum in enumerate(data):
       volume = torch.einsum("zi,zi->z", datum.cell[:, 0, :], 
