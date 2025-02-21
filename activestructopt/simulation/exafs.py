@@ -16,7 +16,7 @@ class EXAFS(BaseSimulation):
     absorber = 'Co', edge = 'K', radius = 10.0, 
     additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1'},
     sbatch_template = None, sbatch_group_template = None,
-    number_absorbers = None,
+    number_absorbers = None, save_sim = True,
     **kwargs) -> None:
     self.feff_location = feff_location
     self.parent_folder = folder
@@ -30,6 +30,7 @@ class EXAFS(BaseSimulation):
     self.sbatch_template = sbatch_template
     self.sbatch_group_template = sbatch_group_template
     self.number_absorbers = number_absorbers
+    self.save_sim = save_sim
 
   def setup_config(self, config):
     config['dataset']['preprocess_params']['prediction_level'] = 'node'
@@ -189,6 +190,10 @@ class EXAFS(BaseSimulation):
         raise ASOSimulationException(f"Could not parse {xmu_file}")
       
       chi_ks[int(np.round(absorb_ind / 8))] = xmu.chi[60:]
+
+      if not self.save_sim:
+        shutil.rmtree(new_abs_folder)
+    
     return chi_ks #np.mean(np.array(chi_ks), axis = 0)
 
   def garbage_collect(self, is_better):
