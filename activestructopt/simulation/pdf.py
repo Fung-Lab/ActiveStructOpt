@@ -19,6 +19,7 @@ class PDF(BaseSimulation):
     self.rmax = rmax
     self.rmin = rmin
     self.python = python
+    self.mask = [True for _ in initial_structure.species]
     self.natoms = len(initial_structure)
     self.outdim = np.round(100 * (self.rmax - self.rmin))
     self.parent_folder = folder
