@@ -31,7 +31,7 @@ class PDF(BaseSimulation):
 
   def get(self, struct, group = False, separator = None):
     self.lattice_string = f'Lattice(a={struct.lattice.a}, b={struct.lattice.b}, c={struct.lattice.c}, alpha={struct.lattice.alpha}, beta={struct.lattice.beta}, gamma={struct.lattice.gamma})'
-    atom_string = [f'Atom(atype = {s.species.elements[0].symbol}, xyz = {s.frac_coords}, occupancy = 1.0, lattice = lat),' for s in struct.sites]
+    atom_string = [f'Atom(atype = '{s.species.elements[0].symbol}', xyz = [{s.frac_coords[0]}, {s.frac_coords[1]}, {s.frac_coords[2]}], occupancy = 1.0, lattice = lat),' for s in struct.sites]
     self.atoms_string = f'[{reduce(lambda x, y: x + y, atom_string)}]'
     pass
 
@@ -57,7 +57,7 @@ def main():
     qmin = {self.qmin}
     rmax = {self.rmax}
     rmin = {self.rmin}
-    outfile = {os.path.join(new_folder, 'pdf_out.txt')}
+    outfile = '{os.path.join(new_folder, 'pdf_out.txt')}'
 
     total_struct = Structure(atoms = atoms, lattice = lat)
     total_struct.Bisoequiv = bisoequiv
