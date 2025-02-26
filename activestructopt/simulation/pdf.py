@@ -86,7 +86,7 @@ if __name__ == "__main__":
     with open(os.path.join(new_folder, 'run_pdf.py'), "w") as text_file:
       text_file.write(file_content)
     
-    response = subprocess.check_output([self.python, 'run_pdf.py'])
+    response = subprocess.check_output([self.python, os.path.join(new_folder, 'run_pdf.py')])
     pdf = np.loadtxt(os.path.join(new_folder, 'pdf_out.txt'))
     shutil.rmtree(new_folder)
 
