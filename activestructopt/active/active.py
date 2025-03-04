@@ -241,13 +241,17 @@ class ActiveLearning():
       try:
         sacct_check_output = subprocess.check_output(
           ["sacct", f"--jobs={slurm_job_number}", "--format=state"])
-        job_status = str(sacct_check_output).split('\\n')[2]
-        if 'FAILED' in job_status or 'COMPLETED' in job_status or (
-          'CANCELLED' in job_status):
-          finished = True
       except:
         print('Probably a temporary slurm issue')
         print(format_exc())
+        continue
+      job_status = str(sacct_check_output).split('\\n')[2]
+      if 'COMP' in job_status or 'FAIL' in job_status or 'CANC' in job_status or 'SUSP' in job_status or 'STOP' in job_status:
+        finished = True
+      elif 'PEND' in job_status or 'PREE' in job_status or 'RUN' in job_status:
+        continue
+      else:
+        raise ASOSimulationException(f"Unexpected job status: {job_status}")
     gpu_job_file = f"gpu_job_{self.index}_{stepi}.json"
     with open(gpu_job_file, 'rb') as f:
       new_structure = Structure.from_dict(json.load(f)['structure'])
