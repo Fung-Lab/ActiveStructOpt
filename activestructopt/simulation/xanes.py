@@ -17,8 +17,8 @@ class XANES(BaseSimulation):
     additional_settings = {
         'FMS': '4.5',
         'SCF': '4.5 0 30 .2 1',  
-        'DEBYE': '300 0 1', 
-        'ABSOLUTE': ''},
+        'DEBYE': '300 600 1'
+        },
     sbatch_template = None, sbatch_group_template = None,
     number_absorbers = None, save_sim = True,
     pre_edge_min = -110., pre_edge_max = -20., pre_edge_step = 2.0,
@@ -204,7 +204,7 @@ class XANES(BaseSimulation):
       except:
         raise ASOSimulationException(f"Could not parse {xmu_file}")
       
-      chi_ks[int(np.round(absorb_ind / 8))] = xmu.chi
+      chi_ks[int(np.round(absorb_ind / 8))] = xmu.mu
 
       if not self.save_sim:
         shutil.rmtree(new_abs_folder)
