@@ -17,7 +17,7 @@ class XANES(BaseSimulation):
     additional_settings = {
         'FMS': '4.5',
         'SCF': '4.5 0 30 .2 1',  
-        'DEBYE': '300 600 1'
+        'DEBYE': '300 0 1'
         },
     sbatch_template = None, sbatch_group_template = None,
     number_absorbers = None, save_sim = True,
