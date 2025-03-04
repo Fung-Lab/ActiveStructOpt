@@ -1,7 +1,7 @@
 from activestructopt.simulation.base import BaseSimulation, ASOSimulationException
 from activestructopt.common.registry import registry
 from pymatgen.io import feff
-from pymatgen.io.feff.sets import MPEXAFSSet
+from pymatgen.io.feff.sets import MPXANESSet
 from pymatgen.io.feff.outputs import Xmu
 import numpy as np
 import os
@@ -13,8 +13,8 @@ import traceback
 @registry.register_simulation("XANES")
 class XANES(BaseSimulation):
   def __init__(self, initial_structure, feff_location = "", folder = "", 
-    absorber = 'Co', edge = 'K', radius = 10.0, 
-    additional_settings = {'XANES': '6.0',
+    absorber = 'Co', edge = 'K', radius = 6.0, 
+    additional_settings = {
         'FMS': '4.5',
         'SCF': '4.5 0 30 .2 1',  
         'DEBYE': '300 0 1', 
@@ -87,7 +87,7 @@ class XANES(BaseSimulation):
       new_abs_folder = os.path.join(new_folder, str(i))
       os.mkdir(new_abs_folder)
 
-      params = MPEXAFSSet(
+      params = MPXANESSet(
         int(absorber_indices[i]),
         structure,
         edge = self.edge,
