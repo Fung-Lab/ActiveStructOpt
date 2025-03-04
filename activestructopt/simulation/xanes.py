@@ -33,8 +33,8 @@ class XANES(BaseSimulation):
     self.additional_settings = additional_settings
     egrid_settings = {'EGRID': '', 
         'e_grid': f'{pre_edge_min} {pre_edge_max} {pre_edge_step}', 
-        'e_grid': f'last {edge_max} {edge_step}', 
-        'e_grid': f'last {post_edge_max} {post_edge_step}',}
+        'e_grid ': f'last {edge_max} {edge_step}', 
+        'e_grid  ': f'last {post_edge_max} {post_edge_step}',}
     self.additional_settings.update(egrid_settings)
     self.outdim = len(np.arange(pre_edge_min, pre_edge_max, pre_edge_step)
         ) + len(np.arange(pre_edge_max, edge_max, edge_step)
