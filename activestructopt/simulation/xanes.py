@@ -23,7 +23,7 @@ class XANES(BaseSimulation):
     number_absorbers = None, save_sim = True,
     pre_edge_min = -110., pre_edge_max = -20., pre_edge_step = 2.0,
     edge_max = 30., edge_step = 0.5, 
-    k_grid_min = 3.0, kgrid_max = 6.0, kgrid_step = 0.05,
+    post_edge_max = 100.0, post_edge_step = 1.0,
     **kwargs) -> None:
     self.feff_location = feff_location
     self.parent_folder = folder
@@ -34,10 +34,11 @@ class XANES(BaseSimulation):
     egrid_settings = {'EGRID': '', 
         'e_grid': f'{pre_edge_min} {pre_edge_max} {pre_edge_step}', 
         'e_grid': f'last {edge_max} {edge_step}', 
-        'k_grid': f'{k_grid_min} {kgrid_max} {kgrid_step}',}
+        'e_grid': f'last {post_edge_max} {post_edge_step}',}
+    self.additional_settings.update(egrid_settings)
     self.outdim = len(np.arange(pre_edge_min, pre_edge_max, pre_edge_step)
-        ) + len(np.arange(pre_edge_max, edge_step, edge_max)
-        ) + len(np.arange(k_grid_min, kgrid_max, kgrid_step)) - 1
+        ) + len(np.arange(pre_edge_max, edge_max, edge_step)
+        ) + len(np.arange(edge_max, post_edge_max, post_edge_step)) - 2
     self.mask = [x.symbol == self.absorber 
       for x in initial_structure.species]
     self.N = len(self.mask)
