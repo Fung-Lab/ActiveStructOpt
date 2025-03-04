@@ -38,7 +38,7 @@ class XANES(BaseSimulation):
     self.additional_settings.update(egrid_settings)
     self.outdim = len(np.arange(pre_edge_min, pre_edge_max, pre_edge_step)
         ) + len(np.arange(pre_edge_max, edge_max, edge_step)
-        ) + len(np.arange(edge_max, post_edge_max, post_edge_step)) - 2
+        ) + len(np.arange(edge_max, post_edge_max, post_edge_step)) + 1
     self.mask = [x.symbol == self.absorber 
       for x in initial_structure.species]
     self.N = len(self.mask)
