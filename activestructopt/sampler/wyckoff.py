@@ -4,11 +4,11 @@ from activestructopt.common.constraints import lj_reject
 from pymatgen.core.structure import IStructure
 import numpy as np
 from collections import Counter
-from pyxtal import pyxtal
+import pyxtal
 
 @registry.register_sampler("Wyckoff")
 class Wyckoff(BaseSampler):
-  def __init__(self, initial_structure: IStructure, seed = 0) -> None:
+  def __init__(self, initial_structure: IStructure, seed = 0, perturb_lattice = True) -> None:
     # Distribution from Materials Project
     sg_dist = [146, 2720, 14, 407, 178, 7, 145, 97, 351, 39, 768, 1688, 286, 
       5736, 2345, 1, 5, 66, 596, 89, 13, 2, 11, 0, 10, 64, 3, 9, 196, 11, 
@@ -30,13 +30,18 @@ class Wyckoff(BaseSampler):
       0].symbol for site in initial_structure.sites])
     self.zs = list(element_counter.keys())
     self.zcounts = list(element_counter.values())
+    self.initial_lattice = initial_structure.lattice.matrix
 
     self.possible_sgs = []
     for i in range(230):
       try:
-        xtal = pyxtal()
-        xtal.from_random(3, i + 1, self.zs, self.zcounts,
-          random_state = self.rng)
+        xtal = pyxtal.pyxtal()
+        if perturb_lattice:
+          xtal.from_random(3, i + 1, self.zs, self.zcounts,
+            random_state = self.rng)
+        else:
+          xtal.from_random(3, i + 1, self.zs, self.zcounts,
+            random_state = self.rng, lattice = pyxtal.lattice.Lattice.from_matrix(self.initial_lattice))
         self.possible_sgs.append(i + 1)
       except:
         continue
@@ -49,9 +54,13 @@ class Wyckoff(BaseSampler):
     rejected = True
     while rejected:
       try:
-        xtal = pyxtal()
-        xtal.from_random(3, np.random.choice(self.possible_sgs, 
-          p = self.sg_probs), self.zs, self.zcounts, random_state = self.rng)
+        xtal = pyxtal.pyxtal()
+        if perturb_lattice:
+          xtal.from_random(3, i + 1, self.zs, self.zcounts,
+            random_state = self.rng)
+        else:
+          xtal.from_random(3, i + 1, self.zs, self.zcounts,
+            random_state = self.rng, lattice = pyxtal.lattice.Lattice.from_matrix(self.initial_lattice))
         new_structure = xtal.to_pymatgen()
         rejected = lj_reject(new_structure)
       except:
