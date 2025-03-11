@@ -57,10 +57,12 @@ class Wyckoff(BaseSampler):
       try:
         xtal = pyxtal.pyxtal()
         if self.perturb_lattice:
-          xtal.from_random(3, i + 1, self.zs, self.zcounts,
+          xtal.from_random(3, np.random.choice(self.possible_sgs, 
+            p = self.sg_probs), self.zs, self.zcounts,
             random_state = self.rng)
         else:
-          xtal.from_random(3, i + 1, self.zs, self.zcounts,
+          xtal.from_random(3, np.random.choice(self.possible_sgs, 
+            p = self.sg_probs), self.zs, self.zcounts,
             random_state = self.rng, lattice = pyxtal.lattice.Lattice.from_matrix(self.initial_lattice))
         new_structure = xtal.to_pymatgen()
         rejected = lj_reject(new_structure)
