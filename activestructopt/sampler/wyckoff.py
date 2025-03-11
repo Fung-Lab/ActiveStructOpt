@@ -42,7 +42,8 @@ class Wyckoff(BaseSampler):
             random_state = self.rng)
         else:
           xtal.from_random(3, i + 1, self.zs, self.zcounts,
-            random_state = self.rng, lattice = pyxtal.lattice.Lattice.from_matrix(self.initial_lattice))
+            random_state = self.rng, 
+            lattice = pyxtal.lattice.Lattice.from_matrix(self.initial_lattice))
         self.possible_sgs.append(i + 1)
       except:
         continue
@@ -63,7 +64,8 @@ class Wyckoff(BaseSampler):
         else:
           xtal.from_random(3, np.random.choice(self.possible_sgs, 
             p = self.sg_probs), self.zs, self.zcounts,
-            random_state = self.rng, lattice = pyxtal.lattice.Lattice.from_matrix(self.initial_lattice))
+            random_state = self.rng, 
+            lattice = pyxtal.lattice.Lattice.from_matrix(self.initial_lattice))
         new_structure = xtal.to_pymatgen()
         rejected = lj_reject(new_structure)
       except:
