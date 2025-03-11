@@ -31,6 +31,7 @@ class Wyckoff(BaseSampler):
     self.zs = list(element_counter.keys())
     self.zcounts = list(element_counter.values())
     self.initial_lattice = initial_structure.lattice.matrix
+    self.perturb_lattice = perturb_lattice
 
     self.possible_sgs = []
     for i in range(230):
@@ -55,7 +56,7 @@ class Wyckoff(BaseSampler):
     while rejected:
       try:
         xtal = pyxtal.pyxtal()
-        if perturb_lattice:
+        if self.perturb_lattice:
           xtal.from_random(3, i + 1, self.zs, self.zcounts,
             random_state = self.rng)
         else:
