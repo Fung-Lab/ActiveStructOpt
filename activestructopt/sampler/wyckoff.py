@@ -50,6 +50,8 @@ class Wyckoff(BaseSampler):
         random_state = self.rng, tm = self.tm,
         lattice = None if self.perturb_lattice else self.initial_lattice)
 
+    get_random_crystal(1)
+
     self.possible_sgs = []
     for i in range(230):
       try:
