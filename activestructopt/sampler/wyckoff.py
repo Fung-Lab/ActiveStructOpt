@@ -64,6 +64,7 @@ class Wyckoff(BaseSampler):
             p.join()
           else:
             if p.exitcode == 0:
+              print(xtal.valid)
               self.possible_sgs.append(i + 1)
               break
             else:
@@ -86,7 +87,9 @@ class Wyckoff(BaseSampler):
           self.constraint_buffer * lj_rmins))
           
     rejected = True
+    loops = 0
     while rejected:
+      loops += 1
       xtal = pyxtal.pyxtal()
       # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
       p = mp.Process(target = get_random_crystal, 
@@ -98,8 +101,10 @@ class Wyckoff(BaseSampler):
         p.terminate()
         p.join()
       else:
-        if p.exitcode == 0:
-          print(xtal)
+        print(xtal)
+        if p.exitcode == 0 and xtal.valid:
           new_structure = xtal.to_pymatgen()
           rejected = lj_reject(new_structure)
+      if loops > 10:
+        assert False
     return new_structure
