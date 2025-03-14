@@ -58,9 +58,8 @@ class Wyckoff(BaseSampler):
         tries = 0
         while tries < self.max_retries:
           tries += 1
-          xtal = pyxtal.pyxtal()
           # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
-          p = Process(target = get_random_crystal, args = (i + 1))
+          p = Process(target = get_random_crystal, name = "a", args = (i + 1))
           p.start()
           p.join(self.max_time)
           if p.is_alive(): # if didn't complete in max time
@@ -68,7 +67,6 @@ class Wyckoff(BaseSampler):
             p.join()
           else:
             if p.exitcode == 0:
-              print(xtal.valid)
               self.possible_sgs.append(i + 1)
               break
             else:
@@ -99,8 +97,8 @@ class Wyckoff(BaseSampler):
       d = manager.dict()
 
       # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
-      p = Process(target = get_random_crystal, args = (np.random.choice(
-          self.possible_sgs, p = self.sg_probs), d))
+      p = Process(target = get_random_crystal, name = "b", args = (
+        np.random.choice(self.possible_sgs, p = self.sg_probs), d))
       p.start()
       p.join(self.max_time)
       if p.is_alive(): # if didn't complete in max time
