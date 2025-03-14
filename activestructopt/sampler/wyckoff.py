@@ -5,9 +5,7 @@ from pymatgen.core.structure import IStructure, Structure
 from multiprocessing import Process, Manager
 from collections import Counter
 import numpy as np
-
 import pyxtal
-
 
 @registry.register_sampler("Wyckoff")
 class Wyckoff(BaseSampler):
@@ -50,29 +48,23 @@ class Wyckoff(BaseSampler):
         random_state = self.rng, tm = self.tm,
         lattice = None if self.perturb_lattice else self.initial_lattice)
 
-    get_random_crystal(1)
-
     self.possible_sgs = []
     for i in range(230):
-      try:
-        tries = 0
-        while tries < self.max_retries:
-          tries += 1
-          # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
-          p = Process(target = get_random_crystal, name = "a", args = (i + 1))
-          p.start()
-          p.join(self.max_time)
-          if p.is_alive(): # if didn't complete in max time
-            p.terminate()
-            p.join()
-          else:
-            if p.exitcode == 0:
-              self.possible_sgs.append(i + 1)
-              break
-            else:
-              raise Exception("PyXtal Generation Failed")
-      except:
-        continue
+      tries = 0
+      while tries < self.max_retries:
+        tries += 1
+        # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
+        p = Process(target = get_random_crystal, args = (i + 1,))
+        p.start()
+        p.join(self.max_time)
+        if p.is_alive(): # if didn't complete in max time
+          p.terminate()
+          p.join()
+        else:
+          if p.exitcode == 0:
+            self.possible_sgs.append(i + 1)
+          break
+
     self.possible_sgs = np.array(self.possible_sgs)
     self.sg_probs = np.array([sg_dist[i - 1] + 1.0 for i in self.possible_sgs])
     # Adding one allows non-zero probability for sgs not in Materials Project
@@ -97,7 +89,7 @@ class Wyckoff(BaseSampler):
       d = manager.dict()
 
       # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
-      p = Process(target = get_random_crystal, name = "b", args = (
+      p = Process(target = get_random_crystal, args = (
         np.random.choice(self.possible_sgs, p = self.sg_probs), d))
       p.start()
       p.join(self.max_time)
