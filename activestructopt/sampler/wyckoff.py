@@ -74,6 +74,7 @@ class Wyckoff(BaseSampler):
     self.sg_probs = np.array([sg_dist[i - 1] + 1.0 for i in self.possible_sgs])
     # Adding one allows non-zero probability for sgs not in Materials Project
     self.sg_probs /= np.sum(self.sg_probs)
+    print(self.possible_sgs)
 
   def sample(self) -> IStructure:
 
@@ -98,6 +99,7 @@ class Wyckoff(BaseSampler):
         p.join()
       else:
         if p.exitcode == 0:
+          print(xtal)
           new_structure = xtal.to_pymatgen()
           rejected = lj_reject(new_structure)
     return new_structure
