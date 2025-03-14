@@ -86,21 +86,18 @@ class Wyckoff(BaseSampler):
           
     rejected = True
     while rejected:
-      try:
-        xtal = pyxtal.pyxtal()
-        # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
-        p = mp.Process(target = get_random_crystal, 
-          name = "GetRandomCrystal", args = (xtal, np.random.choice(
-            self.possible_sgs, p = self.sg_probs)))
-        p.start()
-        p.join(self.max_time)
-        if p.is_alive(): # if didn't complete in max time
-          p.terminate()
-          p.join()
-        else:
-          if p.exitcode == 0:
-            new_structure = xtal.to_pymatgen()
-            rejected = lj_reject(new_structure)
-      except:
-        rejected = True
+      xtal = pyxtal.pyxtal()
+      # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
+      p = mp.Process(target = get_random_crystal, 
+        name = "GetRandomCrystal", args = (xtal, np.random.choice(
+          self.possible_sgs, p = self.sg_probs)))
+      p.start()
+      p.join(self.max_time)
+      if p.is_alive(): # if didn't complete in max time
+        p.terminate()
+        p.join()
+      else:
+        if p.exitcode == 0:
+          new_structure = xtal.to_pymatgen()
+          rejected = lj_reject(new_structure)
     return new_structure
