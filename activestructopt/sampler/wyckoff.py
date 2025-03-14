@@ -1,14 +1,17 @@
 from activestructopt.sampler.base import BaseSampler
 from activestructopt.common.registry import registry
-from activestructopt.common.constraints import lj_reject
+from activestructopt.common.constraints import lj_reject, lj_rmins
 from pymatgen.core.structure import IStructure
 import numpy as np
 from collections import Counter
 import pyxtal
+import multiprocessing as mp
 
 @registry.register_sampler("Wyckoff")
 class Wyckoff(BaseSampler):
-  def __init__(self, initial_structure: IStructure, seed = 0, perturb_lattice = True) -> None:
+  def __init__(self, initial_structure: IStructure, seed = 0, 
+    perturb_lattice = True, constraint_buffer = 0.85,
+    max_retries = 3, max_time = 20) -> None:
     # Distribution from Materials Project
     sg_dist = [146, 2720, 14, 407, 178, 7, 145, 97, 351, 39, 768, 1688, 286, 
       5736, 2345, 1, 5, 66, 596, 89, 13, 2, 11, 0, 10, 64, 3, 9, 196, 11, 
@@ -30,21 +33,41 @@ class Wyckoff(BaseSampler):
       0].symbol for site in initial_structure.sites])
     self.zs = list(element_counter.keys())
     self.zcounts = list(element_counter.values())
-    self.initial_lattice = initial_structure.lattice.matrix
+    self.initial_lattice = pyxtal.lattice.Lattice.from_matrix(
+      initial_structure.lattice.matrix)
     self.perturb_lattice = perturb_lattice
+    self.max_retries = max_retries
+    self.max_time = max_time
+    self.constraint_buffer = constraint_buffer
+
+    def get_random_crystal(xtal, sg):
+      return xtal.from_random(3, sg, self.zs, self.zcounts, 
+        random_state = self.rng, 
+        lattice = None if self.perturb_lattice else self.initial_lattice, 
+        tm = pyxtal.tolerance.Tol_matrix.from_matrix(
+          self.constraint_buffer * lj_rmins))
 
     self.possible_sgs = []
     for i in range(230):
       try:
-        xtal = pyxtal.pyxtal()
-        if perturb_lattice:
-          xtal.from_random(3, i + 1, self.zs, self.zcounts,
-            random_state = self.rng)
-        else:
-          xtal.from_random(3, i + 1, self.zs, self.zcounts,
-            random_state = self.rng, 
-            lattice = pyxtal.lattice.Lattice.from_matrix(self.initial_lattice))
-        self.possible_sgs.append(i + 1)
+        tries = 0
+        while tries < self.max_retries:
+          tries += 1
+          xtal = pyxtal.pyxtal()
+          # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
+          p = mp.Process(target = get_random_crystal, 
+            name = "GetRandomCrystal", args = (xtal, i + 1))
+          p.start()
+          p.join(self.max_time)
+          if p.is_alive(): # if didn't complete in max time
+            p.terminate()
+            p.join()
+          else:
+            if p.exitcode == 0:
+              self.possible_sgs.append(i + 1)
+              break
+            else:
+              raise Exception("PyXtal Generation Failed")
       except:
         continue
     self.possible_sgs = np.array(self.possible_sgs)
@@ -53,21 +76,31 @@ class Wyckoff(BaseSampler):
     self.sg_probs /= np.sum(self.sg_probs)
 
   def sample(self) -> IStructure:
+
+    def get_random_crystal(xtal, sg):
+      return xtal.from_random(3, sg, self.zs, self.zcounts, 
+        random_state = self.rng, 
+        lattice = None if self.perturb_lattice else self.initial_lattice, 
+        tm = pyxtal.tolerance.Tol_matrix.from_matrix(
+          self.constraint_buffer * lj_rmins))
+          
     rejected = True
     while rejected:
       try:
         xtal = pyxtal.pyxtal()
-        if self.perturb_lattice:
-          xtal.from_random(3, np.random.choice(self.possible_sgs, 
-            p = self.sg_probs), self.zs, self.zcounts,
-            random_state = self.rng)
+        # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
+        p = mp.Process(target = get_random_crystal, 
+          name = "GetRandomCrystal", args = (xtal, np.random.choice(
+            self.possible_sgs, p = self.sg_probs)))
+        p.start()
+        p.join(self.max_time)
+        if p.is_alive(): # if didn't complete in max time
+          p.terminate()
+          p.join()
         else:
-          xtal.from_random(3, np.random.choice(self.possible_sgs, 
-            p = self.sg_probs), self.zs, self.zcounts,
-            random_state = self.rng, 
-            lattice = pyxtal.lattice.Lattice.from_matrix(self.initial_lattice))
-        new_structure = xtal.to_pymatgen()
-        rejected = lj_reject(new_structure)
+          if p.exitcode == 0:
+            new_structure = xtal.to_pymatgen()
+            rejected = lj_reject(new_structure)
       except:
         rejected = True
     return new_structure
