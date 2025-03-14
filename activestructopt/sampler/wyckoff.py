@@ -42,11 +42,14 @@ class Wyckoff(BaseSampler):
     self.tm = pyxtal.tolerance.Tol_matrix.from_matrix(
       self.constraint_buffer * lj_rmins)
 
-    def get_random_crystal(sg):
+    def get_random_crystal(sg, d):
       xtal = pyxtal.pyxtal()
       xtal.from_random(3, sg, self.zs, self.zcounts, 
         random_state = self.rng, tm = self.tm,
         lattice = None if self.perturb_lattice else self.initial_lattice)
+      d['struct'] = xtal.to_pymatgen().as_dict()
+
+    self.get_random_crystal = get_random_crystal
 
     self.possible_sgs = []
     for i in range(230):
@@ -54,7 +57,7 @@ class Wyckoff(BaseSampler):
       while tries < self.max_retries:
         tries += 1
         # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
-        p = Process(target = get_random_crystal, args = (i + 1,))
+        p = Process(target = self.get_random_crystal, args = (i + 1, {}))
         p.start()
         p.join(self.max_time)
         if p.is_alive(): # if didn't complete in max time
@@ -72,24 +75,13 @@ class Wyckoff(BaseSampler):
     print(self.possible_sgs)
 
   def sample(self) -> IStructure:
-
-    def get_random_crystal(sg, d):
-      xtal = pyxtal.pyxtal()
-      xtal.from_random(3, sg, self.zs, self.zcounts, 
-        random_state = self.rng, tm = self.tm,
-        lattice = None if self.perturb_lattice else self.initial_lattice)
-      d['struct'] = xtal.to_pymatgen().as_dict()
-          
     rejected = True
-    loops = 0
-    while rejected:
-      loops += 1
-      
+    while rejected:      
       manager = Manager()
       d = manager.dict()
 
       # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
-      p = Process(target = get_random_crystal, args = (
+      p = Process(target = self.get_random_crystal, args = (
         np.random.choice(self.possible_sgs, p = self.sg_probs), d))
       p.start()
       p.join(self.max_time)
@@ -100,6 +92,5 @@ class Wyckoff(BaseSampler):
         if p.exitcode == 0:
           new_structure = Structure.from_dict(d['struct'])
           rejected = lj_reject(new_structure)
-      if loops > 10:
-        assert False
+
     return new_structure
