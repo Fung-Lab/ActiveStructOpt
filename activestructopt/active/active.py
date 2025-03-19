@@ -249,8 +249,10 @@ class ActiveLearning():
       if 'COMP' in job_status or 'FAIL' in job_status or 'CANC' in job_status or 'SUSP' in job_status or 'STOP' in job_status:
         finished = True
       elif 'PEND' in job_status or 'PREE' in job_status or 'RUN' in job_status:
+        print(job_status)
         continue
       else:
+        print(f"Unexpected job status: {job_status}")
         raise ASOSimulationException(f"Unexpected job status: {job_status}")
     gpu_job_file = f"gpu_job_{self.index}_{stepi}.json"
     with open(gpu_job_file, 'rb') as f:
