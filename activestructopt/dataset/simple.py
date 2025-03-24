@@ -34,3 +34,14 @@ class SimpleDataset(BaseDataset):
     self.mismatches.append(new_mismatch)
     self.N += 1
     
+  def toJSONDict(self, save_structures = True):
+    return {
+      'start_N': self.start_N,
+      'N': self.N,
+      'structures': [s.as_dict() for s in self.structures] if (
+        save_structures) else self.structures[np.argmin(self.mismatches)].as_dict(),
+      'ys': [y.tolist() for y in self.ys] if (
+        save_structures) else self.ys[np.argmin(self.mismatches).tolist()].tolist(),
+      'mismatches': self.mismatches
+    }
+    
