@@ -215,45 +215,17 @@ class ActiveLearning():
       file.write(sbatch_data)
 
     try:
-      slurm_response = subprocess.check_output(["sbatch", f"{new_job_file}"])
-      slurm_job_number = int(str(slurm_response).split('\\n')[0].split()[-1])
+      subprocess.check_output(["sbatch", f"{new_job_file}"])
     except subprocess.CalledProcessError as e:
       print(e.output)
-      time.sleep(30)
-      slurm_job_number = 0
-      slurm_response = subprocess.check_output(["sacct"])
-      slurm_response = str(slurm_response).split('\\n')
-      for i in range(len(slurm_response)):
-        split_slurm_line = slurm_response[i].split()
-        if len(split_slurm_line) >= 2:
-          if split_slurm_line[1] == str(job_name):
-            slurm_job_number = split_slurm_line[0]
-            if '_' in slurm_job_number:
-              slurm_job_number = slurm_job_number.split('_')[0]
-            slurm_job_number = int(slurm_job_number)
-      if slurm_job_number == 0:
-        slurm_response = subprocess.check_output(["sbatch", f"{new_job_file}"])
-        slurm_job_number = int(str(slurm_response).split('\\n')[0].split()[-1])
     
     finished = False
     while not finished:
       time.sleep(30)
-      try:
-        sacct_check_output = subprocess.check_output(
-          ["sacct", f"--jobs={slurm_job_number}", "--format=state"])
-      except:
-        print('Probably a temporary slurm issue')
-        print(format_exc())
-        continue
-      job_status = str(sacct_check_output).split('\\n')[2]
-      if 'COMP' in job_status or 'FAIL' in job_status or 'CANC' in job_status or 'SUSP' in job_status or 'STOP' in job_status:
+      if os.path.isfile("DONE"):
         finished = True
-      elif 'PEND' in job_status or 'PREE' in job_status or 'RUN' in job_status:
-        print(job_status)
-        continue
-      else:
-        print(f"Unexpected job status: {job_status}")
-        raise ASOSimulationException(f"Unexpected job status: {job_status}")
+        os.remove("DONE")
+
     gpu_job_file = f"gpu_job_{self.index}_{stepi}.json"
     with open(gpu_job_file, 'rb') as f:
       new_structure = Structure.from_dict(json.load(f)['structure'])

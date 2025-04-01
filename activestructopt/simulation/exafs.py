@@ -115,57 +115,27 @@ class EXAFS(BaseSimulation):
       file.write(sbatch_data)
     
     try:
-      slurm_response = subprocess.check_output(["sbatch", f"{new_job_file}"])
-      self.slurm_job_number = int(str(slurm_response).split('\\n')[0].split()[-1])
+      subprocess.check_output(["sbatch", f"{new_job_file}"])
     except subprocess.CalledProcessError as e:
       print(e.output)
-      time.sleep(30)
-      slurm_response = subprocess.check_output(["sacct"])
-      slurm_response = str(slurm_response).split('\\n')
-      self.slurm_job_number = 0
-      for i in range(len(slurm_response)):
-        split_slurm_line = slurm_response[i].split()
-        if len(split_slurm_line) >= 2:
-          if split_slurm_line[1] == str(job_name):
-            slurm_job_number = split_slurm_line[0]
-            if '_' in slurm_job_number:
-              slurm_job_number = slurm_job_number.split('_')[0]
-            self.slurm_job_number = int(slurm_job_number)
-      if self.slurm_job_number == 0:
-        slurm_response = subprocess.check_output(["sbatch", f"{new_job_file}"])
-        self.slurm_job_number = int(str(slurm_response).split('\\n')[0].split()[-1])
-
-      for i in range(len(slurm_response)):
-        if slurm_response[i].split()[1] == str(job_name):
-          slurm_job_number = slurm_response[i].split()[0]
-          if '_' in slurm_job_number:
-            slurm_job_number = slurm_job_number.split('_')[0]
-          self.slurm_job_number = int(slurm_job_number)
     
     self.folder = new_folder
     self.params = params
     self.inds = absorber_indices 
 
-  def resolve(self):
+  def check_done(self):
     for i in range(len(self.inds)):
-      finished = False
-      while not finished:
-        try:
-          sacct_check_output = subprocess.check_output(
-            ["sacct", f"--jobs={self.slurm_job_number}_{i}", 
-            "--format=state"])
-          job_status = str(sacct_check_output).split('\\n')[2]
-          if 'FAILED' in job_status or 'COMPLETED' in job_status or (
-            'CANCELLED' in job_status):
-            finished = True
-          else:
-            time.sleep(30)
-        except:
-          print('Probably a temporary slurm issue')
-          print(traceback.format_exc())
-          time.sleep(30)
+      new_abs_folder = os.path.join(self.folder, str(i))
+      if not os.path.isfile(os.path.join(new_abs_folder, "DONE")):
+        return False
+    return True
 
-    time.sleep(10) # Pause a little for writing to finish up
+  def resolve(self):
+    finished = False
+    while not finished:
+      finished = self.check_done()
+      time.sleep(30)
+
     chi_ks = np.zeros((self.N, 181))
     for i in range(len(self.inds)):
       absorb_ind = self.inds[i]
