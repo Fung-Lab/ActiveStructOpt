@@ -85,15 +85,19 @@ class Torch(BaseOptimizer):
 
             objs, obj_total = objective.get(predictions, target, 
               device = device, N = stopi - starti + 1)
+
+            lj_repulsions = torch.zeros(stopi - starti + 1, device = device)
             for j in range(stopi - starti + 1):
-              objs[j] += constraint_scale * lj_repulsion(data[starti + j], ljrmins)
-              obj_total += constraint_scale * lj_repulsion(data[starti + j], ljrmins)
+              lj_repuls = lj_repulsion(data[starti + j], ljrmins)
+              objs[j] += constraint_scale * lj_repuls
+              obj_total += constraint_scale * lj_repuls
               objs[j] = objs[j].detach()
+              lj_repulsions[j] = lj_repuls
               if save_obj_values:
                 obj_values[i, starti + j] = objs[j].detach().cpu()
 
             min_obj_iter = torch.min(torch.nan_to_num(objs, nan = torch.inf))
-            if (min_obj_iter < best_obj).item():
+            if (min_obj_iter < best_obj).item() and (lj_repulsions[j] <= torch.tensor([0.0], device = device)).item():
               best_obj = min_obj_iter.detach()
               obj_arg = torch.argmin(torch.nan_to_num(objs, nan = torch.inf))
               if optimize_atoms:
