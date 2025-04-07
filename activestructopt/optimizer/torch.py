@@ -97,13 +97,15 @@ class Torch(BaseOptimizer):
                 obj_values[i, starti + j] = objs[j].detach().cpu()
 
             min_obj_iter = torch.min(torch.nan_to_num(objs, nan = torch.inf))
-            if (min_obj_iter < best_obj).item() and (lj_repulsions[j] <= torch.tensor([0.0], device = device)).item():
+            if (min_obj_iter < best_obj).item():
               best_obj = min_obj_iter.detach()
               obj_arg = torch.argmin(torch.nan_to_num(objs, nan = torch.inf))
-              if optimize_atoms:
-                best_x = data[starti + obj_arg.item()].pos.detach().flatten()
-              if optimize_lattice:
-                best_cell = data[starti + obj_arg.item()].cell[0].detach()
+              if (lj_repulsions[starti + obj_arg.item()] <= torch.tensor(
+                [0.0], device = device)).item():
+                if optimize_atoms:
+                  best_x = data[starti + obj_arg.item()].pos.detach().flatten()
+                if optimize_lattice:
+                  best_cell = data[starti + obj_arg.item()].cell[0].detach()
 
             if i != iters_per_start - 1:
               obj_total.backward()
