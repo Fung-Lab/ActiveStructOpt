@@ -100,7 +100,7 @@ class Torch(BaseOptimizer):
             if (min_obj_iter < best_obj).item():
               best_obj = min_obj_iter.detach()
               obj_arg = torch.argmin(torch.nan_to_num(objs, nan = torch.inf))
-              if (lj_repulsions[starti + obj_arg.item()] <= torch.tensor(
+              if (lj_repulsions[obj_arg.item()] <= torch.tensor(
                 [0.0], device = device)).item():
                 if optimize_atoms:
                   best_x = data[starti + obj_arg.item()].pos.detach().flatten()
