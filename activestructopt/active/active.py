@@ -16,7 +16,8 @@ class ActiveLearning():
   def __init__(self, simfunc, target, initial_structure, index = -1, 
     config = None, target_structure = None, progress_file = None, 
     model_params_file = None, verbosity = 2, save_structures = True,
-    save_progress_dir = None, save_initialization = False):
+    save_progress_dir = None, save_initialization = False, 
+    override_config = False):
     setup_imports()
 
     self.simfunc = simfunc
@@ -45,7 +46,7 @@ class ActiveLearning():
       elif progress_file.split(".")[-1] == 'json':
         with open(progress_file, 'rb') as f:
           progress_dict = json.load(f)
-          self.config = progress_dict['config']
+          self.config = progress_dict['config'] if not override_config else simfunc.setup_config(config)
           sampler_cls = registry.get_sampler_class(
             self.config['aso_params']['sampler']['name'])
           self.sampler = sampler_cls(initial_structure, 
