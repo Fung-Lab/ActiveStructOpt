@@ -22,7 +22,8 @@ class Torch(BaseOptimizer):
     optimizer_args = {}, optimize_atoms = True, 
     optimize_lattice = False, save_obj_values = False, 
     constraint_scale = 1.0, pos_lr = 0.001, cell_lr = 0.001,
-    constraint_buffer = 0.85, random_starts = False,
+    constraint_buffer = 0.85, random_starts = False, 
+    save_only_constrained_structures = False,
     **kwargs) -> IStructure:
     
     starting_structures = [sampler.sample(
@@ -100,7 +101,8 @@ class Torch(BaseOptimizer):
             if (min_obj_iter < best_obj).item():
               best_obj = min_obj_iter.detach()
               obj_arg = torch.argmin(torch.nan_to_num(objs, nan = torch.inf))
-              if (lj_repulsions[obj_arg.item()] <= torch.tensor(
+              if (not save_only_constrained_structures) or (
+                lj_repulsions[obj_arg.item()] <= torch.tensor(
                 [0.0], device = device)).item():
                 if optimize_atoms:
                   best_x = data[starti + obj_arg.item()].pos.detach().flatten()
