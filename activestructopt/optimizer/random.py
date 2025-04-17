@@ -21,4 +21,5 @@ class Random(BaseOptimizer):
       for s in dataset.structures:
         if new_structure.matches(s):
           not_unique = True
+          new_structure = sampler.sample()
     return new_structure, None
