@@ -11,7 +11,7 @@ import pyxtal
 class Wyckoff(BaseSampler):
   def __init__(self, initial_structure: IStructure, seed = 0, 
     perturb_lattice = True, constraint_buffer = 0.85,
-    max_retries = 3, max_time = 20) -> None:
+    max_retries = 3, max_time = 20, use_random_state = True) -> None:
     # Distribution from Materials Project
     sg_dist = [146, 2720, 14, 407, 178, 7, 145, 97, 351, 39, 768, 1688, 286, 
       5736, 2345, 1, 5, 66, 596, 89, 13, 2, 11, 0, 10, 64, 3, 9, 196, 11, 
@@ -41,11 +41,13 @@ class Wyckoff(BaseSampler):
     self.constraint_buffer = constraint_buffer
     self.tm = pyxtal.tolerance.Tol_matrix.from_matrix(
       self.constraint_buffer * lj_rmins)
+    self.use_random_state = use_random_state
 
     def get_random_crystal(sg, d):
       xtal = pyxtal.pyxtal()
       xtal.from_random(3, sg, self.zs, self.zcounts, 
-        random_state = self.rng, tm = self.tm,
+        random_state = self.rng if self.use_random_state else None, 
+        tm = self.tm,
         lattice = None if self.perturb_lattice else self.initial_lattice)
       d['struct'] = xtal.to_pymatgen().as_dict()
 
