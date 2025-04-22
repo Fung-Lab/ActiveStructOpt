@@ -11,7 +11,7 @@ import pyxtal
 class Wyckoff(BaseSampler):
   def __init__(self, initial_structure: IStructure, seed = 0, 
     perturb_lattice = True, constraint_buffer = 0.85,
-    max_retries = 3, max_time = 20, use_random_state = True) -> None:
+    max_retries = 3, max_time = 20, use_random_state = True, sgs = None) -> None:
     # Distribution from Materials Project
     sg_dist = [146, 2720, 14, 407, 178, 7, 145, 97, 351, 39, 768, 1688, 286, 
       5736, 2345, 1, 5, 66, 596, 89, 13, 2, 11, 0, 10, 64, 3, 9, 196, 11, 
@@ -53,28 +53,35 @@ class Wyckoff(BaseSampler):
 
     self.get_random_crystal = get_random_crystal
 
-    self.possible_sgs = []
-    for i in range(230):
-      tries = 0
-      while tries < self.max_retries:
-        tries += 1
-        # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
-        p = Process(target = self.get_random_crystal, args = (i + 1, {}))
-        p.start()
-        p.join(self.max_time)
-        if p.is_alive(): # if didn't complete in max time
-          p.terminate()
-          p.join()
-        else:
-          if p.exitcode == 0:
-            self.possible_sgs.append(i + 1)
-          break
+    if sgs is None:
+      self.possible_sgs = []
+      for i in range(230):
+        tries = 0
+        while tries < self.max_retries:
+          tries += 1
+          # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
+          p = Process(target = self.get_random_crystal, args = (i + 1, {}))
+          p.start()
+          p.join(self.max_time)
+          if p.is_alive(): # if didn't complete in max time
+            p.terminate()
+            p.join()
+          else:
+            if p.exitcode == 0:
+              self.possible_sgs.append(i + 1)
+            break
 
-    self.possible_sgs = np.array(self.possible_sgs)
-    self.sg_probs = np.array([sg_dist[i - 1] + 1.0 for i in self.possible_sgs])
-    # Adding one allows non-zero probability for sgs not in Materials Project
-    self.sg_probs /= np.sum(self.sg_probs)
-    print(self.possible_sgs)
+      self.possible_sgs = np.array(self.possible_sgs)
+      self.sg_probs = np.array([sg_dist[i - 1] + 1.0 for i in self.possible_sgs])
+      # Adding one allows non-zero probability for sgs not in Materials Project
+      self.sg_probs /= np.sum(self.sg_probs)
+      print(self.possible_sgs)
+    else:
+      self.possible_sgs = sgs
+      self.possible_sgs = np.array(self.possible_sgs)
+      self.sg_probs = np.array([sg_dist[i - 1] + 1.0 for i in self.possible_sgs])
+      # Adding one allows non-zero probability for sgs not in Materials Project
+      self.sg_probs /= np.sum(self.sg_probs)
 
   def sample(self) -> IStructure:
     rejected = True
