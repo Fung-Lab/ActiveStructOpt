@@ -132,7 +132,9 @@ class Torch(BaseOptimizer):
           assert split >= 0, "Out of memory with only one structure"
 
     if optimize_atoms:
+      print(f'best_x: {best_x}')
       new_x = best_x.detach().cpu().numpy()
+      print(f'new_x: {new_x}')
       del best_x
     if optimize_lattice:
       new_cell = best_cell.detach().cpu().numpy()
