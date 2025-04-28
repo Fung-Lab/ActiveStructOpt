@@ -134,15 +134,16 @@ class Torch(BaseOptimizer):
       new_structure.lattice = Lattice(new_cell)
     if optimize_atoms:
       print(best_obj)
-      print(new_cell)
       print(new_structure.lattice)
       print(new_x)
       for i in range(len(new_structure)):
         try:
           new_structure[i].coords = new_x[(3 * i):(3 * (i + 1))]
+          print(new_structure[i].coords)
         except np.linalg.LinAlgError as e:
           print(best_obj)
-          print(new_cell)
+          if optimize_lattice:
+            print(new_cell)
           print(new_structure.lattice)
           print(new_x)
           raise e
