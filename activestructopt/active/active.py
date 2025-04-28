@@ -145,6 +145,7 @@ class ActiveLearning():
         while not sim_calculated:
           try:
             sim_calls += 1
+            print(new_structure)
             self.dataset.update(new_structure)
             sim_calculated = True
           except ASOSimulationException:

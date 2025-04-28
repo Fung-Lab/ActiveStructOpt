@@ -1,4 +1,4 @@
-from activestructopt.simulation.base import BaseSimulation
+from activestructopt.simulation.base import BaseSimulation, ASOSimulationException
 from activestructopt.common.registry import registry
 from scipy.stats import norm
 import numpy as np
@@ -86,7 +86,12 @@ if __name__ == "__main__":
     with open(os.path.join(new_folder, 'run_pdf.py'), "w") as text_file:
       text_file.write(file_content)
     
-    response = subprocess.check_output([self.python, os.path.join(new_folder, 'run_pdf.py')])
+    try:
+      response = subprocess.check_output([self.python, os.path.join(new_folder, 'run_pdf.py')])
+    except:
+      print(self.lattice_string)
+      print(self.atoms_string)
+      raise ASOSimulationException
     pdf = np.loadtxt(os.path.join(new_folder, 'pdf_out.txt'))
     shutil.rmtree(new_folder)
 
