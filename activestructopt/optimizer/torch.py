@@ -107,6 +107,7 @@ class Torch(BaseOptimizer):
                 if optimize_atoms:
                   best_x = data[starti + obj_arg.item()].pos.detach().flatten()
                   print(best_x)
+                  print(best_obj)
                 if optimize_lattice:
                   best_cell = data[starti + obj_arg.item()].cell[0].detach()
                   print(best_cell)
