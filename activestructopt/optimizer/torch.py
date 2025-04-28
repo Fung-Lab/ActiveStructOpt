@@ -103,11 +103,13 @@ class Torch(BaseOptimizer):
               obj_arg = torch.argmin(torch.nan_to_num(objs, nan = torch.inf))
               if (not save_only_constrained_structures) or (
                 lj_repulsions[obj_arg.item()] <= torch.tensor(
-                [0.0], device = device)).item():
+                  [0.0], device = device)).item():
                 if optimize_atoms:
                   best_x = data[starti + obj_arg.item()].pos.detach().flatten()
+                  print(best_x)
                 if optimize_lattice:
                   best_cell = data[starti + obj_arg.item()].cell[0].detach()
+                  print(best_cell)
 
             if i != iters_per_start - 1:
               obj_total.backward()
@@ -131,6 +133,10 @@ class Torch(BaseOptimizer):
     if optimize_lattice:
       new_structure.lattice = Lattice(new_cell)
     if optimize_atoms:
+      print(best_obj)
+      print(new_cell)
+      print(new_structure.lattice)
+      print(new_x)
       for i in range(len(new_structure)):
         try:
           new_structure[i].coords = new_x[(3 * i):(3 * (i + 1))]
