@@ -62,6 +62,7 @@ class Torch(BaseOptimizer):
     orig_split = split
 
     for i in range(iters_per_start):
+      print(best_x)
       predicted = False
       while not predicted:
         try:
@@ -116,6 +117,7 @@ class Torch(BaseOptimizer):
                   [0.0], device = device)).item():
                 if optimize_atoms:
                   best_x = data[starti + obj_arg.item()].pos.detach().flatten()
+                  print('#######UPDATING##############################')
                   print(best_x)
                   print(best_obj)
                 if optimize_lattice:
