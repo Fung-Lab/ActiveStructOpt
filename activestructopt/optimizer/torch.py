@@ -116,7 +116,7 @@ class Torch(BaseOptimizer):
                 lj_repulsions[obj_arg.item()] <= torch.tensor(
                   [0.0], device = device)).item():
                 if optimize_atoms:
-                  best_x = data[starti + obj_arg.item()].pos.detach().flatten()
+                  best_x = data[starti + obj_arg.item()].pos.clone().detach().flatten()
                   print('#######UPDATING##############################')
                   print(best_x)
                   print(best_obj)
