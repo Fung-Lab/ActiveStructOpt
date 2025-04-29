@@ -105,9 +105,9 @@ class Torch(BaseOptimizer):
                 lj_repulsions[obj_arg.item()] <= torch.tensor(
                 [0.0], device = device)).item():
                 if optimize_atoms:
-                  best_x = data[starti + obj_arg.item()].pos.detach().flatten()
+                  best_x = data[starti + obj_arg.item()].pos.clone().detach().flatten()
                 if optimize_lattice:
-                  best_cell = data[starti + obj_arg.item()].cell[0].detach()
+                  best_cell = data[starti + obj_arg.item()].cell[0].clone().detach()
 
             if i != iters_per_start - 1:
               obj_total.backward()
