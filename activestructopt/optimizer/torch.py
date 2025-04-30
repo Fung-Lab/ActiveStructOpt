@@ -98,7 +98,9 @@ class Torch(BaseOptimizer):
                 obj_values[i, starti + j] = objs[j].detach().cpu()
 
             min_obj_iter = torch.min(torch.nan_to_num(objs, nan = torch.inf))
+            print(best_obj)
             if (min_obj_iter < best_obj).item():
+              print("UPDATING")
               best_obj = min_obj_iter.detach()
               obj_arg = torch.argmin(torch.nan_to_num(objs, nan = torch.inf))
               if (not save_only_constrained_structures) or (
