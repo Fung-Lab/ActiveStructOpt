@@ -9,12 +9,14 @@ import time
 import subprocess
 import shutil
 import traceback
+import stat
 
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
   def __init__(self, initial_structure, feff_location = "", folder = "", 
     absorber = 'Co', edge = 'K', radius = 10.0, 
     additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1'},
+    sh_template = None, 
     sbatch_template = None, sbatch_group_template = None,
     number_absorbers = None, save_sim = True,
     **kwargs) -> None:
@@ -29,6 +31,7 @@ class EXAFS(BaseSimulation):
     self.N = len(self.mask)
     self.sbatch_template = sbatch_template
     self.sbatch_group_template = sbatch_group_template
+    self.sh_template = sh_template
     self.number_absorbers = number_absorbers
     self.save_sim = save_sim
 
@@ -100,25 +103,46 @@ class EXAFS(BaseSimulation):
       os.remove(pot_loc)
       os.remove(params_loc)
 
-    with open(self.sbatch_group_template if group else self.sbatch_template, 
-      'r') as file:
-      sbatch_data = file.read()
-    index_str = str(0)
-    for i in range(1, len(absorber_indices)):
-      index_str += separator + str(i)
-    job_name = int(time.time()) % 604800
-    sbatch_data = sbatch_data.replace('##ARRAY_INDS##', index_str)
-    sbatch_data = sbatch_data.replace('##DIRECTORY##', new_folder)
-    sbatch_data = sbatch_data.replace('##JOB_NAME##', str(job_name))
-    new_job_file = os.path.join(new_folder, 'job.sbatch')
-    with open(new_job_file, 'w') as file:
-      file.write(sbatch_data)
-    
-    try:
-      subprocess.check_output(["sbatch", f"{new_job_file}"])
-    except subprocess.CalledProcessError as e:
-      print(e.output)
-    
+    if (self.sbatch_template is not None) or (
+      self.sbatch_group_template is not None):
+      with open(self.sbatch_group_template if group else self.sbatch_template, 
+        'r') as file:
+        sbatch_data = file.read()
+      index_str = str(0)
+      for i in range(1, len(absorber_indices)):
+        index_str += separator + str(i)
+      job_name = int(time.time()) % 604800
+      sbatch_data = sbatch_data.replace('##ARRAY_INDS##', index_str)
+      sbatch_data = sbatch_data.replace('##DIRECTORY##', new_folder)
+      sbatch_data = sbatch_data.replace('##JOB_NAME##', str(job_name))
+      new_job_file = os.path.join(new_folder, 'job.sbatch')
+      with open(new_job_file, 'w') as file:
+        file.write(sbatch_data)
+      
+      try:
+        subprocess.check_output(["sbatch", f"{new_job_file}"])
+      except subprocess.CalledProcessError as e:
+        print(e.output)
+
+    elif self.sh_template is not None:
+      with open(self.sh_template, 'r') as file:
+        sh_data = file.read()
+      index_str = str(0)
+      for i in range(1, len(absorber_indices)):
+        index_str += separator + str(i)
+      sh_data = sh_data.replace('##ARRAY_INDS##', index_str)
+      sh_data = sh_data.replace('##DIRECTORY##', new_folder)
+      sh_data = sh_data.replace('##FEFF_DIR##', self.feff_location)
+      new_job_file = os.path.join(new_folder, 'feff_job.sh')
+      with open(new_job_file, 'w') as file:
+        file.write(sh_data)
+      file_perms = os.stat(new_job_file).st_mode
+      os.chmod(new_job_file, file_perms | stat.S_IXUSR)
+      try:
+        subprocess.check_output([f"{new_job_file}"], cwd = new_folder)
+      except subprocess.CalledProcessError as e:
+        print(e.output)
+
     self.folder = new_folder
     self.params = params
     self.inds = absorber_indices 
