@@ -136,6 +136,7 @@ class EXAFS(BaseSimulation):
       new_job_file = os.path.join(new_folder, 'feff_job.sh')
       with open(new_job_file, 'w') as file:
         file.write(sh_data)
+      time.sleep(10) # Wait for file to write
       file_perms = os.stat(new_job_file).st_mode
       os.chmod(new_job_file, file_perms | stat.S_IXUSR)
       try:
