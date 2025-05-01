@@ -139,7 +139,7 @@ class EXAFS(BaseSimulation):
       file_perms = os.stat(new_job_file).st_mode
       os.chmod(new_job_file, file_perms | stat.S_IXUSR)
       try:
-        subprocess.check_output([f"{new_job_file}"], cwd = new_folder)
+        subprocess.check_output(["nohup", f"{new_job_file}"], cwd = new_folder)
       except subprocess.CalledProcessError as e:
         print(e.output)
 
