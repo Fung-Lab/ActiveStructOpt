@@ -100,12 +100,16 @@ class Torch(BaseOptimizer):
             min_obj_iter = torch.min(torch.nan_to_num(objs, nan = torch.inf))
             if (min_obj_iter < best_obj).item():
               best_obj = min_obj_iter.detach()
+              print("#########UPDATING############")
+              print(f'objs: {torch.nan_to_num(objs, nan = torch.inf)}')
+              print(f'best_obj: {best_obj}')
               obj_arg = torch.argmin(torch.nan_to_num(objs, nan = torch.inf))
               if (not save_only_constrained_structures) or (
                 lj_repulsions[obj_arg.item()] <= torch.tensor(
                 [0.0], device = device)).item():
                 if optimize_atoms:
                   best_x = data[starti + obj_arg.item()].pos.clone().detach().flatten()
+                  print(f'best_x: {best_x}')
                 if optimize_lattice:
                   best_cell = data[starti + obj_arg.item()].cell[0].clone().detach()
 
