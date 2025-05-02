@@ -97,10 +97,17 @@ class Torch(BaseOptimizer):
               if save_obj_values:
                 obj_values[i, starti + j] = objs[j].detach().cpu()
 
-            min_obj_iter = torch.min(torch.nan_to_num(objs, nan = torch.inf))
+            objs_to_compare = torch.nan_to_num(objs, nan = torch.inf)
+            for j in range(stopi - starti + 1):
+              if data[starti + j].pos.isnan().any() or (
+                data[starti + j].cell[0].isnan().any()) or (
+                objs_to_compare[j].isnan().any()):
+                objs_to_compare[j] = torch.inf
+
+            min_obj_iter = torch.min(objs_to_compare)
             if (min_obj_iter < best_obj).item():
               best_obj = min_obj_iter.detach()
-              obj_arg = torch.argmin(torch.nan_to_num(objs, nan = torch.inf))
+              obj_arg = torch.argmin(objs_to_compare)
               if (not save_only_constrained_structures) or (
                 lj_repulsions[obj_arg.item()] <= torch.tensor(
                 [0.0], device = device)).item():
