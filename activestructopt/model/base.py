@@ -59,7 +59,7 @@ class Runner:
     optimizer = trainer_cls._load_optimizer(config["optim"], model, 
       local_world_size)
     sampler = BaseTrainer._load_sampler(config["optim"], 
-      self.trainer.dataset, local_world_size, rank)
+      dataset, local_world_size, rank)
     data_loader = BaseTrainer._load_dataloader(
       config["optim"],
       config["dataset"],
