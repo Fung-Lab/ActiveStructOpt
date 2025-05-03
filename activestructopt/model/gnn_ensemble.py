@@ -29,6 +29,17 @@ class GNNEnsemble(BaseModel):
     metrics = [{'epoch': [], 'lr': [], 'train_err': [], 'val_error': [], 
       'time': []} for _ in range(self.k)]
 
+    if self.config["task"]["parallel"] == True:
+      local_world_size = os.environ.get("LOCAL_WORLD_SIZE", None)
+      local_world_size = int(local_world_size)
+      dist.init_process_group(
+        "nccl", world_size=local_world_size, init_method="env://"
+      )
+      rank = int(dist.get_rank())
+    else:
+      rank = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+      local_world_size = 1
+
     for i in range(self.k):
       #if i == fold and self.ensemble[i] is not None:
       #  break
@@ -45,17 +56,6 @@ class GNNEnsemble(BaseModel):
       val_dataset = [prepare_data_pmg(dataset.structures[j], 
         dataset.config, y = dataset.ys[j]).to(
         'cuda') for j in dataset.kfolds[i]]
-      
-      if self.config["task"]["parallel"] == True:
-        local_world_size = os.environ.get("LOCAL_WORLD_SIZE", None)
-        local_world_size = int(local_world_size)
-        dist.init_process_group(
-          "nccl", world_size=local_world_size, init_method="env://"
-        )
-        rank = int(dist.get_rank())
-      else:
-        rank = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        local_world_size = 1
 
       new_runner(self.config, ConfigSetup('train'), train_dataset, val_dataset, 
         local_world_size, rank)
