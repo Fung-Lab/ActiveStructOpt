@@ -33,18 +33,8 @@ class Runner:
     sh.setLevel(logging.DEBUG)                               
     root_logger.addHandler(sh)
 
-  def __call__(self, config, args, train_data, val_data):
+  def __call__(self, config, args, train_data, val_data, local_world_size, rank):
     with new_trainer_context(args = args, config = config) as ctx:
-      if config["task"]["parallel"] == True:
-        local_world_size = os.environ.get("LOCAL_WORLD_SIZE", None)
-        local_world_size = int(local_world_size)
-        dist.init_process_group(
-          "nccl", world_size=local_world_size, init_method="env://"
-        )
-        rank = int(dist.get_rank())
-      else:
-        rank = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        local_world_size = 1
       self.config = ctx.config
       self.task = ctx.task
       self.trainer = ctx.trainer

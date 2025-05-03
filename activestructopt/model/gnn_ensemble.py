@@ -9,6 +9,8 @@ import torch
 from torch.func import stack_module_state, functional_call, vmap
 import copy
 from torch_geometric.loader import DataLoader
+import os
+from torch import distributed as dist
 
 @registry.register_model("GNNEnsemble")
 class GNNEnsemble(BaseModel):
@@ -44,7 +46,19 @@ class GNNEnsemble(BaseModel):
         dataset.config, y = dataset.ys[j]).to(
         'cuda') for j in dataset.kfolds[i]]
       
-      new_runner(self.config, ConfigSetup('train'), train_dataset, val_dataset)
+      if self.config["task"]["parallel"] == True:
+        local_world_size = os.environ.get("LOCAL_WORLD_SIZE", None)
+        local_world_size = int(local_world_size)
+        dist.init_process_group(
+          "nccl", world_size=local_world_size, init_method="env://"
+        )
+        rank = int(dist.get_rank())
+      else:
+        rank = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        local_world_size = 1
+
+      new_runner(self.config, ConfigSetup('train'), train_dataset, val_dataset, 
+        local_world_size, rank)
 
       device = next(iter(new_runner.trainer.model[0].state_dict().values(
         ))).get_device()
