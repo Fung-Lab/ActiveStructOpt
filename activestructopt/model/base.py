@@ -63,8 +63,8 @@ class Runner:
     data_loader = BaseTrainer._load_dataloader(
       config["optim"],
       config["dataset"],
-      self.trainer.dataset,
-      self.trainer.sampler,
+      dataset,
+      sampler,
       config["task"]["run_mode"],
       config["model"]
     )
