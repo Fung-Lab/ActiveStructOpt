@@ -11,16 +11,18 @@ import copy
 from torch_geometric.loader import DataLoader
 import os
 from torch import distributed as dist
+import torch.multiprocessing as mp
 
 @registry.register_model("GNNEnsemble")
 class GNNEnsemble(BaseModel):
-  def __init__(self, config, k = 5, **kwargs):
+  def __init__(self, config, k = 5, parallel = False, **kwargs):
     self.k = k
     self.config = config
     self.ensemble = [None for _ in range(k)]
     self.scalar = 1.0
     self.device = 'cpu'
     self.updates = 0
+    self.parallel = parallel
   
   def train(self, dataset: KFoldsDataset, iterations = 500, lr = 0.001, 
     from_scratch = False, transfer = 1.0, prev_params = None, **kwargs):
@@ -30,6 +32,7 @@ class GNNEnsemble(BaseModel):
       'time': []} for _ in range(self.k)]
 
     if self.config["task"]["parallel"] == True:
+      raise Exception("Parallel training through MDL is unimplemented")
       local_world_size = os.environ.get("LOCAL_WORLD_SIZE", None)
       local_world_size = int(local_world_size)
       dist.init_process_group(
@@ -40,11 +43,9 @@ class GNNEnsemble(BaseModel):
       rank = torch.device("cuda" if torch.cuda.is_available() else "cpu")
       local_world_size = 1
 
-    for i in range(self.k):
-      #if i == fold and self.ensemble[i] is not None:
-      #  break
+    self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-      # Create new runner, with config and datasets
+    def train_fold(i, device):
       new_runner = Runner()
       self.config['task']['seed'] = self.k * self.updates + i
       
@@ -52,18 +53,13 @@ class GNNEnsemble(BaseModel):
         dataset.test_indices)
       train_dataset = [prepare_data_pmg(dataset.structures[j], 
         dataset.config, y = dataset.ys[j]).to(
-        'cuda') for j in np.setxor1d(trainval_indices, dataset.kfolds[i])]
+        device) for j in np.setxor1d(trainval_indices, dataset.kfolds[i])]
       val_dataset = [prepare_data_pmg(dataset.structures[j], 
         dataset.config, y = dataset.ys[j]).to(
-        'cuda') for j in dataset.kfolds[i]]
-
+        device) for j in dataset.kfolds[i]]
+      # Create new runner, with config and datasets
       new_runner(self.config, ConfigSetup('train'), train_dataset, val_dataset, 
-        local_world_size, rank)
-
-      device = next(iter(new_runner.trainer.model[0].state_dict().values(
-        ))).get_device()
-      device = 'cpu' if device == -1 else 'cuda:' + str(device)
-      self.device = device
+        local_world_size, device)
 
       # If applicable, use the old model
       if prev_params is not None and not from_scratch:
@@ -74,16 +70,12 @@ class GNNEnsemble(BaseModel):
             prev_state_dict[param_tensor].to(device)) + ((1 - transfer) * 
             rand_state_dict[param_tensor])
         new_runner.trainer.model[0].load_state_dict(prev_state_dict)
-      self.ensemble[i] = new_runner
       
-      # Train
-      self.ensemble[i].train()
-      
-      # Set to evaluation mode
-      self.ensemble[i].trainer.model[0].eval()
+      new_runner.train() # Train
+      new_runner.trainer.model[0].eval() # Set to evaluation mode
 
       # Collect metrics from logger
-      for l in self.ensemble[i].logstream.getvalue().split('\n'):
+      for l in new_runner.logstream.getvalue().split('\n'):
         if l.startswith('Epoch: '):
           metric_tokens = l.split()
           metrics[i]['epoch'].append(int(metric_tokens[1][:-1]))
@@ -94,20 +86,36 @@ class GNNEnsemble(BaseModel):
       
       # Erase logger
       # https://stackoverflow.com/questions/4330812/how-do-i-clear-a-stringio-object
-      self.ensemble[i].logstream.seek(0)
-      self.ensemble[i].logstream.truncate(0)
-      
+      new_runner.logstream.seek(0)
+      new_runner.logstream.truncate(0)
+
+      self.ensemble[i] = new_runner.trainer.model[0]
+
       #self.ensemble[i].trainer.model[0] = compile(self.ensemble[i].trainer.model)
+
+
+    for i in range(self.k):
+      if self.parallel:
+        train_device = f"cuda:{i % torch.cuda.device_count()}"
+        mp.spawn(train_fold, args = (i, train_device), nprocs = 1,
+          join = i == (self.k - 1))
+      else:
+        train_fold(i, self.device)
+
+      #if i == fold and self.ensemble[i] is not None:
+      #  break
+
+      # Create new runner, with config and datasets
     
     #https://pytorch.org/tutorials/intermediate/ensembling.html
-    models = [self.ensemble[i].trainer.model[0] for i in range(self.k)]
+    models = [self.ensemble[i].to(self.device) for i in range(self.k)]
     self.params, self.buffers = stack_module_state(models)
     base_model = copy.deepcopy(models[0])
     self.base_model = base_model.to('meta')
     gnn_mae, _, _ = self.set_scalar_calibration(dataset)
     self.updates = self.updates + 1
     
-    return gnn_mae, metrics, [self.ensemble[i].trainer.model[0].state_dict(
+    return gnn_mae, metrics, [self.ensemble[i].state_dict(
       ) for i in range(self.k)]
 
   def predict(self, structure, prepared = False, mask = None, **kwargs):
@@ -173,7 +181,20 @@ class GNNEnsemble(BaseModel):
         dataset.config, y = dataset.ys[j]).to(
         'cuda') for j in dataset.kfolds[i]]
 
-      new_runner(self.config, ConfigSetup('train'), train_dataset, val_dataset)
+      if self.config["task"]["parallel"] == True:
+        raise Exception("Parallel training through MDL is unimplemented")
+        local_world_size = os.environ.get("LOCAL_WORLD_SIZE", None)
+        local_world_size = int(local_world_size)
+        dist.init_process_group(
+          "nccl", world_size=local_world_size, init_method="env://"
+        )
+        rank = int(dist.get_rank())
+      else:
+        rank = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        local_world_size = 1
+
+      new_runner(self.config, ConfigSetup('train'), train_dataset, val_dataset,
+        local_world_size, rank)
 
       device = next(iter(new_runner.trainer.model[0].state_dict().values(
         ))).get_device()
@@ -182,10 +203,10 @@ class GNNEnsemble(BaseModel):
 
       # If applicable, use the old model
       new_runner.trainer.model[0].load_state_dict(params[i])
-      self.ensemble[i] = new_runner
+      self.ensemble[i] = new_runner.trainer.model[0]
       
       # Set to evaluation mode
-      self.ensemble[i].trainer.model[0].eval()
+      self.ensemble[i].eval()
     
     #https://pytorch.org/tutorials/intermediate/ensembling.html
     models = [self.ensemble[i].trainer.model[0] for i in range(self.k)]
