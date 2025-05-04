@@ -13,6 +13,48 @@ import os
 from torch import distributed as dist
 import torch.multiprocessing as mp
 
+def train_fold(i, device, config, train_dataset, val_dataset, prev_params, 
+  from_scratch, transfer):
+  new_runner = Runner()
+  
+  # Create new runner, with config and datasets
+  new_runner(config, ConfigSetup('train'), train_dataset, val_dataset, 1, 
+    device)
+
+  # If applicable, use the old model
+  if prev_params is not None and not from_scratch:
+    prev_state_dict = prev_params[i]
+    rand_state_dict = new_runner.trainer.model[0].state_dict()
+    for param_tensor in prev_state_dict:
+      prev_state_dict[param_tensor] = (transfer * 
+        prev_state_dict[param_tensor].to(device)) + ((1 - transfer) * 
+        rand_state_dict[param_tensor])
+    new_runner.trainer.model[0].load_state_dict(prev_state_dict)
+
+  new_runner.train() # Train
+  new_runner.trainer.model[0].eval() # Set to evaluation mode
+
+  # Collect metrics from logger
+  for l in new_runner.logstream.getvalue().split('\n'):
+    if l.startswith('Epoch: '):
+      metric_tokens = l.split()
+      metrics = {
+        'epoch': int(metric_tokens[1][:-1]),
+        'lr': float(metric_tokens[4][:-1]),
+        'train_err': float(metric_tokens[7][:-1]),
+        'val_error': float(metric_tokens[10][:-1]),
+        'time': float(metric_tokens[10][:-1])
+      }
+
+  # Erase logger
+  # https://stackoverflow.com/questions/4330812/how-do-i-clear-a-stringio-object
+  new_runner.logstream.seek(0)
+  new_runner.logstream.truncate(0)
+
+  #self.ensemble[i].trainer.model[0] = compile(self.ensemble[i].trainer.model)
+
+  return new_runner.trainer.model[0], metrics
+      
 @registry.register_model("GNNEnsemble")
 class GNNEnsemble(BaseModel):
   def __init__(self, config, k = 5, parallel = False, **kwargs):
@@ -45,62 +87,61 @@ class GNNEnsemble(BaseModel):
 
     self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-    def train_fold(i, device):
-      new_runner = Runner()
-      self.config['task']['seed'] = self.k * self.updates + i
-      
-      trainval_indices = np.setxor1d(np.arange(len(dataset.structures)), 
-        dataset.test_indices)
-      train_dataset = [prepare_data_pmg(dataset.structures[j], 
-        dataset.config, y = dataset.ys[j]).to(
-        device) for j in np.setxor1d(trainval_indices, dataset.kfolds[i])]
-      val_dataset = [prepare_data_pmg(dataset.structures[j], 
-        dataset.config, y = dataset.ys[j]).to(
-        device) for j in dataset.kfolds[i]]
-      # Create new runner, with config and datasets
-      new_runner(self.config, ConfigSetup('train'), train_dataset, val_dataset, 
-        local_world_size, device)
+    model = [None for i in range(self.k)]
+    state_dicts = [None for i in range(self.k)]
 
-      # If applicable, use the old model
-      if prev_params is not None and not from_scratch:
-        prev_state_dict = prev_params[i]
-        rand_state_dict = new_runner.trainer.model[0].state_dict()
-        for param_tensor in prev_state_dict:
-          prev_state_dict[param_tensor] = (transfer * 
-            prev_state_dict[param_tensor].to(device)) + ((1 - transfer) * 
-            rand_state_dict[param_tensor])
-        new_runner.trainer.model[0].load_state_dict(prev_state_dict)
-      
-      new_runner.train() # Train
-      new_runner.trainer.model[0].eval() # Set to evaluation mode
-
-      # Collect metrics from logger
-      for l in new_runner.logstream.getvalue().split('\n'):
-        if l.startswith('Epoch: '):
-          metric_tokens = l.split()
-          metrics[i]['epoch'].append(int(metric_tokens[1][:-1]))
-          metrics[i]['lr'].append(float(metric_tokens[4][:-1]))
-          metrics[i]['train_err'].append(float(metric_tokens[7][:-1]))
-          metrics[i]['val_error'].append(float(metric_tokens[10][:-1]))
-          metrics[i]['time'].append(float(metric_tokens[15][:-1]))
-      
-      # Erase logger
-      # https://stackoverflow.com/questions/4330812/how-do-i-clear-a-stringio-object
-      new_runner.logstream.seek(0)
-      new_runner.logstream.truncate(0)
-
-      self.ensemble[i] = new_runner.trainer.model[0]
-
-      #self.ensemble[i].trainer.model[0] = compile(self.ensemble[i].trainer.model)
-
-
-    for i in range(self.k):
-      if self.parallel:
+    if self.parallel:
+      queue = mp.Queue()
+      processes = []
+      for i in range(self.k):
         train_device = f"cuda:{i % torch.cuda.device_count()}"
-        mp.spawn(train_fold, args = (i, train_device), nprocs = 1,
-          join = i == (self.k - 1))
-      else:
-        train_fold(i, self.device)
+
+        trainval_indices = np.setxor1d(np.arange(len(dataset.structures)), 
+          dataset.test_indices)
+        train_dataset = [prepare_data_pmg(dataset.structures[j], 
+          dataset.config, y = dataset.ys[j]).to(
+          train_device) for j in np.setxor1d(trainval_indices, 
+          dataset.kfolds[i])]
+        val_dataset = [prepare_data_pmg(dataset.structures[j], 
+          dataset.config, y = dataset.ys[j]).to(
+          train_device) for j in dataset.kfolds[i]]
+        self.config['task']['seed'] = self.k * self.updates + i
+        
+        p = mp.Process(target=train_fold, args = (i, train_device, self.config, 
+          train_dataset, val_dataset, prev_params, from_scratch, transfer))
+        p.start()
+        processes.append(p)
+      
+      for i in range(self.k):
+        processes[i].join()
+
+      results = [queue.get() for _ in processes]
+      
+      for i in range(self.k):
+        results = queue.get()
+        model[i] = results[0].to(self.device)
+        state_dicts[i] = results[0].state_dict()
+        metrics[i]['epoch'].append(results[1]['epoch'])
+        metrics[i]['lr'].append(results[1]['lr'])
+        metrics[i]['train_err'].append(results[1]['train_err'])
+        metrics[i]['val_error'].append(results[1]['val_error'])
+        metrics[i]['time'].append(results[1]['time'])
+        del results
+
+    else:
+      for i in range(self.k):
+        trainval_indices = np.setxor1d(np.arange(len(dataset.structures)), 
+          dataset.test_indices)
+        train_dataset = [prepare_data_pmg(dataset.structures[j], 
+          dataset.config, y = dataset.ys[j]).to(
+          self.device) for j in np.setxor1d(trainval_indices, 
+          dataset.kfolds[i])]
+        val_dataset = [prepare_data_pmg(dataset.structures[j], 
+          dataset.config, y = dataset.ys[j]).to(
+          self.device) for j in dataset.kfolds[i]]
+        self.config['task']['seed'] = self.k * self.updates + i
+        train_fold(i, train_device, self.config, train_dataset, val_dataset, 
+          prev_params, from_scratch, transfer)
 
       #if i == fold and self.ensemble[i] is not None:
       #  break
