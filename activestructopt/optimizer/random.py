@@ -22,4 +22,4 @@ class Random(BaseOptimizer):
         if new_structure.matches(s):
           not_unique = True
           new_structure = sampler.sample()
-    return new_structure, None
+    return new_structure, None, None, None
