@@ -33,6 +33,11 @@ class Torch(BaseOptimizer):
 
     obj_values = torch.zeros((iters_per_start, starts), device = 'cpu'
       ) if save_obj_values else None
+
+    obj_positions = torch.zeros((iters_per_start, starts, len(starting_structures[0])*3), device = 'cpu'
+      ) if save_obj_values else None
+    obj_cells = torch.zeros((iters_per_start, starts, 3, 3), device = 'cpu'
+      ) if save_obj_values else None
     
     device = model.device
     nstarts = len(starting_structures)
@@ -95,7 +100,10 @@ class Torch(BaseOptimizer):
               objs[j] = objs[j].detach()
               lj_repulsions[j] = lj_repuls
               if save_obj_values:
-                obj_values[i, starti + j] = objs[j].detach().cpu()
+                obj_values[i, starti + j] = objs[j].clone().detach().cpu()
+                obj_positions[i, starti + j, :] = data[starti + j].pos.clone().detach().cpu().flatten()
+                obj_cells[i, starti + j, :] = data[starti + j].cell[0].clone().detach().cpu()
+
 
             objs_to_compare = torch.nan_to_num(objs, nan = torch.inf)
             for j in range(stopi - starti + 1):
@@ -149,4 +157,4 @@ class Torch(BaseOptimizer):
           raise e
 
     
-    return new_structure, obj_values
+    return new_structure, obj_values, obj_positions, obj_cells

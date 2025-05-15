@@ -29,6 +29,8 @@ class ActiveLearning():
     self.model_errs = []
     self.model_metrics = []
     self.opt_obj_values = []
+    self.opt_obj_positions = []
+    self.opt_obj_cells = []
     self.new_structure_predictions = []
     self.target_structure = target_structure
     self.save_structures = save_structures
@@ -273,10 +275,12 @@ class ActiveLearning():
     optimizer_cls = registry.get_optimizer_class(
       self.config['aso_params']['optimizer']['name'])
 
-    new_structure, obj_values = optimizer_cls().run(self.model, 
+    new_structure, obj_values, obj_positions, obj_cells = optimizer_cls().run(self.model, 
       self.dataset, objective, self.sampler, 
       **(self.config['aso_params']['optimizer']['args']), **(opt_profile))
     self.opt_obj_values.append(obj_values)
+    self.opt_obj_positions.append(obj_positions)
+    self.opt_obj_cells.append(obj_cells)
 
     if not (save_file is None):
       split_save_file = save_file.split('.')
@@ -317,6 +321,10 @@ class ActiveLearning():
             'model_params': model_params,
             'obj_values': [[] if x is None else x.tolist(
               ) for x in self.opt_obj_values],
+            'obj_positions': [[] if x is None else x.tolist(
+              ) for x in self.opt_obj_positions],
+            'obj_cells': [[] if x is None else x.tolist(
+              ) for x in self.opt_obj_cells],
             'config': self.config,
       }
       with open(filename, "w") as file: 
