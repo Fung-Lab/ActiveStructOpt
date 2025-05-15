@@ -15,7 +15,7 @@ import mattertune as mt
 from pathlib import Path
 from ase import Atoms
 
-def hparams(data):
+def hparams(data, num_epochs):
     hparams = MC.MatterTunerConfig.draft()
 
     # Model hparams
@@ -57,7 +57,7 @@ def hparams(data):
     hparams.data.num_workers = 0
 
     hparams.trainer = MC.TrainerConfig.draft()
-    hparams.trainer.max_epochs = 250
+    hparams.trainer.max_epochs = num_epochs
     hparams.trainer.accelerator = "gpu"
     hparams.trainer.check_val_every_n_epoch = 1
     hparams.trainer.gradient_clip_algorithm = "value"
@@ -82,7 +82,7 @@ def hparams(data):
     return hparams
 
 @registry.register_model("MTEnsemble")
-class GNNEnsemble(BaseModel):
+class MTEnsemble(BaseModel):
   def __init__(self, config, k = 5, **kwargs):
     self.k = k
     self.config = config
@@ -90,8 +90,9 @@ class GNNEnsemble(BaseModel):
     self.scalar = 1.0
     self.device = 'cpu'
     self.updates = 0
+    self.hp = None
   
-  def train(self, dataset: KFoldsDataset, iterations = 500, lr = 0.001, 
+  def train(self, dataset: KFoldsDataset, iterations = 250, lr = 0.001, 
     from_scratch = False, transfer = 1.0, prev_params = None, **kwargs):
 
     batch_size = 64
@@ -127,29 +128,96 @@ class GNNEnsemble(BaseModel):
           shuffle=False,
       )
 
-      hp = hparams(dataset)
-      tune_output = MatterTuner(hp).tune()
+      self.hp = hparams(dataset, iterations)
+      tune_output = MatterTuner(self.hp).tune()
       model, trainer = tune_output.model, tune_output.trainer
+      self.device = model.device
 
-      lightning_kwargs = {'accelerator': 'gpu',
-        'strategy': 'auto',
-        'devices': 'auto',
-        'num_nodes': 1,
-        'precision': '32',
-        'deterministic': None,
-        'gradient_clip_val': 1.0,
-        'gradient_clip_algorithm': 'value',
-        'logger': None,
-        'inference_mode': True,
-        'fast_dev_run': False
-      }
-      property_predictor = model.property_predictor(lightning_kwargs)
+      self.ensemble[i] = model
 
+  def batch_pos_cell(pos, cell, starting_struct):
+    atom_graphs = [self.pos_cell_to_atom_graphs(pos[i], cell[i], starting_struct) for i in range(len(pos))]
+    return model.collate_fn([atom_graphs])
 
-    raise NotImplementedError
+  def pos_cell_to_atom_graphs(self, positions, cell, starting_struct: Structure, wrap = True,
+      edge_method = None, half_supercell = None,):
+    output_dtype = torch.get_default_dtype()
+    graph_construction_dtype = torch.get_default_dtype()
+    max_num_neighbors = self.hp.model.system.max_num_neighbors
+    atomic_numbers = torch.from_numpy(np.array(starting_struct.atomic_numbers)).to(torch.long)
+    atomic_numbers_embedding = torch.nn.functional.one_hot(
+        atomic_numbers, num_classes=118).to(torch.get_default_dtype())
+    pbc = torch.from_numpy(np.array([True, True, True])).to(self.device)
 
+    lattice = torch_cell_to_cellpar(cell)
+    if wrap and (torch.any(cell != 0) and torch.any(pbc)):
+        positions = feat_util.map_to_pbc_cell(positions, cell)
+
+    edge_index, edge_vectors, unit_shifts = feat_util.compute_pbc_radius_graph(
+        positions = positions,
+        cell = cell,
+        pbc = pbc,
+        radius = self.hp.model.system.radius,
+        max_number_neighbors = max_num_neighbors,
+        edge_method = edge_method,
+        half_supercell = half_supercell,
+        float_dtype = graph_construction_dtype,
+        device = self.device,
+    )
+    senders, receivers = edge_index[0], edge_index[1]
+
+    node_feats = {
+        # NOTE: positions are stored as features on the AtomGraphs,
+        # but not actually used as input features to the model.
+        "positions": positions,
+        "atomic_numbers": atomic_numbers.to(torch.long),
+        "atomic_numbers_embedding": atomic_numbers_embedding,
+        "atom_identity": torch.arange(len(starting_struct)).to(torch.long),
+    }
+    edge_feats = {
+        "vectors": edge_vectors,
+        "unit_shifts": unit_shifts,
+    }
+    graph_feats = {
+        "cell": cell.unsqueeze(0), # Add a batch dimension to non-scalar graph features/targets
+        "pbc": pbc.unsqueeze(0),
+        "lattice": lattice.unsqueeze(0),
+    }
+
+    atom_graphs = AtomGraphs(
+        senders = senders,
+        receivers = receivers,
+        n_node = torch.tensor([len(positions)]),
+        n_edge = torch.tensor([len(senders)]),
+        node_features = node_feats,
+        edge_features = edge_feats,
+        system_features = graph_feats,
+        node_targets = {},
+        edge_targets = {},
+        system_targets = {},
+        fix_atoms = None,
+        tags = torch.zeros(len(starting_struct)),
+        radius = self.hp.model.system.radius,
+        max_num_neighbors = torch.tensor([max_num_neighbors]),
+        system_id = None,
+    ).to(device = self.device, dtype = output_dtype)
+
+    atom_types_onehot = torch.nn.functional.one_hot(
+      atom_graphs.atomic_numbers.view(-1).long(), num_classes = 120)
+    # ^ (n_atoms, 120)
+    # Now we need to sum this up to get the composition vector
+    composition = atom_types_onehot.sum(dim = 0, keepdim = True)
+    # ^ (1, 120)
+    atom_graphs.system_features["norm_composition"] = composition
+
+    return atom_graphs
+  
   def predict(self, structure, prepared = False, mask = None, **kwargs):
-    raise NotImplementedError
+    if prepared:
+      res = torch.stack([self.model[i].model_forward(structure, mode = "predict") for i in range(self.k)])
+      
+    else:
+      raise NotImplementedError
 
   def set_scalar_calibration(self, dataset: KFoldsDataset):
     raise NotImplementedError
