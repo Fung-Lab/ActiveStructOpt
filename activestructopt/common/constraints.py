@@ -17,6 +17,25 @@ def lj_repulsion(data, ljrmins, scale = 40):
     torch.pow(rmins / data.edge_weight, 12), 1.0)
   return (torch.mean(repulsions) - 1) / scale
 
+def lj_repulsion_mt(data, ljrmins, scale = 40):
+  edge_splitter = data.n_edge.to('cpu').detach().tolist()
+  senders = torch.split(data.senders, edge_splitter)
+  receivers = torch.split(data.receivers, edge_splitter)
+  edge_weights = torch.split(torch.norm(data.edge_features['vectors'], dim = 1), 
+    edge_splitter)
+
+  to_return = [None for _ in range(len(senders))]
+
+  for i in range(len(senders)):
+    senders_z = data.atomic_numbers[senders[i]]
+    receivers_z = data.atomic_numbers[receivers[i]]
+
+    rmins = ljrmins[(senders_z - 1), (receivers_z - 1)]
+    repulsions = torch.where(rmins > edge_weights[i], 
+      torch.pow(rmins / edge_weights[i], 12), 1.0)
+    to_return[i] = ((torch.mean(repulsions) - 1) / scale).clone()
+  return to_return
+
 def lj_repulsion_pymatgen(structure, scale = 40, buffer = 0.85):
   repulsions = []
   for i in range(len(structure)):
