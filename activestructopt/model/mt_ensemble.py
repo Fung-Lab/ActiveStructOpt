@@ -1,85 +1,95 @@
-from activestructopt.common.dataloader import prepare_data_pmg
-from activestructopt.model.base import BaseModel, Runner, ConfigSetup
+from activestructopt.model.base import BaseModel
 from activestructopt.dataset.kfolds import KFoldsDataset
 from activestructopt.common.registry import registry
 import numpy as np
 from scipy.stats import norm
 from scipy.optimize import minimize
 import torch
-from torch.func import stack_module_state, functional_call, vmap
-import copy
-from torch_geometric.loader import DataLoader
-import mattertune.configs as MC
-from mattertune import MatterTuner
-import mattertune as mt
-from pathlib import Path
 from ase import Atoms
+from pymatgen.core import Structure
 
-def hparams(data, num_epochs):
-    hparams = MC.MatterTunerConfig.draft()
+def torch_cell_to_cellpar(cell):
+    cellpar = torch.zeros(6, dtype = cell.dtype, device = cell.device)
+    cellpar[:3] += torch.norm(cell, dim =  1)
+    for i in range(3):
+        j = i - 1
+        k = i - 2
+        ll = cellpar[j % 3] * cellpar[k % 3]
+        if ll > 1e-16:
+            x = torch.dot(cell[j % 3], cell[k % 3]) / ll
+            cellpar[3+i] = 180.0 / np.pi * torch.acos(x)
+        else:
+            cellpar[3+i] = 90.0
+    return cellpar
 
-    # Model hparams
-    hparams.model = MC.ORBBackboneConfig.draft()
-    hparams.model.system = mt.backbones.orb.model.ORBSystemConfig(radius=10.0, max_num_neighbors=250)
-    hparams.model.pretrained_model = "orb-v3-direct-inf-omat"
-    #hparams.model.pretrained_model = "orb-v3-conservative-inf-omat"
+def hparams(data, num_epochs, out_dim):
+  import mattertune.configs as MC
+  import mattertune as mt
 
-    hparams.model.ignore_gpu_batch_transform_error = True
-    hparams.model.freeze_backbone = False
+  hparams = MC.MatterTunerConfig.draft()
 
-    hparams.model.optimizer = MC.AdamWConfig(
-        lr=1e-3,
-        amsgrad=False,
-        betas=(0.9, 0.95),
-        eps=1.0e-8,
-        weight_decay=0.1,
-        per_parameter_hparams=None,
-    )
-    hparams.model.lr_scheduler = MC.ReduceOnPlateauConfig(
-        mode="min",
-        monitor="val/total_loss",
-        factor=0.5,
-        patience=5,
-        min_lr=0,
-        threshold=1e-4,
-    )
-    hparams.model.reset_output_heads = True
-    hparams.model.reset_backbone = False
+  # Model hparams
+  hparams.model = MC.ORBBackboneConfig.draft()
+  hparams.model.system = mt.backbones.orb.model.ORBSystemConfig(
+    radius = 10.0, max_num_neighbors = 250)
+  hparams.model.pretrained_model = "orb-v3-direct-inf-omat"
+  #hparams.model.pretrained_model = "orb-v3-conservative-inf-omat"
 
-    hparams.model.properties = []
-    spectra = MC.AtomInvariantVectorPropertyConfig(name = 'spectra', dtype='float', size=900, loss=MC.MAELossConfig(),
-                                                additional_head_settings={'num_layers': 1,
-                                                                          'hidden_channels': 256})
-    hparams.model.properties.append(spectra)
+  hparams.model.ignore_gpu_batch_transform_error = True
+  hparams.model.freeze_backbone = False
 
-    # Data hparams
-    hparams.data = data
-    hparams.data.num_workers = 0
+  hparams.model.optimizer = MC.AdamWConfig(
+      lr = 1e-3,
+      amsgrad = False,
+      betas = (0.9, 0.95),
+      eps = 1.0e-8,
+      weight_decay = 0.1,
+      per_parameter_hparams = None,
+  )
+  hparams.model.lr_scheduler = MC.ReduceOnPlateauConfig(
+      mode = "min",
+      monitor = "val/total_loss",
+      factor = 0.5,
+      patience = 5,
+      min_lr = 0,
+      threshold = 1e-4,
+  )
+  hparams.model.reset_output_heads = True
+  hparams.model.reset_backbone = False
 
-    hparams.trainer = MC.TrainerConfig.draft()
-    hparams.trainer.max_epochs = num_epochs
-    hparams.trainer.accelerator = "gpu"
-    hparams.trainer.check_val_every_n_epoch = 1
-    hparams.trainer.gradient_clip_algorithm = "value"
-    hparams.trainer.gradient_clip_val = 1.0
-    #hparams.trainer.ema = MC.EMAConfig(decay=0.99)
-    hparams.trainer.precision = "32"
-    torch.set_float32_matmul_precision('high')
+  hparams.model.properties = []
+  spectra = MC.AtomInvariantVectorPropertyConfig(name = 'spectra', 
+    dtype = 'float', size = out_dim, loss = MC.MAELossConfig(),
+    additional_head_settings = {'num_layers': 1, 'hidden_channels': 256})
+  hparams.model.properties.append(spectra)
 
-    hparams.trainer.early_stopping = MC.EarlyStoppingConfig(
-        monitor='val/total_loss',
-        patience=15,
-        mode="min",
-        min_delta=1e-8,
-    )
+  # Data hparams
+  hparams.data = data
+  hparams.data.num_workers = 0
 
-    hparams.trainer.additional_trainer_kwargs = {
-        "inference_mode": False,
-    }
+  hparams.trainer = MC.TrainerConfig.draft()
+  hparams.trainer.max_epochs = num_epochs
+  hparams.trainer.accelerator = "gpu"
+  hparams.trainer.check_val_every_n_epoch = 1
+  hparams.trainer.gradient_clip_algorithm = "value"
+  hparams.trainer.gradient_clip_val = 1.0
+  #hparams.trainer.ema = MC.EMAConfig(decay=0.99)
+  hparams.trainer.precision = "32"
+  torch.set_float32_matmul_precision('high')
 
-    hparams = hparams.finalize()
-    #rich.print(hparams)
-    return hparams
+  hparams.trainer.early_stopping = MC.EarlyStoppingConfig(
+      monitor = 'val/total_loss',
+      patience = 15,
+      mode = "min",
+      min_delta = 1e-8,
+  )
+
+  hparams.trainer.additional_trainer_kwargs = {
+      "inference_mode": False,
+  }
+
+  hparams = hparams.finalize()
+  return hparams
 
 @registry.register_model("MTEnsemble")
 class MTEnsemble(BaseModel):
@@ -94,6 +104,8 @@ class MTEnsemble(BaseModel):
   
   def train(self, dataset: KFoldsDataset, iterations = 250, lr = 0.001, 
     from_scratch = False, transfer = 1.0, prev_params = None, **kwargs):
+    import mattertune as mt
+    from mattertune import MatterTuner
 
     batch_size = 64
 
@@ -102,24 +114,25 @@ class MTEnsemble(BaseModel):
     for i in range(self.k):
 
       atoms_dataset = [Atoms(
-          numbers=np.array([s.specie.Z for s in dataset.structures[j].sites]),
-          positions=np.array([s.coords.tolist() for s in dataset.structures[j].sites]),
-          cell=np.array(dataset.structures[j].lattice.matrix.tolist()),
-          pbc=True,
-          info={'spectra': dataset.ys[j]},
+          numbers = np.array([s.specie.Z for s in dataset.structures[j].sites]),
+          positions = np.array([s.coords.tolist(
+            ) for s in dataset.structures[j].sites]),
+          cell = np.array(dataset.structures[j].lattice.matrix.tolist()),
+          pbc = True,
+          info = {'spectra': dataset.ys[j]},
       ) for j in np.setxor1d(trainval_indices, dataset.kfolds[i])]
 
       val_set = [Atoms(
-          numbers=np.array([s.specie.Z for s in dataset.structures[j].sites]),
-          positions=np.array([s.coords.tolist() for s in dataset.structures[j].sites]),
-          cell=np.array(dataset.structures[j].lattice.matrix.tolist()),
-          pbc=True,
-          info={'spectra': dataset.ys[j]},
+          numbers = np.array([s.specie.Z for s in dataset.structures[j].sites]),
+          positions = np.array([s.coords.tolist(
+            ) for s in dataset.structures[j].sites]),
+          cell = np.array(dataset.structures[j].lattice.matrix.tolist()),
+          pbc = True,
+          info = {'spectra': dataset.ys[j]},
       ) for j in dataset.kfolds[i]]
 
       train_split = len(atoms_dataset) / (len(atoms_dataset) + len(val_set))
       atoms_dataset.extend(val_set)
-
 
       dataset = mt.configs.AutoSplitDataModuleConfig(
           dataset = mt.configs.AtomsListDatasetConfig(atoms_list=atoms_dataset),
@@ -128,23 +141,35 @@ class MTEnsemble(BaseModel):
           shuffle=False,
       )
 
-      self.hp = hparams(dataset, iterations)
+      self.hp = hparams(dataset, iterations, 
+        self.config['dataset']['preprocess_params']['output_dim'])
       tune_output = MatterTuner(self.hp).tune()
       model, trainer = tune_output.model, tune_output.trainer
       self.device = model.device
 
       self.ensemble[i] = model
 
-  def batch_pos_cell(pos, cell, starting_struct):
-    atom_graphs = [self.pos_cell_to_atom_graphs(pos[i], cell[i], starting_struct) for i in range(len(pos))]
-    return model.collate_fn([atom_graphs])
+  def batch_structures(self, structures):
+    pos = [torch.Tensor([site.coords.tolist() for site in struct.sites], 
+      device = self.device) for struct in structures]
+    cell = [torch.Tensor(struct.lattice.matrix.tolist(), device = self.device
+      ) for struct in structures]
+    return self.batch_pos_cell(pos, cell, structures[0])
 
-  def pos_cell_to_atom_graphs(self, positions, cell, starting_struct: Structure, wrap = True,
-      edge_method = None, half_supercell = None,):
+  def batch_pos_cell(self, pos, cell, starting_struct):
+    atom_graphs = [self.pos_cell_to_atom_graphs(pos[i], cell[i], 
+      starting_struct) for i in range(len(pos))]
+    return self.ensemble[0].collate_fn([atom_graphs])
+
+  def pos_cell_to_atom_graphs(self, positions, cell, starting_struct: Structure, 
+      wrap = True, edge_method = None, half_supercell = None,):
+    from orb_models.forcefield import featurization_utilities as feat_util
+    from orb_models.forcefield.base import AtomGraphs
     output_dtype = torch.get_default_dtype()
     graph_construction_dtype = torch.get_default_dtype()
     max_num_neighbors = self.hp.model.system.max_num_neighbors
-    atomic_numbers = torch.from_numpy(np.array(starting_struct.atomic_numbers)).to(torch.long)
+    atomic_numbers = torch.from_numpy(np.array(starting_struct.atomic_numbers)
+      ).to(torch.long)
     atomic_numbers_embedding = torch.nn.functional.one_hot(
         atomic_numbers, num_classes=118).to(torch.get_default_dtype())
     pbc = torch.from_numpy(np.array([True, True, True])).to(self.device)
@@ -214,13 +239,48 @@ class MTEnsemble(BaseModel):
   
   def predict(self, structure, prepared = False, mask = None, **kwargs):
     if prepared:
-      res = torch.stack([self.model[i].model_forward(structure, mode = "predict") for i in range(self.k)])
+      res = torch.stack([torch.stack(torch.split(self.ensemble[i].model_forward(
+        structure, mode = "predict")['predicted_properties']['spectra'], 
+        len(mask))) for i in range(self.k)])  # (k, nstructures, natoms, outdim)
+      prediction = torch.mean(res[:, :, torch.tensor(mask, dtype = torch.bool), 
+        :], dim = 2) # node level masking
+      mean = torch.mean(prediction, dim = 0)
+      # last term to remove Bessel correction and match numpy behavior
+      # https://github.com/pytorch/pytorch/issues/1082
+      std = self.scalar * torch.std(prediction, dim = 0) * np.sqrt(
+        (self.k - 1) / self.k)
+
+      return torch.stack((mean, std))
       
     else:
       raise NotImplementedError
 
   def set_scalar_calibration(self, dataset: KFoldsDataset):
-    raise NotImplementedError
+    self.scalar = 1.0
+    
+    test_data = self.batch_structures(
+      [dataset.structures[i] for i in dataset.test_indices])
+    test_targets = [dataset.ys[i] for i in dataset.test_indices]
+
+    with torch.inference_mode():
+      test_res = self.predict(test_data, prepared = True, 
+        mask = dataset.simfunc.mask)
+    aes = []
+    zscores = []
+    for i in range(len(test_targets)):
+      target = np.mean(test_targets[i][np.array(dataset.simfunc.mask)], 
+        axis = 0)
+      for j in range(len(target)):
+        zscores.append((
+          test_res[0][i][j].item() - target[j]) / test_res[1][i][j].item())
+        aes.append(np.abs(test_res[0][i][j].item() - target[j]))
+    zscores = np.sort(zscores)
+    normdist = norm()
+    f = lambda x: np.trapz(np.abs(np.cumsum(np.ones(len(zscores))) / len(
+      zscores) - normdist.cdf(zscores / x[0])), normdist.cdf(zscores / x[0]))
+    self.scalar = minimize(f, [1.0]).x[0]
+    return np.mean(aes), normdist.cdf(np.sort(zscores) / 
+      self.scalar), np.cumsum(np.ones(len(zscores))) / len(zscores)
 
   def load(self, dataset: KFoldsDataset, params, scalar, **kwargs):
     raise NotImplementedError
