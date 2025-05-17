@@ -134,14 +134,14 @@ class MTEnsemble(BaseModel):
       train_split = len(atoms_dataset) / (len(atoms_dataset) + len(val_set))
       atoms_dataset.extend(val_set)
 
-      dataset = mt.configs.AutoSplitDataModuleConfig(
+      mt_dataset = mt.configs.AutoSplitDataModuleConfig(
           dataset = mt.configs.AtomsListDatasetConfig(atoms_list=atoms_dataset),
           train_split = train_split,
           batch_size = batch_size,
           shuffle=False,
       )
 
-      self.hp = hparams(dataset, iterations, 
+      self.hp = hparams(mt_dataset, iterations, 
         self.config['dataset']['preprocess_params']['output_dim'], lr)
       tune_output = MatterTuner(self.hp).tune()
       model, trainer = tune_output.model, tune_output.trainer
