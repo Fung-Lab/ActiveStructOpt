@@ -148,6 +148,8 @@ class MTEnsemble(BaseModel):
       self.device = model.device
 
       self.ensemble[i] = model
+      return 0.0, [], [{} for _ in range(self.k)]
+    
 
   def batch_structures(self, structures):
     pos = [torch.Tensor([site.coords.tolist() for site in struct.sites], 
