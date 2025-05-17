@@ -22,7 +22,7 @@ def torch_cell_to_cellpar(cell):
             cellpar[3+i] = 90.0
     return cellpar
 
-def hparams(data, num_epochs, out_dim):
+def hparams(data, num_epochs, out_dim, start_lr = 0.001):
   import mattertune.configs as MC
   import mattertune as mt
 
@@ -39,7 +39,7 @@ def hparams(data, num_epochs, out_dim):
   hparams.model.freeze_backbone = False
 
   hparams.model.optimizer = MC.AdamWConfig(
-      lr = 1e-3,
+      lr = start_lr,
       amsgrad = False,
       betas = (0.9, 0.95),
       eps = 1.0e-8,
@@ -142,7 +142,7 @@ class MTEnsemble(BaseModel):
       )
 
       self.hp = hparams(dataset, iterations, 
-        self.config['dataset']['preprocess_params']['output_dim'])
+        self.config['dataset']['preprocess_params']['output_dim'], lr)
       tune_output = MatterTuner(self.hp).tune()
       model, trainer = tune_output.model, tune_output.trainer
       self.device = model.device
