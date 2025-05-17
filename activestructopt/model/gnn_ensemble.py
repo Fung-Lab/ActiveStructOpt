@@ -8,7 +8,6 @@ from scipy.optimize import minimize
 import torch
 from torch.func import stack_module_state, functional_call, vmap
 import copy
-from torch_geometric.loader import DataLoader
 
 @registry.register_model("GNNEnsemble")
 class GNNEnsemble(BaseModel):
@@ -97,6 +96,7 @@ class GNNEnsemble(BaseModel):
       ) for i in range(self.k)]
 
   def predict(self, structure, prepared = False, mask = None, **kwargs):
+    from torch_geometric.loader import DataLoader
     def fmodel(params, buffers, x):
       return functional_call(self.base_model, (params, buffers), (x,))['output']
     data = structure if prepared else [prepare_data_pmg(
