@@ -161,7 +161,7 @@ class MTEnsemble(BaseModel):
   def batch_pos_cell(self, pos, cell, starting_struct):
     atom_graphs = [self.pos_cell_to_atom_graphs(pos[i], cell[i], 
       starting_struct) for i in range(len(pos))]
-    return self.ensemble[0].collate_fn([atom_graphs])
+    return self.ensemble[0].collate_fn(atom_graphs)
 
   def pos_cell_to_atom_graphs(self, positions, cell, starting_struct: Structure, 
       wrap = True, edge_method = None, half_supercell = None,):
