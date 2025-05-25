@@ -144,11 +144,13 @@ class MTEnsemble(BaseModel):
       self.hp = hparams(mt_dataset, iterations, 
         self.config['dataset']['preprocess_params']['output_dim'], lr)
       tune_output = MatterTuner(self.hp).tune()
-      model, trainer = tune_output.model, tune_output.trainer
+      model = tune_output.model
       self.device = model.device
-
       self.ensemble[i] = model
-    return 0.0, [], [{} for _ in range(self.k)]
+
+    gnn_mae, _, _ = self.set_scalar_calibration(dataset)
+
+    return gnn_mae, [], [{} for _ in range(self.k)]
     
 
   def batch_structures(self, structures):
