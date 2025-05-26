@@ -57,7 +57,7 @@ class TorchMT(BaseOptimizer):
     optimizer = getattr(torch.optim, optimizer)(to_optimize, 
       **(optimizer_args))
     
-    split = 5#int(np.ceil(np.log2(nstarts)))
+    split = int(np.ceil(np.log2(nstarts)))
     orig_split = split
 
     #print("starting loop")
