@@ -154,10 +154,10 @@ class MTEnsemble(BaseModel):
     
 
   def batch_structures(self, structures):
-    pos = [torch.Tensor([site.coords.tolist() for site in struct.sites], 
-      device = self.device) for struct in structures]
-    cell = [torch.Tensor(struct.lattice.matrix.tolist(), device = self.device
-      ) for struct in structures]
+    pos = [torch.Tensor([site.coords.tolist() for site in struct.sites]).to(
+      self.device) for struct in structures]
+    cell = [torch.Tensor(struct.lattice.matrix.tolist()).to(
+      self.device) for struct in structures]
     return self.batch_pos_cell(pos, cell, structures[0])
 
   def batch_pos_cell(self, pos, cell, starting_struct):
