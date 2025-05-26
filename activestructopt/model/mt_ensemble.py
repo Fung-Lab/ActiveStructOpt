@@ -144,7 +144,7 @@ class MTEnsemble(BaseModel):
       self.hp = hparams(mt_dataset, iterations, 
         self.config['dataset']['preprocess_params']['output_dim'], lr)
       tune_output = MatterTuner(self.hp).tune()
-      model = tune_output.model
+      model = tune_output.model.to('cuda')
       self.device = model.device
       self.ensemble[i] = model
 
