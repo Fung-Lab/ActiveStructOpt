@@ -60,7 +60,7 @@ class TorchMT(BaseOptimizer):
     split = 5#int(np.ceil(np.log2(nstarts)))
     orig_split = split
 
-    print("starting loop")
+    #print("starting loop")
 
     for i in range(iters_per_start):
       predicted = False
@@ -81,28 +81,28 @@ class TorchMT(BaseOptimizer):
               if optimize_lattice:
                 data_cell[starti + j].requires_grad_()
 
-            print("required grads")
+            #print("required grads")
 
             batch_data = model.batch_pos_cell(
               data_pos[starti:(stopi+1)], data_cell[starti:(stopi+1)], 
               starting_structures[0])
 
-            print("batched data")
+            #print("batched data")
             
             predictions = model.predict(batch_data, prepared = True, 
               mask = dataset.simfunc.mask)
 
-            print("predicted")
+            #print("predicted")
 
             objs, obj_total = objective.get(predictions, target, 
               device = device, N = stopi - starti + 1)
 
-            print("objective obtained")
+            #print("objective obtained")
 
             lj_repulsions = torch.zeros(stopi - starti + 1, device = device)
             lj_repuls = lj_repulsion_mt(batch_data, ljrmins)
 
-            print("repulsions calculated")
+            #print("repulsions calculated")
 
             for j in range(stopi - starti + 1):
               objs[j] += constraint_scale * lj_repuls[j]
@@ -112,7 +112,7 @@ class TorchMT(BaseOptimizer):
               if save_obj_values:
                 obj_values[i, starti + j] = objs[j].detach().cpu()
 
-            print("objectives added")
+            #print("objectives added")
 
             objs_to_compare = torch.nan_to_num(objs, nan = torch.inf)
             for j in range(stopi - starti + 1):
@@ -135,13 +135,13 @@ class TorchMT(BaseOptimizer):
                   best_cell = data_cell[starti + obj_arg.item()].clone(
                     ).detach()
 
-            print("updated best structure")
+            #print("updated best structure")
 
             if i != iters_per_start - 1:
               obj_total.backward()
               optimizer.step()
 
-            print("back propogated")
+            #print("back propogated")
 
             del predictions, objs, obj_total
           predicted = True
