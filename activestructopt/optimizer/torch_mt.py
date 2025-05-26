@@ -44,10 +44,10 @@ class TorchMT(BaseOptimizer):
       best_cell = torch.zeros((3, 3), device = device)
     target = torch.tensor(dataset.target, device = device)
 
-    data_pos = [torch.Tensor([site.coords.tolist() for site in struct.sites], 
-      device = model.device) for struct in starting_structures]
-    data_cell = [torch.Tensor(struct.lattice.matrix.tolist(), 
-      device = model.device) for struct in starting_structures]
+    data_pos = [torch.Tensor([site.coords.tolist() for site in struct.sites]
+      ).to(model.device) for struct in starting_structures]
+    data_cell = [torch.Tensor(struct.lattice.matrix.tolist()).to(model.device
+      ) for struct in starting_structures]
     
     to_optimize = []
     if optimize_atoms:
