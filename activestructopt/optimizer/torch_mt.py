@@ -57,7 +57,7 @@ class TorchMT(BaseOptimizer):
     optimizer = getattr(torch.optim, optimizer)(to_optimize, 
       **(optimizer_args))
     
-    split = int(np.ceil(np.log2(nstarts)))
+    split = 5#int(np.ceil(np.log2(nstarts)))
     orig_split = split
 
     print("starting loop")
@@ -171,5 +171,5 @@ class TorchMT(BaseOptimizer):
           print(new_structure.lattice)
           print(new_x)
           raise e
-          
+
     return new_structure, obj_values
