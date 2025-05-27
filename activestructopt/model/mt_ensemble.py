@@ -7,6 +7,8 @@ from scipy.optimize import minimize
 import torch
 from ase import Atoms
 from pymatgen.core import Structure
+from torch.func import stack_module_state, functional_call, vmap
+import copy
 
 def torch_cell_to_cellpar(cell):
     cellpar = torch.zeros(6, dtype = cell.dtype, device = cell.device)
@@ -96,7 +98,6 @@ class MTEnsemble(BaseModel):
   def __init__(self, config, k = 5, **kwargs):
     self.k = k
     self.config = config
-    self.ensemble = [None for _ in range(k)]
     self.scalar = 1.0
     self.device = 'cpu'
     self.updates = 0
@@ -111,8 +112,11 @@ class MTEnsemble(BaseModel):
 
     trainval_indices = np.setxor1d(np.arange(len(dataset.structures)), 
         dataset.test_indices)
-    for i in range(self.k):
 
+    backbones = [None for _ in range(self.k)]
+    output_heads = [None for _ in range(self.k)]
+
+    for i in range(self.k):
       atoms_dataset = [Atoms(
           numbers = np.array([s.specie.Z for s in dataset.structures[j].sites]),
           positions = np.array([s.coords.tolist(
@@ -146,8 +150,15 @@ class MTEnsemble(BaseModel):
       tune_output = MatterTuner(self.hp).tune()
       model = tune_output.model.to('cuda')
       self.device = model.device
-      self.ensemble[i] = model
+      backbones[i] = model.backbone
+      output_heads[i] = model.output_heads['spectra']
+      self.collate_fn = model.collate_fn
 
+    self.backbone_params, self.backbone_buffers = stack_module_state(backbones)
+    self.backbone_base = copy.deepcopy(backbones[0]).to('meta')
+    self.output_params, self.output_buffers = stack_module_state(output_heads)
+    self.output_head_base = copy.deepcopy(output_heads[0]).to('meta')
+    
     gnn_mae, _, _ = self.set_scalar_calibration(dataset)
 
     return gnn_mae, [], [{} for _ in range(self.k)]
@@ -163,7 +174,7 @@ class MTEnsemble(BaseModel):
   def batch_pos_cell(self, pos, cell, starting_struct):
     atom_graphs = [self.pos_cell_to_atom_graphs(pos[i], cell[i], 
       starting_struct) for i in range(len(pos))]
-    return self.ensemble[0].collate_fn(atom_graphs)
+    return self.collate_fn(atom_graphs)
 
   def pos_cell_to_atom_graphs(self, positions, cell, starting_struct: Structure, 
       wrap = True, edge_method = None, half_supercell = None,):
@@ -243,11 +254,23 @@ class MTEnsemble(BaseModel):
   
   def predict(self, structure, prepared = False, mask = None, **kwargs):
     if prepared:
-      res = torch.stack([torch.stack(torch.split(self.ensemble[i].model_forward(
-        structure, mode = "predict")['predicted_properties']['spectra'], 
-        len(mask))) for i in range(self.k)])  # (k, nstructures, natoms, outdim)
+      def fbackbone(params, buffers, x):
+        return functional_call(self.backbone_base, (params, buffers), (x,)
+          )['node_features']
+      def foutput(params, buffers, node_features, x):
+        return functional_call(self.output_head_base, (params, buffers), 
+          (node_features, x))
+
+      bb_prediction = vmap(fbackbone, in_dims = (0, 0, None))(
+        self.backbone_params, self.backbone_buffers, structure)
+      out_prediction = vmap(foutput, in_dims = (0, 0, 0, None))(
+        self.output_params, self.output_buffers, bb_prediction, structure)
+
+      res = torch.transpose(torch.stack(torch.split(out_prediction, 
+        len(mask), dim = 1)), 0, 1)  # (k, nstructures, natoms, outdim)
       prediction = torch.mean(res[:, :, torch.tensor(mask, dtype = torch.bool), 
         :], dim = 2) # node level masking
+
       mean = torch.mean(prediction, dim = 0)
       # last term to remove Bessel correction and match numpy behavior
       # https://github.com/pytorch/pytorch/issues/1082
