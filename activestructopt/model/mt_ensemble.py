@@ -77,7 +77,6 @@ def hparams(data, num_epochs, out_dim, start_lr = 0.001):
   hparams.trainer.gradient_clip_val = 1.0
   #hparams.trainer.ema = MC.EMAConfig(decay=0.99)
   hparams.trainer.precision = "32"
-  hparams.enable_checkpointing = False
   torch.set_float32_matmul_precision('high')
 
   hparams.trainer.early_stopping = MC.EarlyStoppingConfig(
@@ -89,6 +88,8 @@ def hparams(data, num_epochs, out_dim, start_lr = 0.001):
 
   hparams.trainer.additional_trainer_kwargs = {
       "inference_mode": False,
+      "enable_checkpointing": False,
+      "logger": False,
   }
 
   hparams = hparams.finalize()
@@ -97,14 +98,12 @@ def hparams(data, num_epochs, out_dim, start_lr = 0.001):
 @registry.register_model("MTEnsemble")
 class MTEnsemble(BaseModel):
   def __init__(self, config, k = 5, **kwargs):
-    import logging
     self.k = k
     self.config = config
     self.scalar = 1.0
     self.device = 'cpu'
     self.updates = 0
     self.hp = None
-    logging.getLogger("lightning.pytorch").setLevel(logging.ERROR)
   
   def train(self, dataset: KFoldsDataset, iterations = 250, lr = 0.001, 
     from_scratch = False, transfer = 1.0, prev_params = None, **kwargs):
