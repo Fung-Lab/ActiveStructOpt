@@ -89,6 +89,8 @@ def hparams(data, num_epochs, out_dim, start_lr = 0.001, radius = 10.0,
 
   hparams.trainer.additional_trainer_kwargs = {
       "inference_mode": False,
+      "enable_checkpointing": False,
+      "logger": False,
   }
 
   hparams = hparams.finalize()
