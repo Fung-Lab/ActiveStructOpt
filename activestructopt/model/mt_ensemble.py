@@ -24,7 +24,8 @@ def torch_cell_to_cellpar(cell):
             cellpar[3+i] = 90.0
     return cellpar
 
-def hparams(data, num_epochs, out_dim, start_lr = 0.001):
+def hparams(data, num_epochs, out_dim, start_lr = 0.001, radius = 10.0, 
+  max_num_neighbors = 250):
   import mattertune.configs as MC
   import mattertune as mt
 
@@ -33,7 +34,7 @@ def hparams(data, num_epochs, out_dim, start_lr = 0.001):
   # Model hparams
   hparams.model = MC.ORBBackboneConfig.draft()
   hparams.model.system = mt.backbones.orb.model.ORBSystemConfig(
-    radius = 10.0, max_num_neighbors = 250)
+    radius = radius, max_num_neighbors = max_num_neighbors)
   hparams.model.pretrained_model = "orb-v3-direct-inf-omat"
   #hparams.model.pretrained_model = "orb-v3-conservative-inf-omat"
 
@@ -104,7 +105,8 @@ class MTEnsemble(BaseModel):
     self.hp = None
   
   def train(self, dataset: KFoldsDataset, iterations = 250, lr = 0.001, 
-    from_scratch = False, transfer = 1.0, prev_params = None, **kwargs):
+    from_scratch = False, transfer = 1.0, prev_params = None, radius = 10.0, 
+    max_num_neighbors = 250, **kwargs):
     import mattertune as mt
     from mattertune import MatterTuner
 
@@ -146,7 +148,8 @@ class MTEnsemble(BaseModel):
       )
 
       self.hp = hparams(mt_dataset, iterations, 
-        self.config['dataset']['preprocess_params']['output_dim'], lr)
+        self.config['dataset']['preprocess_params']['output_dim'], lr, 
+        radius = radius, max_num_neighbors = max_num_neighbors)
       tune_output = MatterTuner(self.hp).tune()
       model = tune_output.model.to('cuda')
       self.device = model.device
