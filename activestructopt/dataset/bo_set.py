@@ -52,3 +52,13 @@ class BOSet(BaseDataset):
         new_structure.frac_coords[j], dtype = torch.double)
     self.X = newX
     self.Y = newY
+
+  def toJSONDict(self, save_structures = True):
+    return {
+      'N': self.N,
+      'structures': [s.as_dict() for s in self.structures] if (
+        save_structures) else self.structures[np.argmin(self.mismatches
+        )].as_dict(),
+      'ys': [y.tolist() for y in self.ys],
+      'mismatches': self.mismatches
+    }
