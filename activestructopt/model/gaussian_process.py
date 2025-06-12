@@ -1,11 +1,7 @@
 from activestructopt.model.base import BaseModel
 from activestructopt.common.registry import registry
 from activestructopt.dataset.base import BaseDataset
-from botorch.models import SingleTaskGP
-from botorch.models.transforms import Normalize, Standardize
-from botorch.fit import fit_gpytorch_mll
-from gpytorch.mlls import ExactMarginalLogLikelihood
-from botorch.acquisition import LogExpectedImprovement
+
 import torch
 
 @registry.register_model("GaussianProcess")
@@ -14,6 +10,12 @@ class GaussianProcess(BaseModel):
     pass
 
   def train(self, dataset: BaseDataset, **kwargs):
+    from botorch.models import SingleTaskGP
+    from botorch.models.transforms import Normalize, Standardize
+    from botorch.fit import fit_gpytorch_mll
+    from gpytorch.mlls import ExactMarginalLogLikelihood
+    from botorch.acquisition import LogExpectedImprovement
+
     gp = SingleTaskGP(
       train_X = dataset.X,
       train_Y = dataset.Y,

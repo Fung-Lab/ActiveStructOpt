@@ -5,7 +5,6 @@ from activestructopt.optimizer.base import BaseOptimizer
 from activestructopt.sampler.base import BaseSampler
 from activestructopt.common.registry import registry
 from pymatgen.core.structure import IStructure
-from botorch.optim import optimize_acqf
 import torch
 
 @registry.register_optimizer("BOTorch")
@@ -15,6 +14,8 @@ class BOTorch(BaseOptimizer):
 
   def run(self, model: BaseModel, dataset: RMCList, 
     objective: BaseObjective, sampler: BaseSampler, **kwargs) -> IStructure:
+    from botorch.optim import optimize_acqf
+
     bounds = torch.stack([torch.zeros(dataset.num_atoms * 3), 
       torch.ones(dataset.num_atoms * 3)]).to(torch.double)
     candidate, _ = optimize_acqf(model.acqf, bounds = bounds, q = 1, 
