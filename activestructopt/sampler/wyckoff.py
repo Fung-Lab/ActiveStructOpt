@@ -12,6 +12,7 @@ class Wyckoff(BaseSampler):
   def __init__(self, initial_structure: IStructure, seed = 0, 
     perturb_lattice = True, constraint_buffer = 0.85,
     max_retries = 3, max_time = 20, use_random_state = True, sgs = None) -> None:
+
     # Distribution from Materials Project
     sg_dist = [146, 2720, 14, 407, 178, 7, 145, 97, 351, 39, 768, 1688, 286, 
       5736, 2345, 1, 5, 66, 596, 89, 13, 2, 11, 0, 10, 64, 3, 9, 196, 11, 

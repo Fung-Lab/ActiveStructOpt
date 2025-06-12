@@ -18,6 +18,7 @@ class ActiveLearning():
     model_params_file = None, verbosity = 2, save_structures = True,
     save_progress_dir = None, save_initialization = False, 
     override_config = False):
+
     setup_imports()
 
     self.simfunc = simfunc
@@ -75,6 +76,7 @@ class ActiveLearning():
               self.model_params.append(kparams)
       else:
         raise Exception("Progress file should be .pkl or .json") 
+
     else:
       self.iteration = 0
       self.config = simfunc.setup_config(config)
@@ -161,6 +163,7 @@ class ActiveLearning():
 
         if new_structure_predict:
           with torch.inference_mode():
+
             self.new_structure_predictions.append(self.model.predict(
               new_structure, 
               mask = self.dataset.simfunc.mask).cpu().numpy())
@@ -406,3 +409,4 @@ class ActiveLearning():
 
     if print_mismatches:
       print(self.dataset.mismatches[-1])
+
