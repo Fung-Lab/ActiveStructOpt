@@ -11,12 +11,13 @@ import torch
 class BOTorch(BaseOptimizer):
   def __init__(self) -> None:
     from botorch.optim import optimize_acqf
+    self.optimize_acqf = optimize_acqf
 
   def run(self, model: BaseModel, dataset: RMCList, 
     objective: BaseObjective, sampler: BaseSampler, **kwargs) -> IStructure:
     bounds = torch.stack([torch.zeros(dataset.num_atoms * 3), 
       torch.ones(dataset.num_atoms * 3)]).to(torch.double)
-    candidate, _ = optimize_acqf(model.acqf, bounds = bounds, q = 1, 
+    candidate, _ = self.optimize_acqf(model.acqf, bounds = bounds, q = 1, 
       num_restarts = dataset.N, raw_samples = dataset.N
     )
     new_structure = dataset.structures[0].copy()
