@@ -1,14 +1,18 @@
 from activestructopt.sampler.base import BaseSampler
 from activestructopt.common.registry import registry
-from activestructopt.common.constraints import lj_reject
-from pymatgen.core.structure import IStructure
-import numpy as np
+from activestructopt.common.constraints import lj_reject, lj_rmins
+from pymatgen.core.structure import IStructure, Structure
+from multiprocessing import Process, Manager
 from collections import Counter
+import numpy as np
 import pyxtal
 
 @registry.register_sampler("Wyckoff")
 class Wyckoff(BaseSampler):
-  def __init__(self, initial_structure: IStructure, seed = 0, perturb_lattice = True) -> None:
+  def __init__(self, initial_structure: IStructure, seed = 0, 
+    perturb_lattice = True, constraint_buffer = 0.85,
+    max_retries = 3, max_time = 20, use_random_state = True, sgs = None) -> None:
+
     # Distribution from Materials Project
     sg_dist = [146, 2720, 14, 407, 178, 7, 145, 97, 351, 39, 768, 1688, 286, 
       5736, 2345, 1, 5, 66, 596, 89, 13, 2, 11, 0, 10, 64, 3, 9, 196, 11, 
@@ -30,39 +34,73 @@ class Wyckoff(BaseSampler):
       0].symbol for site in initial_structure.sites])
     self.zs = list(element_counter.keys())
     self.zcounts = list(element_counter.values())
-    self.initial_lattice = initial_structure.lattice.matrix
+    self.initial_lattice = pyxtal.lattice.Lattice.from_matrix(
+      initial_structure.lattice.matrix)
+    self.perturb_lattice = perturb_lattice
+    self.max_retries = max_retries
+    self.max_time = max_time
+    self.constraint_buffer = constraint_buffer
+    self.tm = pyxtal.tolerance.Tol_matrix.from_matrix(
+      self.constraint_buffer * lj_rmins)
+    self.use_random_state = use_random_state
 
-    self.possible_sgs = []
-    for i in range(230):
-      try:
-        xtal = pyxtal.pyxtal()
-        if perturb_lattice:
-          xtal.from_random(3, i + 1, self.zs, self.zcounts,
-            random_state = self.rng)
-        else:
-          xtal.from_random(3, i + 1, self.zs, self.zcounts,
-            random_state = self.rng, lattice = pyxtal.lattice.Lattice.from_matrix(self.initial_lattice))
-        self.possible_sgs.append(i + 1)
-      except:
-        continue
-    self.possible_sgs = np.array(self.possible_sgs)
-    self.sg_probs = np.array([sg_dist[i - 1] + 1.0 for i in self.possible_sgs])
-    # Adding one allows non-zero probability for sgs not in Materials Project
-    self.sg_probs /= np.sum(self.sg_probs)
+    def get_random_crystal(sg, d):
+      xtal = pyxtal.pyxtal()
+      xtal.from_random(3, sg, self.zs, self.zcounts, 
+        random_state = self.rng if self.use_random_state else None, 
+        tm = self.tm,
+        lattice = None if self.perturb_lattice else self.initial_lattice)
+      d['struct'] = xtal.to_pymatgen().as_dict()
+
+    self.get_random_crystal = get_random_crystal
+
+    if sgs is None:
+      self.possible_sgs = []
+      for i in range(230):
+        tries = 0
+        while tries < self.max_retries:
+          tries += 1
+          # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
+          p = Process(target = self.get_random_crystal, args = (i + 1, {}))
+          p.start()
+          p.join(self.max_time)
+          if p.is_alive(): # if didn't complete in max time
+            p.terminate()
+            p.join()
+          else:
+            if p.exitcode == 0:
+              self.possible_sgs.append(i + 1)
+            break
+
+      self.possible_sgs = np.array(self.possible_sgs)
+      self.sg_probs = np.array([sg_dist[i - 1] + 1.0 for i in self.possible_sgs])
+      # Adding one allows non-zero probability for sgs not in Materials Project
+      self.sg_probs /= np.sum(self.sg_probs)
+      print(self.possible_sgs)
+    else:
+      self.possible_sgs = sgs
+      self.possible_sgs = np.array(self.possible_sgs)
+      self.sg_probs = np.array([sg_dist[i - 1] + 1.0 for i in self.possible_sgs])
+      # Adding one allows non-zero probability for sgs not in Materials Project
+      self.sg_probs /= np.sum(self.sg_probs)
 
   def sample(self) -> IStructure:
     rejected = True
-    while rejected:
-      try:
-        xtal = pyxtal.pyxtal()
-        if perturb_lattice:
-          xtal.from_random(3, i + 1, self.zs, self.zcounts,
-            random_state = self.rng)
-        else:
-          xtal.from_random(3, i + 1, self.zs, self.zcounts,
-            random_state = self.rng, lattice = pyxtal.lattice.Lattice.from_matrix(self.initial_lattice))
-        new_structure = xtal.to_pymatgen()
-        rejected = lj_reject(new_structure)
-      except:
-        rejected = True
+    while rejected:      
+      manager = Manager()
+      d = manager.dict()
+
+      # https://stackoverflow.com/questions/14920384/stop-code-after-time-period/14920854
+      p = Process(target = self.get_random_crystal, args = (
+        np.random.choice(self.possible_sgs, p = self.sg_probs), d))
+      p.start()
+      p.join(self.max_time)
+      if p.is_alive(): # if didn't complete in max time
+        p.terminate()
+        p.join()
+      else:
+        if p.exitcode == 0:
+          new_structure = Structure.from_dict(d['struct'])
+          rejected = lj_reject(new_structure)
+
     return new_structure

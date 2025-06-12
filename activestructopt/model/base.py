@@ -1,13 +1,8 @@
 from abc import ABC, abstractmethod
 from activestructopt.dataset.base import BaseDataset
-from pymatgen.core.structure import IStructure
-from matdeeplearn.common.trainer_context import new_trainer_context
-from matdeeplearn.trainers.base_trainer import BaseTrainer
-from torch import distributed as dist
 import torch
 import os
 import logging
-import sys
 from io import StringIO
 
 class BaseModel(ABC):
@@ -34,6 +29,10 @@ class Runner:
     root_logger.addHandler(sh)
 
   def __call__(self, config, args, train_data, val_data):
+    from matdeeplearn.common.trainer_context import new_trainer_context
+    from matdeeplearn.trainers.base_trainer import BaseTrainer
+    from torch import distributed as dist
+
     with new_trainer_context(args = args, config = config) as ctx:
       if config["task"]["parallel"] == True:
         local_world_size = os.environ.get("LOCAL_WORLD_SIZE", None)

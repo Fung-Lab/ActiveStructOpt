@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 from pymatgen.core.structure import IStructure
 
+class ASOSimulationException(Exception):
+    pass
+
 class BaseSimulation(ABC):
   @abstractmethod
   def __init__(self, initial_structure: IStructure, **kwargs) -> None:

@@ -1,7 +1,7 @@
 from activestructopt.simulation.base import BaseSimulation, ASOSimulationException
 from activestructopt.common.registry import registry
 from pymatgen.io import feff
-from pymatgen.io.feff.sets import MPEXAFSSet
+from pymatgen.io.feff.sets import MPXANESSet
 from pymatgen.io.feff.outputs import Xmu
 import numpy as np
 import os
@@ -9,16 +9,21 @@ import time
 import subprocess
 import shutil
 import traceback
-import stat
 
-@registry.register_simulation("EXAFS")
-class EXAFS(BaseSimulation):
+@registry.register_simulation("XANES")
+class XANES(BaseSimulation):
   def __init__(self, initial_structure, feff_location = "", folder = "", 
-    absorber = 'Co', edge = 'K', radius = 10.0, 
-    additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1'},
-    sh_template = None, 
+    absorber = 'Co', edge = 'K', radius = 6.0, 
+    additional_settings = {
+        'FMS': '4.5',
+        'SCF': '4.5 0 30 .2 1',  
+        'DEBYE': '300 0 1'
+        },
     sbatch_template = None, sbatch_group_template = None,
     number_absorbers = None, save_sim = True,
+    pre_edge_min = -110., pre_edge_max = -20., pre_edge_step = 2.0,
+    edge_max = 30., edge_step = 0.5, 
+    post_edge_max = 100.0, post_edge_step = 1.0,
     **kwargs) -> None:
     self.feff_location = feff_location
     self.parent_folder = folder
@@ -26,12 +31,19 @@ class EXAFS(BaseSimulation):
     self.edge = edge
     self.radius = radius
     self.additional_settings = additional_settings
+    egrid_settings = {'EGRID': '', 
+        'e_grid': f'{pre_edge_min} {pre_edge_max} {pre_edge_step}', 
+        'e_grid ': f'last {edge_max} {edge_step}', 
+        'e_grid  ': f'last {post_edge_max} {post_edge_step}',}
+    self.additional_settings.update(egrid_settings)
+    self.outdim = len(np.arange(pre_edge_min, pre_edge_max, pre_edge_step)
+        ) + len(np.arange(pre_edge_max, edge_max, edge_step)
+        ) + len(np.arange(edge_max, post_edge_max, post_edge_step)) + 1
     self.mask = [x.symbol == self.absorber 
       for x in initial_structure.species]
     self.N = len(self.mask)
     self.sbatch_template = sbatch_template
     self.sbatch_group_template = sbatch_group_template
-    self.sh_template = sh_template
     self.number_absorbers = number_absorbers
     self.save_sim = save_sim
 
@@ -44,7 +56,7 @@ class EXAFS(BaseSimulation):
         'mask': self.mask,
       }
     }
-    config['dataset']['preprocess_params']['output_dim'] = 181
+    config['dataset']['preprocess_params']['output_dim'] = self.outdim
     return config
 
   def get(self, struct, group = False, separator = ','):
@@ -75,7 +87,7 @@ class EXAFS(BaseSimulation):
       new_abs_folder = os.path.join(new_folder, str(i))
       os.mkdir(new_abs_folder)
 
-      params = MPEXAFSSet(
+      params = MPXANESSet(
         int(absorber_indices[i]),
         structure,
         edge = self.edge,
@@ -103,47 +115,25 @@ class EXAFS(BaseSimulation):
       os.remove(pot_loc)
       os.remove(params_loc)
 
-    if (self.sbatch_template is not None) or (
-      self.sbatch_group_template is not None):
-      with open(self.sbatch_group_template if group else self.sbatch_template, 
-        'r') as file:
-        sbatch_data = file.read()
-      index_str = str(0)
-      for i in range(1, len(absorber_indices)):
-        index_str += separator + str(i)
-      job_name = int(time.time()) % 604800
-      sbatch_data = sbatch_data.replace('##ARRAY_INDS##', index_str)
-      sbatch_data = sbatch_data.replace('##DIRECTORY##', new_folder)
-      sbatch_data = sbatch_data.replace('##JOB_NAME##', str(job_name))
-      new_job_file = os.path.join(new_folder, 'job.sbatch')
-      with open(new_job_file, 'w') as file:
-        file.write(sbatch_data)
-      
-      try:
-        subprocess.check_output(["sbatch", f"{new_job_file}"])
-      except subprocess.CalledProcessError as e:
-        print(e.output)
-
-    elif self.sh_template is not None:
-      with open(self.sh_template, 'r') as file:
-        sh_data = file.read()
-      index_str = str(0)
-      for i in range(1, len(absorber_indices)):
-        index_str += separator + str(i)
-      sh_data = sh_data.replace('##ARRAY_INDS##', index_str)
-      sh_data = sh_data.replace('##DIRECTORY##', new_folder)
-      sh_data = sh_data.replace('##FEFF_DIR##', self.feff_location)
-      new_job_file = os.path.join(new_folder, 'feff_job.sh')
-      with open(new_job_file, 'w') as file:
-        file.write(sh_data)
-      time.sleep(10) # Wait for file to write
-      file_perms = os.stat(new_job_file).st_mode
-      os.chmod(new_job_file, file_perms | stat.S_IXUSR)
-      try:
-        subprocess.check_output(["nohup", 'feff_job.sh'], cwd = new_folder)
-      except subprocess.CalledProcessError as e:
-        print(e.output)
-
+    with open(self.sbatch_group_template if group else self.sbatch_template, 
+      'r') as file:
+      sbatch_data = file.read()
+    index_str = str(0)
+    for i in range(1, len(absorber_indices)):
+      index_str += separator + str(i)
+    job_name = int(time.time()) % 604800
+    sbatch_data = sbatch_data.replace('##ARRAY_INDS##', index_str)
+    sbatch_data = sbatch_data.replace('##DIRECTORY##', new_folder)
+    sbatch_data = sbatch_data.replace('##JOB_NAME##', str(job_name))
+    new_job_file = os.path.join(new_folder, 'job.sbatch')
+    with open(new_job_file, 'w') as file:
+      file.write(sbatch_data)
+    
+    try:
+      subprocess.check_output(["sbatch", f"{new_job_file}"])
+    except subprocess.CalledProcessError as e:
+      print(e.output)
+    
     self.folder = new_folder
     self.params = params
     self.inds = absorber_indices 
@@ -161,7 +151,7 @@ class EXAFS(BaseSimulation):
       finished = self.check_done()
       time.sleep(30)
 
-    chi_ks = np.zeros((self.N, 181))
+    chi_ks = np.zeros((self.N, self.outdim))
     for i in range(len(self.inds)):
       absorb_ind = self.inds[i]
       new_abs_folder = os.path.join(self.folder, str(i))
@@ -184,7 +174,7 @@ class EXAFS(BaseSimulation):
       except:
         raise ASOSimulationException(f"Could not parse {xmu_file}")
       
-      chi_ks[int(np.round(absorb_ind / 8))] = xmu.chi[60:]
+      chi_ks[int(np.round(absorb_ind / 8))] = xmu.mu
 
       if not self.save_sim:
         shutil.rmtree(new_abs_folder)
