@@ -18,7 +18,7 @@ class GaussianProcess(BaseModel):
     gp = SingleTaskGP(
       train_X = dataset.X,
       train_Y = dataset.Y,
-      input_transform=Normalize(d=dataset.num_atoms*3),
+      #input_transform=Normalize(d=dataset.num_atoms*3),
       outcome_transform=Standardize(m=1),
     )
     mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
