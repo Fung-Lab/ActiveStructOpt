@@ -18,7 +18,7 @@ class BOTorch(BaseOptimizer):
     bounds = torch.stack([torch.zeros(dataset.num_atoms * 3), 
       torch.ones(dataset.num_atoms * 3)]).to(torch.double)
     candidate, _ = self.optimize_acqf(model.acqf, bounds = bounds, q = 1, 
-      num_restarts = dataset.N, raw_samples = dataset.N
+      num_restarts = 10, raw_samples = 256
     )
     new_structure = dataset.structures[0].copy()
     for i in range(dataset.num_atoms):
