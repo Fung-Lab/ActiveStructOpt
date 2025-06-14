@@ -62,6 +62,13 @@ class Registry:
         return wrap
 
     @classmethod
+    def register_energy(cls, name):
+        def wrap(func):
+            cls.mapping["energy_name_mapping"][name] = func
+            return func
+        return wrap
+
+    @classmethod
     def register_model(cls, name):
         def wrap(func):
             cls.mapping["model_name_mapping"][name] = func
