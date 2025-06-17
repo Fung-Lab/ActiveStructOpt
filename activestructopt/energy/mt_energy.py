@@ -1,3 +1,4 @@
+from activestructopt.common.registry import registry
 from activestructopt.energy.base import BaseEnergy
 
 def hparams(radius = 6.0, max_num_neighbors = 120):
