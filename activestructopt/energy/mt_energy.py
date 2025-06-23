@@ -9,7 +9,8 @@ def denormalize(self, x, batch):
     dtype = batch.n_node.dtype)
   if self.atom_avg:
     x = x * n_nodes
-  return x + self.reference(batch.atomic_numbers, n_nodes)
+  return torch.sum((x + self.reference(batch.atomic_numbers, n_nodes)).reshape((
+    batch.n_node.shape[0], batch.n_node[0])), dim = 1)
 
 def normalize(self, x, batch, reference, online):
   """Normalize the energy prediction."""
@@ -48,7 +49,7 @@ class MTEnergy(BaseEnergy):
     import orb_models
     from orb_models.forcefield.pretrained import orb_v3_direct_inf_omat
     orb_models.forcefield.forcefield_heads.EnergyHead.denormalize = denormalize
-    orb_models.forcefield.forcefield_heads.EnergyHead.normalize = normalize
+    #orb_models.forcefield.forcefield_heads.EnergyHead.normalize = normalize
     orb_models.forcefield.direct_regressor.DirectForcefieldRegressor.forward = forward
     self.model = orb_models.forcefield.pretrained.orb_v3_direct_inf_omat(
       device = 'cuda:0')
