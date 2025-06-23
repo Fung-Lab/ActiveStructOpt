@@ -22,8 +22,9 @@ def normalize(self, x, batch, reference, online):
 class MTEnergy(BaseEnergy):
   def __init__(self):
     import orb_models
-    orb_models.forcefield.pretrained.orb_v3_direct_inf_omat.heads.energy.denormalize = denormalize
-    orb_models.forcefield.pretrained.orb_v3_direct_inf_omat.heads.energy.normalize = normalize
+    from orb_models.forcefield.pretrained import orb_v3_direct_inf_omat
+    orb_models.forcefield.forcefield_heads.EnergyHead.denormalize = denormalize
+    orb_models.forcefield.forcefield_heads.EnergyHead.normalize = normalize
     self.model = orb_models.forcefield.pretrained.orb_v3_direct_inf_omat(device = 'cuda:0')
 
   def get(self, batch):
