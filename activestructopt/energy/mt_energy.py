@@ -5,17 +5,19 @@ import torch
 def denormalize(self, x, batch):
     """Denormalize the energy prediction."""
     x = self.normalizer.inverse(x).squeeze(-1)
+    n_nodes = torch.ones(torch.sum(batch.n_node), device = x.device)
     if self.atom_avg:
-        x = x * torch.ones(torch.sum(batch.n_node), device = x.device)
-    return x + self.reference(batch.atomic_numbers, batch.n_node)
+        x = x * n_nodes
+    return x + self.reference(batch.atomic_numbers, n_nodes)
 
 def normalize(self, x, batch, reference, online):
     """Normalize the energy prediction."""
+    n_nodes = torch.ones(torch.sum(batch.n_node), device = x.device)
     if reference is None:
-        reference = self.reference(batch.atomic_numbers, batch.n_node)
+        reference = self.reference(batch.atomic_numbers, n_nodes)
     x = x - reference
     if self.atom_avg:
-        x = x / torch.ones(torch.sum(batch.n_node), device = x.device)
+        x = x / n_nodes
     return self.normalizer(x, online=online)
 
 @registry.register_dataset("MTEnergy")
