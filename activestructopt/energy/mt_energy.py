@@ -21,10 +21,10 @@ def normalize(self, x, batch, reference, online):
 @registry.register_dataset("MTEnergy")
 class MTEnergy(BaseEnergy):
   def __init__(self):
-    from orb_models.forcefield.pretrained import orb_v3_direct_inf_omat
-    orb_v3_direct_inf_omat.heads.energy.denormalize = denormalize
-    orb_v3_direct_inf_omat.heads.energy.normalize = normalize
-    self.model = orb_v3_direct_inf_omat(device = 'cuda:0')
+    import orb_models
+    orb_models.forcefield.pretrained.orb_v3_direct_inf_omat.heads.energy.denormalize = denormalize
+    orb_models.forcefield.pretrained.orb_v3_direct_inf_omat.heads.energy.normalize = normalize
+    self.model = orb_models.forcefield.pretrained.orb_v3_direct_inf_omat(device = 'cuda:0')
 
   def get(self, batch):
     return self.model.forward(batch)['energy']
