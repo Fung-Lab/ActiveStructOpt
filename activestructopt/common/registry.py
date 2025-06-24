@@ -27,7 +27,7 @@ def setup_imports():
     project_root = root_folder.parent.resolve().absolute()
 
     import_keys = ["sampler", "dataset", "model", "objective", "optimizer", 
-        "simulation"]
+        "simulation", "energy"]
     for key in import_keys:
         dir_list = (project_root / "activestructopt" / key).rglob("*.py")
         for f in dir_list:
