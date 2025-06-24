@@ -103,6 +103,10 @@ class ActiveLearning():
     self.error = None
     self.model_params_file = 'None'
 
+    energy_model_cls = registry.get_model_class(
+      self.config['aso_params']['energy']['name'])
+    self.energy_model = energy_model_cls()
+
     if save_progress_dir is not None and save_initialization:
       if self.verbosity == 0 or self.verbosity == 0.5:
         self.save(os.path.join(save_progress_dir, str(self.index) + "_0.json"))
@@ -277,7 +281,7 @@ class ActiveLearning():
       self.config['aso_params']['optimizer']['name'])
 
     new_structure, obj_values = optimizer_cls().run(self.model, 
-      self.dataset, objective, self.sampler, 
+      self.dataset, objective, self.sampler, self.energy_model,
       **(self.config['aso_params']['optimizer']['args']), **(opt_profile))
     self.opt_obj_values.append(obj_values)
 
@@ -401,7 +405,7 @@ class ActiveLearning():
     opt_profile = self.config['aso_params']['optimizer']['opt_profiles'][0]
     
     new_structure, obj_values = optimizer_cls().run(self.model, 
-      self.dataset, objective, self.sampler, 
+      self.dataset, objective, self.sampler, self.energy_model,
       **(self.config['aso_params']['optimizer']['args']), **(opt_profile))
     self.opt_obj_values.append(obj_values)
     

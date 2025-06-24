@@ -1,6 +1,7 @@
 mt_config = {
  'dataset': {'preprocess_params': {'output_dim': 0,},},
  'aso_params': {'max_forward_calls': 100,
+  'energy': {'name': 'MTEnergy'},
   'sampler': {'name': 'Perturbation', 'args': {'perturbrmin': 0.1, 
    'perturbrmax': 1.0, 
    'perturblmax': 0.0, 
@@ -21,7 +22,8 @@ mt_config = {
     'cell_lr': 0.001, 
     'optimize_atoms': True,
     'optimize_lattice': False, 
-    'save_obj_values': True}, 
+    'save_obj_values': True,
+    'energy_scale': 0.0}, 
    'switch_opt_profiles': [20],
    'opt_profiles': [{'starts': 128, 'iters_per_start': 100,}, 
     {'starts': 1024, 'iters_per_start': 1000,}],

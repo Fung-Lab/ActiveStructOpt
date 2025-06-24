@@ -4,6 +4,7 @@ from activestructopt.dataset.base import BaseDataset
 from activestructopt.objective.base import BaseObjective
 from activestructopt.optimizer.base import BaseOptimizer
 from activestructopt.sampler.base import BaseSampler
+from activestructopt.energy.base import BaseEnergy
 from activestructopt.common.registry import registry
 from pymatgen.core.structure import IStructure
 from pymatgen.core import Lattice
@@ -16,11 +17,11 @@ class TorchMT(BaseOptimizer):
     pass
 
   def run(self, model: BaseModel, dataset: BaseDataset, 
-    objective: BaseObjective, sampler: BaseSampler, 
+    objective: BaseObjective, sampler: BaseSampler, energy_model: BaseEnergy,
     starts = 128, iters_per_start = 100, optimizer = "Adam",
     optimizer_args = {}, optimize_atoms = True, 
     optimize_lattice = False, save_obj_values = False, 
-    constraint_scale = 1.0, pos_lr = 0.001, cell_lr = 0.001,
+    constraint_scale = 1.0, energy_scale = 0.0, pos_lr = 0.001, cell_lr = 0.001,
     constraint_buffer = 0.85, random_starts = False, 
     save_only_constrained_structures = False,
     **kwargs) -> IStructure:
@@ -104,9 +105,13 @@ class TorchMT(BaseOptimizer):
 
             #print("repulsions calculated")
 
+            energies = energy_model.get(batch_data)
+
+            #print("energies calculated")
+
             for j in range(stopi - starti + 1):
-              objs[j] += constraint_scale * lj_repuls[j]
-              obj_total += constraint_scale * lj_repuls[j]
+              objs[j] += constraint_scale * lj_repuls[j] + energy_scale * energies[j]
+              obj_total += constraint_scale * lj_repuls[j] + energy_scale * energies[j]
               objs[j] = objs[j].detach()
               lj_repulsions[j] = lj_repuls[j]
               if save_obj_values:
