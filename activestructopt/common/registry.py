@@ -113,6 +113,10 @@ class Registry:
         return cls.get_class(name, "model_name_mapping")
 
     @classmethod
+    def get_energy_class(cls, name):
+        return cls.get_class(name, "energy_name_mapping")
+
+    @classmethod
     def get_optimizer_class(cls, name):
         return cls.get_class(name, "optimizer_name_mapping")
 

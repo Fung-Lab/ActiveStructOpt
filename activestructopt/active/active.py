@@ -103,7 +103,7 @@ class ActiveLearning():
     self.error = None
     self.model_params_file = 'None'
 
-    energy_model_cls = registry.get_model_class(
+    energy_model_cls = registry.get_energy_class(
       self.config['aso_params']['energy']['name'])
     self.energy_model = energy_model_cls()
 
