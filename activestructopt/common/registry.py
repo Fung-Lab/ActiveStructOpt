@@ -45,6 +45,7 @@ class Registry:
         "optimizer_name_mapping": {},
         "objective_name_mapping": {},
         "simulation_name_mapping": {},
+        "energy_name_mapping": {},
     }
 
     @classmethod
