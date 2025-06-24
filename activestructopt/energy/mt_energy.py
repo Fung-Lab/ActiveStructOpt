@@ -12,7 +12,7 @@ def denormalize(self, x, batch):
   return torch.sum((x + self.reference(batch.atomic_numbers, n_nodes)).reshape((
     batch.n_node.shape[0], batch.n_node[0])), dim = 1)
 
-@registry.register_dataset("MTEnergy")
+@registry.register_energy("MTEnergy")
 class MTEnergy(BaseEnergy):
   def __init__(self):
     import orb_models
