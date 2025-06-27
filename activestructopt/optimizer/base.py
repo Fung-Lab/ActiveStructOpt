@@ -10,6 +10,6 @@ class BaseOptimizer(ABC):
     pass
 
   @abstractmethod
-  def run(self, model: BaseModel, dataset: BaseDataset, 
+  def run(self, model: list[BaseModel], dataset: BaseDataset, 
     objective: BaseObjective, sampler: BaseSampler, **kwargs):
     pass

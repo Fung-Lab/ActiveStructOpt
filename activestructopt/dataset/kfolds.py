@@ -26,40 +26,45 @@ class KFoldsDataset(BaseDataset):
       self.structures = [initial_structure.copy(
         ) if i == 0 else sampler.sample() for i in range(N)]
       
-      
-
-      y_promises = [copy.deepcopy(simulations[j]) for _ in self.structures]
-      if not call_sequential:
-        for i, s in enumerate(self.structures):
-          y_promises[i].get(s, group = True, separator = ' ')
-      self.ys = [None for _ in y_promises]
-      self.mismatches = [np.NaN for _ in y_promises]
+      self.ys = [[None for _ in range(N)] for _ in range(len(self.simfuncs))]
       
       sim_calls = 0
-      while any(y is None for y in self.ys):
+
+      y_promises = [[copy.deepcopy(simulations[j]
+        ) for _ in self.structures] for j in range(len(self.simfuncs))]
+      if not call_sequential:
+        for i, s in enumerate(self.structures):
+          for j in range(len(self.simfuncs)):
+            y_promises[j][i].get(s, group = True, separator = ' ')
+      self.mismatches = [[np.NaN for _ in y_promises] for _ in range(
+        len(self.simfuncs))]
+
+      while any(None in y for y in self.ys):
         sim_calls += 1
         for i in range(len(self.structures)):
-          if self.ys[i] is None:
+          if None in [self.ys[j][i] for j in range(len(self.simfuncs))]:
             try:
-              if call_sequential:
-                y_promises[i].get(self.structures[i])
-              self.ys[i] = y_promises[i].resolve()
-              self.mismatches[i] = y_promises[i].get_mismatch(self.ys[i], targets[j])
-              if self.mismatches[i] <= np.nanmin(self.mismatches):
-                for j in range(len(self.structures)):
-                  if (self.ys[j] is not None) and i != j:
-                    y_promises[j].garbage_collect(False)
-              else:
-                y_promises[i].garbage_collect(False)
+              for j in range(len(self.simfuncs)):
+                if call_sequential:
+                  y_promises[j][i].get(self.structures[i])
+                self.ys[j][i] = y_promises[j][i].resolve()
+                self.mismatches[j][i] = y_promises[j][i].get_mismatch(self.ys[j][i], targets[j])
+                if self.mismatches[j][i] <= np.nanmin(self.mismatches[j]):
+                  for k in range(len(self.structures)):
+                    if (self.ys[j][k] is not None) and i != k:
+                      y_promises[j][k].garbage_collect(False)
+                else:
+                  y_promises[j][i].garbage_collect(False)
             except ASOSimulationException:
-              y_promises[i].garbage_collect(False)
               if sim_calls <= max_sim_calls:
                 # resample and try again
                 self.structures[i] = sampler.sample()
-                y_promises[i] = copy.deepcopy(simulations[j])
-                if not call_sequential:
-                  y_promises[i].get(self.structures[i], group = True, 
-                    separator = ' ')
+                for j in range(len(self.simfuncs)):
+                  y_promises[j][i].garbage_collect(False)
+                  y_promises[j][i] = copy.deepcopy(simulations[j])
+                  if not call_sequential:
+                    y_promises[j][i].get(self.structures[i], group = True, 
+                      separator = ' ')
 
       structure_indices = np.random.permutation(np.arange(1, N))
       trainval_indices = structure_indices[:int(np.round(split * N) - 1)]
@@ -79,24 +84,28 @@ class KFoldsDataset(BaseDataset):
       self.mismatches = progress_dict['mismatches']
 
   def update(self, new_structure: IStructure):
-    y_promise = self.simfunc
-    y_promise.get(new_structure)
-    try:
-      y = y_promise.resolve()
-    except ASOSimulationException:
-      y_promise.garbage_collect(False)
-      raise ASOSimulationException
-    self.structures.append(new_structure)
-    new_mismatch = self.simfunc.get_mismatch(y, self.target)
-    y_promise.garbage_collect(new_mismatch <= min(self.mismatches))
+    for j in range(len(self.simfuncs)):
+      y_promise = copy.deepcopy(self.simfuncs[j])
+      y_promise.get(new_structure)
+      try:
+        y = y_promise.resolve()
+      except ASOSimulationException:
+        y_promise.garbage_collect(False)
+        raise ASOSimulationException
+      
+      new_mismatch = self.simfunc.get_mismatch(y, self.targets[j])
+      y_promise.garbage_collect(new_mismatch <= min(self.mismatches[j]))
+      self.ys[j].append(y)
+      self.mismatches[j].append(new_mismatch)
+
     fold = self.k - 1
     for i in range(self.k - 1):
       if len(self.kfolds[i]) < len(self.kfolds[i + 1]):
         fold = i
         break
+
+    self.structures.append(new_structure)
     self.kfolds[fold].append(len(self.structures) - 1)
-    self.ys.append(y)
-    self.mismatches.append(new_mismatch)
     self.N += 1
 
   def toJSONDict(self, save_structures = True):
@@ -105,7 +114,7 @@ class KFoldsDataset(BaseDataset):
       'N': self.N,
       'structures': [s.as_dict() for s in self.structures] if (
         save_structures) else self.structures[np.argmin(self.mismatches)].as_dict(),
-      'ys': [y.tolist() for y in self.ys],
+      'ys': [[y.tolist() for y in self.ys[i]] for i in range(len(self.ys))],
       'kfolds': self.kfolds,
       'test_indices': [t.tolist() for t in self.test_indices],
       'mismatches': self.mismatches

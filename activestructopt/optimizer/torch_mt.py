@@ -15,7 +15,7 @@ class TorchMT(BaseOptimizer):
   def __init__(self) -> None:
     pass
 
-  def run(self, model: BaseModel, dataset: BaseDataset, 
+  def run(self, models: list[BaseModel], dataset: BaseDataset, 
     objective: BaseObjective, sampler: BaseSampler, 
     starts = 128, iters_per_start = 100, optimizer = "Adam",
     optimizer_args = {}, optimize_atoms = True, 
@@ -33,7 +33,7 @@ class TorchMT(BaseOptimizer):
     obj_values = torch.zeros((iters_per_start, starts), device = 'cpu'
       ) if save_obj_values else None
     
-    device = model.device
+    device = models[0].device
     nstarts = len(starting_structures)
     natoms = len(starting_structures[0])
     ljrmins = torch.tensor(lj_rmins, device = device) * constraint_buffer
@@ -42,11 +42,11 @@ class TorchMT(BaseOptimizer):
       best_x = torch.zeros(3 * natoms, device = device)
     if optimize_lattice:
       best_cell = torch.zeros((3, 3), device = device)
-    target = torch.tensor(dataset.target, device = device)
+    targets = torch.tensor(dataset.targets, device = device)
 
     data_pos = [torch.Tensor([site.coords.tolist() for site in struct.sites]
-      ).to(model.device) for struct in starting_structures]
-    data_cell = [torch.Tensor(struct.lattice.matrix.tolist()).to(model.device
+      ).to(device) for struct in starting_structures]
+    data_cell = [torch.Tensor(struct.lattice.matrix.tolist()).to(device
       ) for struct in starting_structures]
     
     to_optimize = []
@@ -83,19 +83,19 @@ class TorchMT(BaseOptimizer):
 
             #print("required grads")
 
-            batch_data = model.batch_pos_cell(
+            batch_data = models[0].batch_pos_cell(
               data_pos[starti:(stopi+1)], data_cell[starti:(stopi+1)], 
               starting_structures[0])
 
             #print("batched data")
             
-            predictions = model.predict(batch_data, prepared = True, 
-              mask = dataset.simfunc.mask)
+            predictions = torch.stack([models[m].predict(batch_data, prepared = True, 
+              mask = dataset.simfuncs[m].mask) for m in range(len(models))])
 
             #print("predicted")
 
-            objs, obj_total = objective.get(predictions, target, 
-              device = device, N = stopi - starti + 1)
+            objs, obj_total = objective.get(predictions, targets, 
+              device = device, N = stopi - starti + 1, M = len(models))
 
             #print("objective obtained")
 

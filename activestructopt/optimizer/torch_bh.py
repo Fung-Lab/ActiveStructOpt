@@ -17,7 +17,7 @@ class TorchBH(BaseOptimizer):
   def __init__(self) -> None:
     pass
 
-  def run(self, model: BaseModel, dataset: BaseDataset, 
+  def run(self, model: list[BaseModel], dataset: BaseDataset, 
     objective: BaseObjective, sampler: BaseSampler, 
     hops = 128, iters_per_hops = 100, optimizer = "Adam",
     optimizer_args = {}, optimize_atoms = True, 

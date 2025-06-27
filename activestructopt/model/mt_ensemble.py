@@ -105,14 +105,16 @@ class MTEnsemble(BaseModel):
     self.device = 'cpu'
     self.updates = 0
     self.hp = None
+    self.sim_index = None
   
-  def train(self, dataset: KFoldsDataset, iterations = 250, lr = 0.001, 
+  def train(self, dataset: KFoldsDataset, sim_index, iterations = 250, lr = 0.001, 
     from_scratch = False, transfer = 1.0, prev_params = None, radius = 10.0, 
     max_num_neighbors = 250, **kwargs):
     import mattertune as mt
     from mattertune import MatterTuner
 
     batch_size = 64
+    self.sim_index = sim_index
 
     trainval_indices = np.setxor1d(np.arange(len(dataset.structures)), 
         dataset.test_indices)
@@ -127,7 +129,7 @@ class MTEnsemble(BaseModel):
             ) for s in dataset.structures[j].sites]),
           cell = np.array(dataset.structures[j].lattice.matrix.tolist()),
           pbc = True,
-          info = {'spectra': dataset.ys[j]},
+          info = {'spectra': dataset.ys[sim_index][j]},
       ) for j in np.setxor1d(trainval_indices, dataset.kfolds[i])]
 
       val_set = [Atoms(
@@ -136,17 +138,17 @@ class MTEnsemble(BaseModel):
             ) for s in dataset.structures[j].sites]),
           cell = np.array(dataset.structures[j].lattice.matrix.tolist()),
           pbc = True,
-          info = {'spectra': dataset.ys[j]},
+          info = {'spectra': dataset.ys[sim_index][j]},
       ) for j in dataset.kfolds[i]]
 
       train_split = len(atoms_dataset) / (len(atoms_dataset) + len(val_set))
       atoms_dataset.extend(val_set)
 
       mt_dataset = mt.configs.AutoSplitDataModuleConfig(
-          dataset = mt.configs.AtomsListDatasetConfig(atoms_list=atoms_dataset),
+          dataset = mt.configs.AtomsListDatasetConfig(atoms_list = atoms_dataset),
           train_split = train_split,
           batch_size = batch_size,
-          shuffle=False,
+          shuffle = False,
       )
 
       self.hp = hparams(mt_dataset, iterations, 
@@ -292,15 +294,15 @@ class MTEnsemble(BaseModel):
     
     test_data = self.batch_structures(
       [dataset.structures[i] for i in dataset.test_indices])
-    test_targets = [dataset.ys[i] for i in dataset.test_indices]
+    test_targets = [dataset.ys[self.sim_index][i] for i in dataset.test_indices]
 
     with torch.inference_mode():
       test_res = self.predict(test_data, prepared = True, 
-        mask = dataset.simfunc.mask)
+        mask = dataset.simfuncs[self.sim_index].mask)
     aes = []
     zscores = []
     for i in range(len(test_targets)):
-      target = np.mean(test_targets[i][np.array(dataset.simfunc.mask)], 
+      target = np.mean(test_targets[i][np.array(dataset.simfuncs[self.sim_index].mask)], 
         axis = 0)
       for j in range(len(target)):
         zscores.append((

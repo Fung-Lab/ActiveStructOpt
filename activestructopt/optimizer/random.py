@@ -11,7 +11,7 @@ class Random(BaseOptimizer):
   def __init__(self) -> None:
     pass
 
-  def run(self, model: BaseModel, dataset: BaseDataset, 
+  def run(self, model: list[BaseModel], dataset: BaseDataset, 
     objective: BaseObjective, sampler: BaseSampler, require_unique = False,
     **kwargs) -> IStructure:
     new_structure = sampler.sample()

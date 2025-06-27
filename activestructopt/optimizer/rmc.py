@@ -14,7 +14,7 @@ class RMC(BaseOptimizer):
   def __init__(self) -> None:
     pass
 
-  def run(self, model: BaseModel, dataset: BaseDataset, 
+  def run(self, model: list[BaseModel], dataset: BaseDataset, 
     objective: BaseObjective, sampler: BaseSampler, 
     steps = 10000, σ = 0.0025, latticeprob = 0.5, 
     σr = 0.1, σl = 0.1, σθ = 0.1, 

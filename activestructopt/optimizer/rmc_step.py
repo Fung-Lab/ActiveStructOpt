@@ -12,7 +12,7 @@ class RMCStep(BaseOptimizer):
   def __init__(self) -> None:
     pass
 
-  def run(self, model: BaseModel, dataset: RMCList, 
+  def run(self, model: list[BaseModel], dataset: RMCList, 
     objective: BaseObjective, sampler: BaseSampler, **kwargs) -> IStructure:
     sampler.initial_structure = dataset.curr_structure
     return sampler.sample(), None
