@@ -8,25 +8,27 @@ import copy
 
 @registry.register_dataset("KFoldsDataset")
 class KFoldsDataset(BaseDataset):
-  def __init__(self, simulation: BaseSimulation, sampler: BaseSampler, 
-    initial_structure: IStructure, target, config, N = 100, split = 0.85, 
+  def __init__(self, simulations: list[BaseSimulation], sampler: BaseSampler, 
+    initial_structure: IStructure, targets, config, N = 100, split = 0.85, 
     k = 5, seed = 0, progress_dict = None, max_sim_calls = 5, 
     call_sequential = False,
     **kwargs) -> None:
     np.random.seed(seed)
     self.config = config
-    self.target = target
+    self.targets = targets
     self.initial_structure = initial_structure
     self.start_N = N
     self.N = N
     self.k = k
-    self.simfunc = simulation
+    self.simfuncs = simulations
 
     if progress_dict is None:
       self.structures = [initial_structure.copy(
         ) if i == 0 else sampler.sample() for i in range(N)]
       
-      y_promises = [copy.deepcopy(simulation) for _ in self.structures]
+      
+
+      y_promises = [copy.deepcopy(simulations[j]) for _ in self.structures]
       if not call_sequential:
         for i, s in enumerate(self.structures):
           y_promises[i].get(s, group = True, separator = ' ')
@@ -42,7 +44,7 @@ class KFoldsDataset(BaseDataset):
               if call_sequential:
                 y_promises[i].get(self.structures[i])
               self.ys[i] = y_promises[i].resolve()
-              self.mismatches[i] = simulation.get_mismatch(self.ys[i], target)
+              self.mismatches[i] = y_promises[i].get_mismatch(self.ys[i], targets[j])
               if self.mismatches[i] <= np.nanmin(self.mismatches):
                 for j in range(len(self.structures)):
                   if (self.ys[j] is not None) and i != j:
@@ -54,7 +56,7 @@ class KFoldsDataset(BaseDataset):
               if sim_calls <= max_sim_calls:
                 # resample and try again
                 self.structures[i] = sampler.sample()
-                y_promises[i] = copy.deepcopy(simulation)
+                y_promises[i] = copy.deepcopy(simulations[j])
                 if not call_sequential:
                   y_promises[i].get(self.structures[i], group = True, 
                     separator = ' ')

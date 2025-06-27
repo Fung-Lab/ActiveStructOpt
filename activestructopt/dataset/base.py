@@ -5,8 +5,8 @@ from activestructopt.sampler.base import BaseSampler
 
 class BaseDataset(ABC):
   @abstractmethod
-  def __init__(self, simulation: BaseSimulation, sampler: BaseSampler, 
-    initial_structure: IStructure, target, config, **kwargs):
+  def __init__(self, simulation: list[BaseSimulation], sampler: BaseSampler, 
+    initial_structure: IStructure, targets, config, **kwargs):
     pass
 
   @abstractmethod

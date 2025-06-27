@@ -8,7 +8,7 @@ import copy
 
 @registry.register_dataset("RMCList")
 class RMCList(BaseDataset):
-  def __init__(self, simulation: BaseSimulation, sampler: BaseSampler, 
+  def __init__(self, simulation: list[BaseSimulation], sampler: BaseSampler, 
     initial_structure: IStructure, target, config, seed = 0, σ = 0.0025, 
     **kwargs) -> None:
     np.random.seed(seed)

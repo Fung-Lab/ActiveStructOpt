@@ -13,7 +13,7 @@ import os
 import gc
 
 class ActiveLearning():
-  def __init__(self, simfunc, target, initial_structure, index = -1, 
+  def __init__(self, simfuncs, targets, initial_structure, index = -1, 
     config = None, target_structure = None, progress_file = None, 
     model_params_file = None, verbosity = 2, save_structures = True,
     save_progress_dir = None, save_initialization = False, 
@@ -21,14 +21,14 @@ class ActiveLearning():
 
     setup_imports()
 
-    self.simfunc = simfunc
+    self.simfuncs = simfuncs
     self.index = index
     self.verbosity = verbosity
 
     self.last_prog_file = progress_file
-    self.model_params = None
-    self.model_errs = []
-    self.model_metrics = []
+    self.model_params = [None for _ in len(simfuncs)]
+    self.model_errs = [[] for _ in len(simfuncs)]
+    self.model_metrics = [[] for _ in len(simfuncs)]
     self.opt_obj_values = []
     self.new_structure_predictions = []
     self.target_structure = target_structure
@@ -40,24 +40,25 @@ class ActiveLearning():
       if progress_file.split(".")[-1] == 'pkl':
         with open(progress_file, 'rb') as f:
           progress = load(f)
-        self.config = progress['config']
+        self.configs = progress['configs']
         self.dataset = progress['dataset']
         self.model_params = progress['model_params']
         self.iteration = progress['dataset'].N - progress['dataset'].start_N - 1
       elif progress_file.split(".")[-1] == 'json':
         with open(progress_file, 'rb') as f:
           progress_dict = json.load(f)
-          self.config = progress_dict['config'] if not override_config else simfunc.setup_config(config)
+          self.configs = progress_dict['configs'] if not override_config else [
+            simfunc.setup_config(config) for simfunc in simfuncs]
           sampler_cls = registry.get_sampler_class(
             self.config['aso_params']['sampler']['name'])
           self.sampler = sampler_cls(initial_structure, 
-            **(self.config['aso_params']['sampler']['args']))
+            **(self.configs[0]['aso_params']['sampler']['args']))
           dataset_cls = registry.get_dataset_class(
-            self.config['aso_params']['dataset']['name'])
-          self.dataset = dataset_cls(simfunc, self.sampler, initial_structure, 
-            target, self.config['dataset'], 
+            self.configs[0]['aso_params']['dataset']['name'])
+          self.dataset = dataset_cls(simfuncs, self.sampler, initial_structure, 
+            targets, self.configs[0]['dataset'], 
             progress_dict = progress_dict['dataset'], **(
-            self.config['aso_params']['dataset']['args']))
+            self.configs[0]['aso_params']['dataset']['args']))
           if model_params_file is not None:
             with open(progress_file, 'rb') as f2:
               model_params_dict = json.load(f2)
@@ -79,25 +80,25 @@ class ActiveLearning():
 
     else:
       self.iteration = 0
-      self.config = simfunc.setup_config(config)
+      self.configs = [simfunc.setup_config(config) for simfunc in simfuncs]
       sampler_cls = registry.get_sampler_class(
-        self.config['aso_params']['sampler']['name'])
+        self.configs[0]['aso_params']['sampler']['name'])
       self.sampler = sampler_cls(initial_structure, 
-        **(self.config['aso_params']['sampler']['args']))
+        **(self.configs[0]['aso_params']['sampler']['args']))
       dataset_cls = registry.get_dataset_class(
-        self.config['aso_params']['dataset']['name'])
-      self.dataset = dataset_cls(simfunc, self.sampler, initial_structure, 
-        target, self.config['dataset'], **(
-        self.config['aso_params']['dataset']['args']))
+        self.configs[0]['aso_params']['dataset']['name'])
+      self.dataset = dataset_cls(simfuncs, self.sampler, initial_structure, 
+        targets, self.configs[0]['dataset'], **(
+        self.configs[0]['aso_params']['dataset']['args']))
 
     model_cls = registry.get_model_class(
-      self.config['aso_params']['model']['name'])
-    if self.config['aso_params']['model']['name'] == "GroundTruth":
-      self.model = model_cls(self.config, self.simfunc,
-        **(self.config['aso_params']['model']['args']))
-    else:
-      self.model = model_cls(self.config, 
-        **(self.config['aso_params']['model']['args']))
+      self.configs[0]['aso_params']['model']['name'])
+
+    self.models = [model_cls(self.configs[i], self.simfuncs[i],
+          **(self.configs[i]['aso_params']['model']['args'])
+          ) if self.config['aso_params']['model']['name'
+          ] == "GroundTruth" else model_cls(self.configs[i], 
+          **(self.configs[i]['aso_params']['model']['args']))]
 
     self.traceback = None
     self.error = None
@@ -124,7 +125,7 @@ class ActiveLearning():
         print(self.dataset.mismatches)
 
       for i in range(len(self.dataset.mismatches), 
-        self.config['aso_params']['max_forward_calls']):
+        self.configs[0]['aso_params']['max_forward_calls']):
         
         if self.model_params_file == 'None' or int(
           self.model_params_file.split('.')[0].split('_')[-1]) < len(
@@ -161,12 +162,11 @@ class ActiveLearning():
               raise ASOSimulationException("Max sim calls exceeded")
 
 
-        if new_structure_predict:
-          with torch.inference_mode():
-
-            self.new_structure_predictions.append(self.model.predict(
-              new_structure, 
-              mask = self.dataset.simfunc.mask).cpu().numpy())
+        #if new_structure_predict:
+          #with torch.inference_mode():
+          #  self.new_structure_predictions.append(self.model.predict(
+          #    new_structure, 
+          #    mask = self.dataset.simfunc.mask).cpu().numpy())
 
         if print_mismatches:
           print(self.dataset.mismatches[-1])
@@ -249,36 +249,38 @@ class ActiveLearning():
           self.config['aso_params']['model']['switch_profiles']), 
           -(self.config['aso_params']['max_forward_calls'] - stepi))]
       
-      model_err, metrics, self.model_params = self.model.train(
-        self.dataset, **(train_profile))
-      self.model_errs.append(model_err)
-      self.model_metrics.append(metrics)
+      for i in range(len(self.models)):
+        model_err, metrics, model_params = self.model.train(
+          self.dataset, i, **(train_profile))
+        self.model_params[i] = model_params
+        self.model_errs[i].append(model_err)
+        self.model_metrics[i].append(metrics)
 
-      if not (self.target_structure is None) and predict_target:
-        with torch.inference_mode():
-          self.target_predictions.append(self.model.predict(
-            self.target_structure, 
-            mask = self.dataset.simfunc.mask).cpu().numpy())
+      #if not (self.target_structure is None) and predict_target:
+      #  with torch.inference_mode():
+      #    self.target_predictions.append(self.model.predict(
+      #      self.target_structure, 
+      #      mask = self.dataset.simfunc.mask).cpu().numpy())
 
-    acq_profile = self.config['aso_params']['optimizer']['acq_profiles'][
+    acq_profile = self.configs[0]['aso_params']['optimizer']['acq_profiles'][
         np.searchsorted(-np.array(
-          self.config['aso_params']['optimizer']['switch_acq_profiles']), 
-          -(self.config['aso_params']['max_forward_calls'] - stepi))]
+          self.configs[0]['aso_params']['optimizer']['switch_acq_profiles']), 
+          -(self.configs[0]['aso_params']['max_forward_calls'] - stepi))]
 
-    opt_profile = self.config['aso_params']['optimizer']['opt_profiles'][
+    opt_profile = self.configs[0]['aso_params']['optimizer']['opt_profiles'][
         np.searchsorted(-np.array(
-          self.config['aso_params']['optimizer']['switch_opt_profiles']), 
-          -(self.config['aso_params']['max_forward_calls'] - stepi))]
+          self.configs[0]['aso_params']['optimizer']['switch_opt_profiles']), 
+          -(self.configs[0]['aso_params']['max_forward_calls'] - stepi))]
 
     objective_cls = registry.get_objective_class(acq_profile['name'])
     objective = objective_cls(**(acq_profile['args']), )
 
     optimizer_cls = registry.get_optimizer_class(
-      self.config['aso_params']['optimizer']['name'])
+      self.configs[0]['aso_params']['optimizer']['name'])
 
-    new_structure, obj_values = optimizer_cls().run(self.model, 
+    new_structure, obj_values = optimizer_cls().run(self.models, 
       self.dataset, objective, self.sampler, 
-      **(self.config['aso_params']['optimizer']['args']), **(opt_profile))
+      **(self.configs[0]['aso_params']['optimizer']['args']), **(opt_profile))
     self.opt_obj_values.append(obj_values)
 
     if not (save_file is None):
@@ -287,11 +289,14 @@ class ActiveLearning():
         self.dataset.structures)) + '.' + split_save_file[1]
       model_params = []
       for i in range(len(self.model_params)):
-        model_dict = {}
-        state_dict = self.model_params[i]
-        for param_tensor in state_dict:
-          model_dict[param_tensor] = state_dict[param_tensor].detach().cpu(
-            ).tolist()
+        ind_model_params = []
+        for j in range(len(self.model_params[i])):
+          model_dict = {}
+          state_dict = self.model_params[i][j]
+          for param_tensor in state_dict:
+            model_dict[param_tensor] = state_dict[param_tensor].detach().cpu(
+              ).tolist()
+          ind_model_params.append(model_dict)
         model_params.append(model_dict)
       res = {'index': self.index,
             'structure': new_structure.as_dict(),
