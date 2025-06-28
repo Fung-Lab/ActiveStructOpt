@@ -110,8 +110,8 @@ class XANES(BaseSimulation):
         pot = fp.read()
       with open(params_loc) as fp:
         tags = fp.read()
-        tags.replace('e_grid#', 'e_grid')
-        tags.replace('e_grid##', 'e_grid')
+        tags.replace(b'e_grid#', b'e_grid')
+        tags.replace(b'e_grid##', b'e_grid')
       with open (os.path.join(new_abs_folder, 'feff.inp'), 'w') as fp:
         fp.write(tags + '\n' + pot + '\n' + atoms)
       os.remove(atoms_loc)
