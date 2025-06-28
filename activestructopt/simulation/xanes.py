@@ -34,8 +34,8 @@ class XANES(BaseSimulation):
 
     egrid_settings = {'EGRID': '', 
         'e_grid': f'{pre_edge_min} {pre_edge_max} {pre_edge_step}', 
-        'e_grid#': f'last {edge_max} {edge_step}', 
-        'e_grid##': f'last {post_edge_max} {post_edge_step}',}
+        'e_grid1': f'last {edge_max} {edge_step}', 
+        'e_grid2': f'last {post_edge_max} {post_edge_step}',}
     self.additional_settings.update(egrid_settings)
     self.outdim = len(np.arange(pre_edge_min, pre_edge_max, pre_edge_step)
         ) + len(np.arange(pre_edge_max, edge_max, edge_step)
@@ -110,8 +110,8 @@ class XANES(BaseSimulation):
         pot = fp.read()
       with open(params_loc) as fp:
         tags = fp.read()
-        tags.replace(b'e_grid#', b'e_grid')
-        tags.replace(b'e_grid##', b'e_grid')
+      tags.replace('e_grid1', 'e_grid')
+      tags.replace('e_grid2', 'e_grid')
       with open (os.path.join(new_abs_folder, 'feff.inp'), 'w') as fp:
         fp.write(tags + '\n' + pot + '\n' + atoms)
       os.remove(atoms_loc)
