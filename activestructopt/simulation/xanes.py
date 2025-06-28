@@ -31,14 +31,18 @@ class XANES(BaseSimulation):
     self.edge = edge
     self.radius = radius
     self.additional_settings = additional_settings
+
+    energies = np.concatenate((np.arange(pre_edge_min, pre_edge_max, 
+      pre_edge_step), np.arange(pre_edge_max, edge_max, edge_step), np.arange(
+      edge_max, post_edge_max, post_edge_step)))
+
     egrid_settings = {'EGRID': '', 
-        'e_grid': f'{pre_edge_min} {pre_edge_max} {pre_edge_step}', 
-        'e_grid': f'last {edge_max} {edge_step}', 
-        'e_grid': f'last {post_edge_max} {post_edge_step}',}
+        'user_grid': ''}
+    for e in energies:
+      egrid_settings[str(e)] = ''
+
     self.additional_settings.update(egrid_settings)
-    self.outdim = len(np.arange(pre_edge_min, pre_edge_max, pre_edge_step)
-        ) + len(np.arange(pre_edge_max, edge_max, edge_step)
-        ) + len(np.arange(edge_max, post_edge_max, post_edge_step)) + 1
+    self.outdim = len(energies)
     self.mask = [x.symbol == self.absorber 
       for x in initial_structure.species]
     self.N = len(self.mask)
