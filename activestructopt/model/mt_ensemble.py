@@ -24,7 +24,7 @@ def torch_cell_to_cellpar(cell):
             cellpar[3+i] = 90.0
     return cellpar
 
-def hparams(data, num_epochs, out_dim, start_lr = 0.001, radius = 10.0, 
+def hparams(data, num_epochs, out_dim, mask, start_lr = 0.001, radius = 10.0, 
   max_num_neighbors = 250):
   import mattertune.configs as MC
   import mattertune as mt
@@ -62,7 +62,8 @@ def hparams(data, num_epochs, out_dim, start_lr = 0.001, radius = 10.0,
 
   hparams.model.properties = []
   spectra = MC.AtomInvariantVectorPropertyConfig(name = 'spectra', 
-    dtype = 'float', size = out_dim, loss = MC.MAELossConfig(),
+    dtype = 'float', size = out_dim, loss = MC.MAEMaskedLossConfig(
+      mask = torch.tensor(mask, dtype = torch.bool)),
     additional_head_settings = {'num_layers': 1, 'hidden_channels': 256})
   hparams.model.properties.append(spectra)
 
@@ -152,7 +153,8 @@ class MTEnsemble(BaseModel):
       )
 
       self.hp = hparams(mt_dataset, iterations, 
-        self.config['dataset']['preprocess_params']['output_dim'], lr, 
+        self.config['dataset']['preprocess_params']['output_dim'], 
+        dataset.simfuncs[sim_index].mask, lr, 
         radius = radius, max_num_neighbors = max_num_neighbors)
       tune_output = MatterTuner(self.hp).tune()
       model = tune_output.model.to('cuda')
