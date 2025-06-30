@@ -34,6 +34,8 @@ class EXAFS(BaseSimulation):
     self.sh_template = sh_template
     self.number_absorbers = number_absorbers
     self.save_sim = save_sim
+    self.output_dim = len(np.arange(3.0, 
+      float(self.additional_settings['EXAFS'].split(' ')[0]) + 0.001, 0.05))
 
   def setup_config(self, config):
     config['dataset']['preprocess_params']['prediction_level'] = 'node'
@@ -44,8 +46,7 @@ class EXAFS(BaseSimulation):
         'mask': self.mask,
       }
     }
-    config['dataset']['preprocess_params']['output_dim'] = len(np.arange(3.0, 
-      float(self.additional_settings['EXAFS'].split(' ')[0]) + 0.001, 0.05))
+    config['dataset']['preprocess_params']['output_dim'] = self.output_dim
     return config
 
   def get(self, struct, group = False, separator = ','):
@@ -162,7 +163,7 @@ class EXAFS(BaseSimulation):
       finished = self.check_done()
       time.sleep(30)
 
-    chi_ks = np.zeros((self.N, 181))
+    chi_ks = np.zeros((self.N, self.output_dim))
     for i in range(len(self.inds)):
       absorb_ind = self.inds[i]
       new_abs_folder = os.path.join(self.folder, str(i))
