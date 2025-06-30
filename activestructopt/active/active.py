@@ -26,9 +26,9 @@ class ActiveLearning():
     self.verbosity = verbosity
 
     self.last_prog_file = progress_file
-    self.model_params = [None for _ in len(simfuncs)]
-    self.model_errs = [[] for _ in len(simfuncs)]
-    self.model_metrics = [[] for _ in len(simfuncs)]
+    self.model_params = [None for _ in range(len(simfuncs))]
+    self.model_errs = [[] for _ in range(len(simfuncs))]
+    self.model_metrics = [[] for _ in range(len(simfuncs))]
     self.opt_obj_values = []
     self.new_structure_predictions = []
     self.target_structure = target_structure
