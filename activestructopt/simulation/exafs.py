@@ -44,7 +44,8 @@ class EXAFS(BaseSimulation):
         'mask': self.mask,
       }
     }
-    config['dataset']['preprocess_params']['output_dim'] = 181
+    config['dataset']['preprocess_params']['output_dim'] = len(np.arange(3.0, 
+      float(self.additional_settings['EXAFS'].split(' ')[0]) + 0.001, 0.05))
     return config
 
   def get(self, struct, group = False, separator = ','):
