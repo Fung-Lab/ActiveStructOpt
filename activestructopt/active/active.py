@@ -98,7 +98,8 @@ class ActiveLearning():
           **(self.configs[i]['aso_params']['model']['args'])
           ) if self.configs[i]['aso_params']['model']['name'
           ] == "GroundTruth" else model_cls(self.configs[i], 
-          **(self.configs[i]['aso_params']['model']['args']))]
+          **(self.configs[i]['aso_params']['model']['args'])) for i in range(
+            len(self.simfuncs))]
 
     self.traceback = None
     self.error = None
