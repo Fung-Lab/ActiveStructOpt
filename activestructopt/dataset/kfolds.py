@@ -39,7 +39,7 @@ class KFoldsDataset(BaseDataset):
       self.mismatches = [[np.NaN for _ in range(len(self.structures)
         )] for _ in range(len(self.simfuncs))]
 
-      while any(None in y for y in self.ys):
+      while self.sims_incomplete():
         sim_calls += 1
         for i in range(len(self.structures)):
           if None in [self.ys[j][i] for j in range(len(self.simfuncs))]:
@@ -119,3 +119,10 @@ class KFoldsDataset(BaseDataset):
       'test_indices': [t.tolist() for t in self.test_indices],
       'mismatches': self.mismatches
     }
+
+  def sims_incomplete(self):
+    for i in range(len(self.ys)):
+      for j in range(len(self.ys[i])):
+        if type(self.ys[i][j]) == type(None):
+          return True
+    return False
