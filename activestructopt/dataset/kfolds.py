@@ -42,7 +42,7 @@ class KFoldsDataset(BaseDataset):
       while self.sims_incomplete():
         sim_calls += 1
         for i in range(len(self.structures)):
-          if None in [self.ys[j][i] for j in range(len(self.simfuncs))]:
+          if self.sims_incomplete(s = i):
             try:
               for j in range(len(self.simfuncs)):
                 if call_sequential:
@@ -51,7 +51,7 @@ class KFoldsDataset(BaseDataset):
                 self.mismatches[j][i] = y_promises[j][i].get_mismatch(self.ys[j][i], targets[j])
                 if self.mismatches[j][i] <= np.nanmin(self.mismatches[j]):
                   for k in range(len(self.structures)):
-                    if (self.ys[j][k] is not None) and i != k:
+                    if type(self.ys[j][k]) != type(None) and i != k:
                       y_promises[j][k].garbage_collect(False)
                 else:
                   y_promises[j][i].garbage_collect(False)
@@ -120,9 +120,13 @@ class KFoldsDataset(BaseDataset):
       'mismatches': self.mismatches
     }
 
-  def sims_incomplete(self):
+  def sims_incomplete(self, s = None):
     for i in range(len(self.ys)):
-      for j in range(len(self.ys[i])):
-        if type(self.ys[i][j]) == type(None):
+      if s is None:
+        for j in range(len(self.ys[i])):
+          if type(self.ys[i][j]) == type(None):
+            return True
+      else:
+        if type(self.ys[i][s]) == type(None):
           return True
     return False
