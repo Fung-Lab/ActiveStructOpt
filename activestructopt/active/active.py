@@ -250,7 +250,7 @@ class ActiveLearning():
           -(self.configs[0]['aso_params']['max_forward_calls'] - stepi))]
       
       for i in range(len(self.models)):
-        model_err, metrics, model_params = self.model.train(
+        model_err, metrics, model_params = self.models[i].train(
           self.dataset, i, **(train_profile))
         self.model_params[i] = model_params
         self.model_errs[i].append(model_err)
@@ -364,54 +364,3 @@ class ActiveLearning():
         res[k] = v
       with open(filename, "wb") as file:
         dump(res, file)
-
-  def train_model_and_save(self, save_progress_dir = None):
-    try:
-      train_profile = self.configs[0]['aso_params']['model']['profiles'][0]
-      
-      _, _, self.model_params = self.model.train(self.dataset, **(
-        train_profile))
-
-      out = {
-        'model_params': self.model_params, 
-        'model_scalar': self.model.scalar
-      }
-
-      torch.save(out, save_progress_dir + '/{}.pth'.format(self.index))
-
-    except Exception as err:
-      self.traceback = format_exc()
-      self.error = err
-      print(self.traceback)
-      print(self.error)
-
-  def load_model_and_optimize(self, model_params_dir, print_mismatches = True):
-    params_file = model_params_dir + "/" + list(filter(
-      lambda x: x.startswith("{}.".format(self.index)), os.listdir(
-      model_params_dir)))[0]
-    
-    model_params = torch.load(params_file, weights_only=False)
-
-    self.models.load(self.dataset, model_params['model_params'], 
-      model_params['model_scalar'])
-
-    acq_profile = self.configs[0]['aso_params']['optimizer']['acq_profiles'][0]
-
-    objective_cls = registry.get_objective_class(acq_profile['name'])
-    objective = objective_cls(**(acq_profile['args']))
-
-    optimizer_cls = registry.get_optimizer_class(
-      self.configs[0]['aso_params']['optimizer']['name'])
-
-    opt_profile = self.configs[0]['aso_params']['optimizer']['opt_profiles'][0]
-    
-    new_structure, obj_values = optimizer_cls().run(self.models, 
-      self.dataset, objective, self.sampler, 
-      **(self.configs[0]['aso_params']['optimizer']['args']), **(opt_profile))
-    self.opt_obj_values.append(obj_values)
-    
-    self.dataset.update(new_structure)
-
-    if print_mismatches:
-      print(self.dataset.mismatches[-1])
-
