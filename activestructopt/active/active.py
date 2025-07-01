@@ -96,7 +96,7 @@ class ActiveLearning():
 
     self.models = [model_cls(self.configs[i], self.simfuncs[i],
           **(self.configs[i]['aso_params']['model']['args'])
-          ) if self.config['aso_params']['model']['name'
+          ) if self.configs[i]['aso_params']['model']['name'
           ] == "GroundTruth" else model_cls(self.configs[i], 
           **(self.configs[i]['aso_params']['model']['args']))]
 
@@ -244,10 +244,10 @@ class ActiveLearning():
     stepi = len(self.dataset.mismatches)
 
     if retrain:
-      train_profile = self.config['aso_params']['model']['profiles'][
+      train_profile = self.configs[0]['aso_params']['model']['profiles'][
         np.searchsorted(-np.array(
-          self.config['aso_params']['model']['switch_profiles']), 
-          -(self.config['aso_params']['max_forward_calls'] - stepi))]
+          self.configs[0]['aso_params']['model']['switch_profiles']), 
+          -(self.configs[0]['aso_params']['max_forward_calls'] - stepi))]
       
       for i in range(len(self.models)):
         model_err, metrics, model_params = self.model.train(
@@ -367,7 +367,7 @@ class ActiveLearning():
 
   def train_model_and_save(self, save_progress_dir = None):
     try:
-      train_profile = self.config['aso_params']['model']['profiles'][0]
+      train_profile = self.configs[0]['aso_params']['model']['profiles'][0]
       
       _, _, self.model_params = self.model.train(self.dataset, **(
         train_profile))
@@ -392,22 +392,22 @@ class ActiveLearning():
     
     model_params = torch.load(params_file, weights_only=False)
 
-    self.model.load(self.dataset, model_params['model_params'], 
+    self.models.load(self.dataset, model_params['model_params'], 
       model_params['model_scalar'])
 
-    acq_profile = self.config['aso_params']['optimizer']['acq_profiles'][0]
+    acq_profile = self.configs[0]['aso_params']['optimizer']['acq_profiles'][0]
 
     objective_cls = registry.get_objective_class(acq_profile['name'])
     objective = objective_cls(**(acq_profile['args']))
 
     optimizer_cls = registry.get_optimizer_class(
-      self.config['aso_params']['optimizer']['name'])
+      self.configs[0]['aso_params']['optimizer']['name'])
 
-    opt_profile = self.config['aso_params']['optimizer']['opt_profiles'][0]
+    opt_profile = self.configs[0]['aso_params']['optimizer']['opt_profiles'][0]
     
-    new_structure, obj_values = optimizer_cls().run(self.model, 
+    new_structure, obj_values = optimizer_cls().run(self.models, 
       self.dataset, objective, self.sampler, 
-      **(self.config['aso_params']['optimizer']['args']), **(opt_profile))
+      **(self.configs[0]['aso_params']['optimizer']['args']), **(opt_profile))
     self.opt_obj_values.append(obj_values)
     
     self.dataset.update(new_structure)
