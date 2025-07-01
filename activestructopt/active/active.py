@@ -11,6 +11,7 @@ import json
 import time
 import os
 import gc
+import copy
 
 class ActiveLearning():
   def __init__(self, simfuncs, targets, initial_structure, index = -1, 
@@ -80,7 +81,8 @@ class ActiveLearning():
 
     else:
       self.iteration = 0
-      self.configs = [simfunc.setup_config(config) for simfunc in simfuncs]
+      self.configs = [simfunc.setup_config(copy.deepcopy(config)
+        ) for simfunc in simfuncs]
       sampler_cls = registry.get_sampler_class(
         self.configs[0]['aso_params']['sampler']['name'])
       self.sampler = sampler_cls(initial_structure, 
