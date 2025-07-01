@@ -36,8 +36,8 @@ class KFoldsDataset(BaseDataset):
         for i, s in enumerate(self.structures):
           for j in range(len(self.simfuncs)):
             y_promises[j][i].get(s, group = True, separator = ' ')
-      self.mismatches = [[np.NaN for _ in y_promises] for _ in range(
-        len(self.simfuncs))]
+      self.mismatches = [[np.NaN for _ in range(len(self.structures)
+        )] for _ in range(len(self.simfuncs))]
 
       while any(None in y for y in self.ys):
         sim_calls += 1
