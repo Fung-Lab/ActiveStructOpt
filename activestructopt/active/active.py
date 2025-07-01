@@ -327,7 +327,7 @@ class ActiveLearning():
             'model_params': model_params,
             'obj_values': [[] if x is None else x.tolist(
               ) for x in self.opt_obj_values],
-            'config': self.configs,
+            'configs': self.configs,
       }
       with open(filename, "w") as file: 
         json.dump(res, file)
@@ -338,7 +338,7 @@ class ActiveLearning():
             'mismatches': self.dataset.mismatches,
             'structures': [s.as_dict() for s in self.dataset.structures],
             'obj_values': [x.tolist() for x in self.opt_obj_values],
-            'config': self.configs,
+            'configs': self.configs,
       }
       with open(filename, "w") as file: 
         json.dump(res, file)
