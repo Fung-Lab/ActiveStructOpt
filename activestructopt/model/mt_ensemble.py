@@ -51,7 +51,7 @@ def hparams(data, num_epochs, out_dim, mask, start_lr = 0.001, radius = 10.0,
   )
   hparams.model.lr_scheduler = MC.ReduceOnPlateauConfig(
       mode = "min",
-      monitor = "val/total_loss",
+      monitor = "val/mae_masked_loss",
       factor = 0.5,
       patience = 5,
       min_lr = 0,
@@ -82,7 +82,7 @@ def hparams(data, num_epochs, out_dim, mask, start_lr = 0.001, radius = 10.0,
   torch.set_float32_matmul_precision('high')
 
   hparams.trainer.early_stopping = MC.EarlyStoppingConfig(
-      monitor = 'val/total_loss',
+      monitor = 'val/mae_masked_loss',
       patience = 15,
       mode = "min",
       min_delta = 1e-8,
