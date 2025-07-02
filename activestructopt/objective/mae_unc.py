@@ -8,7 +8,7 @@ class MAEUncertainty(BaseObjective):
     self.λ = λ
     self.weights = weights
 
-  def get(self, predictions: torch.Tensor, target, device = 'cpu', N = 1, M = 1):
+  def get(self, predictions: torch.Tensor, targets, device = 'cpu', N = 1, M = 1):
     if self.weights is None:
       weights = torch.ones(M, device = device)
     else:
@@ -18,7 +18,7 @@ class MAEUncertainty(BaseObjective):
     mae_total = torch.tensor([0.0], device = device)
     for i in range(N):
       for j in range(M):
-        mae = torch.maximum(torch.mean(torch.abs(target - predictions[j][0][i])) - 
+        mae = torch.maximum(torch.mean(torch.abs(targets[j] - predictions[j][0][i])) - 
           self.λ * torch.mean(torch.abs(predictions[j][1][i])), torch.tensor(0.)) 
         mae_total = mae_total + mae
         maes[j][i] = mae.detach()
