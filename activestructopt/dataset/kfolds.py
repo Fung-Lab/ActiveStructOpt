@@ -67,16 +67,12 @@ class KFoldsDataset(BaseDataset):
                       separator = ' ')
 
       structure_indices = np.random.permutation(np.arange(1, N))
-      print(structure_indices)
       trainval_indices = structure_indices[:int(np.round(split * N) - 1)]
       trainval_indices = np.append(trainval_indices, [0])
-      print(trainval_indices)
-      self.kfolds = np.array_split(trainval_indices, k)
-      print(self.kfolds)
+      self.kfolds = np.array_split(trainval_indices, self.k)
       for i in range(self.k):
         self.kfolds[i] = self.kfolds[i].tolist()
 
-      print(self.kfolds)
       self.test_indices = structure_indices[int(np.round(split * N) - 1):]
     else:
       self.start_N = progress_dict['start_N']
