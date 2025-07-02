@@ -332,7 +332,11 @@ class ActiveLearning():
             'configs': self.configs,
       }
       with open(filename, "w") as file: 
-        json.dump(res, file)
+        try:
+          json.dump(res, file)
+        except:
+          print(res)
+          raise NotImplementedError
     if self.verbosity == 0.5:
       res = {'index': self.index,
             'ys': [y.tolist() for y in self.dataset.ys],
