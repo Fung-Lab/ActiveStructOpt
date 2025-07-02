@@ -7,7 +7,7 @@ class MAE(BaseObjective):
   def __init__(self, weights = None, **kwargs) -> None:
     self.weights = weights
 
-  def get(self, predictions: torch.Tensor, targets, device = 'cpu', N = 1, M = 1):
+  def get(self, predictions: list[torch.Tensor], targets, device = 'cpu', N = 1, M = 1):
     if self.weights is None:
       weights = torch.ones(M, device = device)
     else:

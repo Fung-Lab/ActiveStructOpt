@@ -7,7 +7,7 @@ class MSE(BaseObjective):
   def __init__(self, **kwargs) -> None:
     pass
 
-  def get(self, predictions: torch.Tensor, target, device = 'cpu', N = 1):
+  def get(self, predictions: list[torch.Tensor], target, device = 'cpu', N = 1):
     mses = torch.zeros(N, device = device)
     mse_total = torch.tensor([0.0], device = device)
     for i in range(N):

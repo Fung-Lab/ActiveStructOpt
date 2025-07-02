@@ -7,5 +7,5 @@ class BaseObjective(ABC):
     pass
 
   @abstractmethod
-  def get(self, prediction: torch.Tensor, target, device = 'cpu', N = 1):
+  def get(self, prediction: list[torch.Tensor], target, device = 'cpu', N = 1):
     pass

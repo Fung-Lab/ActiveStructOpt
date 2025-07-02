@@ -89,8 +89,8 @@ class TorchMT(BaseOptimizer):
 
             #print("batched data")
             
-            predictions = torch.stack([models[m].predict(batch_data, prepared = True, 
-              mask = dataset.simfuncs[m].mask) for m in range(len(models))])
+            predictions = [models[m].predict(batch_data, prepared = True, 
+              mask = dataset.simfuncs[m].mask) for m in range(len(models))]
 
             #print("predicted")
 

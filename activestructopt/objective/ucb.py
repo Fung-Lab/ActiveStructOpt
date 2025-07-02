@@ -7,7 +7,7 @@ class UCB(BaseObjective):
   def __init__(self, λ = 1.0, **kwargs) -> None:
     self.λ = λ
 
-  def get(self, predictions: torch.Tensor, target, device = 'cpu', N = 1):
+  def get(self, predictions: list[torch.Tensor], target, device = 'cpu', N = 1):
     ucbs = torch.zeros(N, device = device)
     ucb_total = torch.tensor([0.0], device = device)
     for i in range(N):
