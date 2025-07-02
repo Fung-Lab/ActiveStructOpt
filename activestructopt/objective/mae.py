@@ -7,7 +7,7 @@ class MAE(BaseObjective):
   def __init__(self, weights = None, **kwargs) -> None:
     self.weights = weights
 
-  def get(self, predictions: torch.Tensor, target, device = 'cpu', N = 1, M = 1):
+  def get(self, predictions: torch.Tensor, targets, device = 'cpu', N = 1, M = 1):
     if self.weights is None:
       weights = torch.ones(M, device = device)
     else:
@@ -17,7 +17,7 @@ class MAE(BaseObjective):
     mae_total = torch.tensor([0.0], device = device)
     for i in range(N):
       for j in range(M):
-        mae = torch.mean(torch.abs(target - predictions[j][0][i]))
+        mae = torch.mean(torch.abs(targets[j] - predictions[j][0][i]))
         mae_total = mae_total + mae
         maes[j][i] = mae.detach()
         del mae
