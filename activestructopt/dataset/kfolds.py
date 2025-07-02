@@ -80,7 +80,7 @@ class KFoldsDataset(BaseDataset):
         s) for s in progress_dict['structures']]
       pd_ys = progress_dict['ys']
       for i in range(len(pd_ys)):
-        for j in range(len(pd_ys)):
+        for j in range(len(pd_ys[i])):
           pd_ys[i][j] = np.array(pd_ys[i][j])
       self.ys = self.ys
       self.kfolds = progress_dict['kfolds']
@@ -113,15 +113,19 @@ class KFoldsDataset(BaseDataset):
     self.N += 1
 
   def toJSONDict(self, save_structures = True):
+    ys_to_save = self.ys
+    for i in range(len(ys_to_save)):
+        for j in range(len(ys_to_save[i])):
+          ys_to_save[i][j] = ys_to_save[i][j].tolist()
     return {
       'start_N': self.start_N,
       'N': self.N,
       'structures': [s.as_dict() for s in self.structures] if (
         save_structures) else self.structures[np.argmin(self.mismatches
         )].as_dict(),
-      'ys': np.array(self.ys).tolist(),
+      'ys': ys_to_save,
       'kfolds': self.kfolds,
-      'test_indices': np.array(self.test_indices).tolist(),
+      'test_indices': [t.tolist() for t in self.test_indices],
       'mismatches': self.mismatches
     }
 
