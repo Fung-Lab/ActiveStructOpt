@@ -321,7 +321,7 @@ class ActiveLearning():
             for param_tensor in state_dict:
               model_dict[param_tensor] = state_dict[param_tensor].detach().cpu(
                 ).tolist()
-            model_params.append(model_dict)
+          model_params.append(model_dict)
 
       res = {'index': self.index,
             'dataset': self.dataset.toJSONDict(
