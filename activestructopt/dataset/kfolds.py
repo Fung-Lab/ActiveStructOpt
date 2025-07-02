@@ -78,7 +78,11 @@ class KFoldsDataset(BaseDataset):
       self.N = progress_dict['N']
       self.structures = [Structure.from_dict(
         s) for s in progress_dict['structures']]
-      self.ys = [np.array(y) for y in progress_dict['ys']]
+      pd_ys = progress_dict['ys']
+      for i in range(len(pd_ys)):
+        for j in range(len(pd_ys)):
+          pd_ys[i][j] = np.array(pd_ys[i][j])
+      self.ys = self.ys
       self.kfolds = progress_dict['kfolds']
       self.test_indices = np.array(progress_dict['test_indices'])
       self.mismatches = progress_dict['mismatches']
@@ -113,10 +117,11 @@ class KFoldsDataset(BaseDataset):
       'start_N': self.start_N,
       'N': self.N,
       'structures': [s.as_dict() for s in self.structures] if (
-        save_structures) else self.structures[np.argmin(self.mismatches)].as_dict(),
-      'ys': [[y.tolist() for y in self.ys[i]] for i in range(len(self.ys))],
+        save_structures) else self.structures[np.argmin(self.mismatches
+        )].as_dict(),
+      'ys': np.array(self.ys).tolist(),
       'kfolds': self.kfolds,
-      'test_indices': [t.tolist() for t in self.test_indices],
+      'test_indices': np.array(self.test_indices).tolist(),
       'mismatches': self.mismatches
     }
 
