@@ -83,7 +83,7 @@ class KFoldsDataset(BaseDataset):
       for i in range(len(pd_ys)):
         for j in range(len(pd_ys[i])):
           pd_ys[i][j] = np.array(pd_ys[i][j])
-      self.ys = self.ys
+      self.ys = pd_ys
       self.kfolds = progress_dict['kfolds']
       self.test_indices = np.array(progress_dict['test_indices'])
       self.mismatches = progress_dict['mismatches']
