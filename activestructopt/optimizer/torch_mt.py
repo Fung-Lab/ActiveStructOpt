@@ -42,7 +42,7 @@ class TorchMT(BaseOptimizer):
       best_x = torch.zeros(3 * natoms, device = device)
     if optimize_lattice:
       best_cell = torch.zeros((3, 3), device = device)
-    targets = torch.tensor(dataset.targets, device = device)
+    targets = [torch.tensor(target, device = device) for target in dataset.targets]
 
     data_pos = [torch.Tensor([site.coords.tolist() for site in struct.sites]
       ).to(device) for struct in starting_structures]
