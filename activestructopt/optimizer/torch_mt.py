@@ -109,7 +109,7 @@ class TorchMT(BaseOptimizer):
                 objs[m][j] += (constraint_scale * lj_repuls[j]) / m
                 objs[m][j] = objs[m][j].detach()
                 if save_obj_values:
-                  obj_values[m, i, starti + j] = objs[j].detach().cpu()
+                  obj_values[m, i, starti + j] = objs[m][j].detach().cpu()
               obj_total += constraint_scale * lj_repuls[j]
               lj_repulsions[j] = lj_repuls[j]
 
