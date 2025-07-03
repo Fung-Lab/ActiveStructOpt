@@ -18,9 +18,10 @@ class MAEUncertainty(BaseObjective):
     mae_total = torch.tensor([0.0], device = device)
     for i in range(N):
       for j in range(M):
-        mae = torch.maximum(torch.mean(torch.abs(targets[j] - predictions[j][0][i])) - 
-          self.λ * torch.mean(torch.abs(predictions[j][1][i])), torch.tensor(0.)) 
+        mae = weights[j] * torch.maximum(torch.mean(torch.abs(targets[j] - 
+          predictions[j][0][i])) - self.λ * torch.mean(torch.abs(
+          predictions[j][1][i])), torch.tensor(0.)) 
         mae_total = mae_total + mae
         maes[j][i] = mae.detach()
         del mae
-    return torch.sum(maes @ weights, dim = 0), mae_total
+    return maes, mae_total

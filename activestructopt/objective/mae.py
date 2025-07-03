@@ -17,9 +17,10 @@ class MAE(BaseObjective):
     mae_total = torch.tensor([0.0], device = device)
     for i in range(N):
       for j in range(M):
-        mae = torch.mean(torch.abs(targets[j] - predictions[j][0][i]))
+        mae = weights[j] * torch.mean(torch.abs(targets[j] - 
+          predictions[j][0][i]))
         mae_total = mae_total + mae
         maes[j][i] = mae.detach()
         del mae
 
-    return torch.sum(maes @ weights, dim = 0), mae_total
+    return maes, mae_total
