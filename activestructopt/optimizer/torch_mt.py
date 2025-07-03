@@ -115,7 +115,8 @@ class TorchMT(BaseOptimizer):
 
             #print("objectives added")
 
-            objs_to_compare = torch.nan_to_num(objs, nan = torch.inf)
+            objs_to_compare = torch.sum(torch.nan_to_num(objs, nan = torch.inf), 
+              dim = 0)
             for j in range(stopi - starti + 1):
               if data_pos[starti + j].isnan().any() or (
                 data_cell[starti + j].isnan().any()) or (
