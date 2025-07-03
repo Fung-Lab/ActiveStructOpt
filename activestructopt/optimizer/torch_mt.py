@@ -30,8 +30,8 @@ class TorchMT(BaseOptimizer):
       j].copy() if j < dataset.N else sampler.sample(
       ) for j in range(starts)]
 
-    obj_values = torch.zeros((iters_per_start, starts), device = 'cpu'
-      ) if save_obj_values else None
+    obj_values = torch.zeros((len(models), iters_per_start, starts), 
+      device = 'cpu') if save_obj_values else None
     
     device = models[0].device
     nstarts = len(starting_structures)
@@ -105,12 +105,13 @@ class TorchMT(BaseOptimizer):
             #print("repulsions calculated")
 
             for j in range(stopi - starti + 1):
-              objs[j] += constraint_scale * lj_repuls[j]
+              for m in range(len(models)):
+                objs[m][j] += (constraint_scale * lj_repuls[j]) / m
+                objs[m][j] = objs[m][j].detach()
+                if save_obj_values:
+                  obj_values[m, i, starti + j] = objs[j].detach().cpu()
               obj_total += constraint_scale * lj_repuls[j]
-              objs[j] = objs[j].detach()
               lj_repulsions[j] = lj_repuls[j]
-              if save_obj_values:
-                obj_values[i, starti + j] = objs[j].detach().cpu()
 
             #print("objectives added")
 
