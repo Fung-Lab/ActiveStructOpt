@@ -127,12 +127,12 @@ class ActiveLearning():
       if print_mismatches:
         print(self.dataset.mismatches)
 
-      for i in range(len(self.dataset.mismatches), 
+      for i in range(len(self.dataset.structures), 
         self.configs[0]['aso_params']['max_forward_calls']):
         
         if self.model_params_file == 'None' or int(
           self.model_params_file.split('.')[0].split('_')[-1]) < len(
-          self.dataset.mismatches):
+          self.dataset.structures):
           if sbatch_template is None:
             new_structure = self.opt_step(predict_target = predict_target, 
               save_file = None)
@@ -244,7 +244,7 @@ class ActiveLearning():
     return new_structure
 
   def opt_step(self, predict_target = False, save_file = None, retrain = True):
-    stepi = len(self.dataset.mismatches)
+    stepi = len(self.dataset.structures)
 
     if retrain:
       train_profile = self.configs[0]['aso_params']['model']['profiles'][
