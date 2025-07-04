@@ -154,6 +154,7 @@ class EXAFS(BaseSimulation):
     for i in range(len(self.inds)):
       new_abs_folder = os.path.join(self.folder, str(i))
       if not os.path.isfile(os.path.join(new_abs_folder, "DONE")):
+        print(f'waiting for {os.path.join(new_abs_folder, "DONE")}')
         return False
     return True
 
