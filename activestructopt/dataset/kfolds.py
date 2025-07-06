@@ -109,7 +109,7 @@ class KFoldsDataset(BaseDataset):
         y_promise.garbage_collect(False)
         raise ASOSimulationException
       
-      new_mismatch = self.simfunc.get_mismatch(y, self.targets[j])
+      new_mismatch = self.simfuncs[j].get_mismatch(y, self.targets[j])
       y_promise.garbage_collect(new_mismatch <= min(self.mismatches[j]))
       self.ys[j].append(y)
       self.mismatches[j].append(new_mismatch)
