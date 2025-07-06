@@ -73,6 +73,8 @@ class KFoldsDataset(BaseDataset):
                     time.sleep(5)
                     y_promises[j][i].get(self.structures[i], group = True, 
                       separator = ' ')
+              else:
+                raise Exception(f'Max sim calls reached for structure {i}')
         assert sim_updated
 
       structure_indices = np.random.permutation(np.arange(1, self.N))
