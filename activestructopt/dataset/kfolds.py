@@ -127,7 +127,8 @@ class KFoldsDataset(BaseDataset):
   def toJSONDict(self, save_structures = True):
     ys_to_save = self.ys
     for i in range(len(ys_to_save)):
-        for j in range(len(ys_to_save[i])):
+      for j in range(len(ys_to_save[i])):
+        if not isinstance(ys_to_save[i][j], list):
           ys_to_save[i][j] = ys_to_save[i][j].tolist()
     return {
       'start_N': self.start_N,
