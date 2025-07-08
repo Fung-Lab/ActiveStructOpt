@@ -304,6 +304,8 @@ class ActiveLearning():
       res = {'index': self.index,
             'structure': new_structure.as_dict(),
             'model_params': model_params,
+            'obj_values': [[] if x is None else x.tolist(
+              ) for x in self.opt_obj_values],
       }
       with open(save_file, "w") as file: 
         json.dump(res, file)
