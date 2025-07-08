@@ -92,12 +92,16 @@ class TorchMT(BaseOptimizer):
             predictions = [models[m].predict(batch_data, prepared = True, 
               mask = dataset.simfuncs[m].mask) for m in range(len(models))]
 
-            print(predictions)
+            #print(predictions)
 
             #print("predicted")
 
             objs, obj_total = objective.get(predictions, targets, 
               device = device, N = stopi - starti + 1, M = len(models))
+
+            print("-----------------------------")
+
+            print(objs)
 
             #print("objective obtained")
 
@@ -115,15 +119,22 @@ class TorchMT(BaseOptimizer):
               obj_total += constraint_scale * lj_repuls[j]
               lj_repulsions[j] = lj_repuls[j]
 
+            print(objs)
+
             #print("objectives added")
 
             objs_to_compare = torch.sum(torch.nan_to_num(objs, nan = torch.inf), 
               dim = 0)
+
+            print(objs_to_compare)
+
             for j in range(stopi - starti + 1):
               if data_pos[starti + j].isnan().any() or (
                 data_cell[starti + j].isnan().any()) or (
                 objs_to_compare[j].isnan().any()):
                 objs_to_compare[j] = torch.inf
+
+            print(objs_to_compare)
 
             min_obj_iter = torch.min(objs_to_compare)
             if (min_obj_iter < best_obj).item():
@@ -144,6 +155,8 @@ class TorchMT(BaseOptimizer):
             if i != iters_per_start - 1:
               obj_total.backward()
               optimizer.step()
+
+            print("-----------------------------")
 
             #print("back propogated")
 
