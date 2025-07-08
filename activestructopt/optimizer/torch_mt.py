@@ -92,6 +92,8 @@ class TorchMT(BaseOptimizer):
             predictions = [models[m].predict(batch_data, prepared = True, 
               mask = dataset.simfuncs[m].mask) for m in range(len(models))]
 
+            print(predictions)
+
             #print("predicted")
 
             objs, obj_total = objective.get(predictions, targets, 
