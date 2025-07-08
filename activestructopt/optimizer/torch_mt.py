@@ -99,9 +99,9 @@ class TorchMT(BaseOptimizer):
             objs, obj_total = objective.get(predictions, targets, 
               device = device, N = stopi - starti + 1, M = len(models))
 
-            print("-----------------------------")
+            #print("-----------------------------")
 
-            print(objs)
+            #print(objs)
 
             #print("objective obtained")
 
@@ -112,21 +112,21 @@ class TorchMT(BaseOptimizer):
 
             for j in range(stopi - starti + 1):
               for m in range(len(models)):
-                objs[m][j] += (constraint_scale * lj_repuls[j]) / m
+                objs[m][j] += (constraint_scale * lj_repuls[j]) / len(models)
                 objs[m][j] = objs[m][j].detach()
                 if save_obj_values:
                   obj_values[m, i, starti + j] = objs[m][j].detach().cpu()
               obj_total += constraint_scale * lj_repuls[j]
               lj_repulsions[j] = lj_repuls[j]
 
-            print(objs)
+            #print(objs)
 
             #print("objectives added")
 
             objs_to_compare = torch.sum(torch.nan_to_num(objs, nan = torch.inf), 
               dim = 0)
 
-            print(objs_to_compare)
+            #print(objs_to_compare)
 
             for j in range(stopi - starti + 1):
               if data_pos[starti + j].isnan().any() or (
@@ -134,7 +134,7 @@ class TorchMT(BaseOptimizer):
                 objs_to_compare[j].isnan().any()):
                 objs_to_compare[j] = torch.inf
 
-            print(objs_to_compare)
+            #print(objs_to_compare)
 
             min_obj_iter = torch.min(objs_to_compare)
             if (min_obj_iter < best_obj).item():
