@@ -156,7 +156,7 @@ class TorchMT(BaseOptimizer):
               obj_total.backward()
               optimizer.step()
 
-            print("-----------------------------")
+            #print("-----------------------------")
 
             #print("back propogated")
 

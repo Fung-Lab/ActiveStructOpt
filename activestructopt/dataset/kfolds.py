@@ -100,6 +100,8 @@ class KFoldsDataset(BaseDataset):
       self.mismatches = progress_dict['mismatches']
 
   def update(self, new_structure: IStructure):
+    new_ys = [None for _ in range(len(self.simfuncs))]
+    new_mismatches = [None for _ in range(len(self.simfuncs))]
     for j in range(len(self.simfuncs)):
       y_promise = copy.deepcopy(self.simfuncs[j])
       y_promise.get(new_structure)
@@ -111,8 +113,13 @@ class KFoldsDataset(BaseDataset):
       
       new_mismatch = self.simfuncs[j].get_mismatch(y, self.targets[j])
       y_promise.garbage_collect(new_mismatch <= min(self.mismatches[j]))
-      self.ys[j].append(y)
-      self.mismatches[j].append(new_mismatch)
+
+      new_ys[j] = y
+      new_mismatches[j] = new_mismatch
+      
+    for j in range(len(self.simfuncs)):  
+      self.ys[j].append(new_ys[j])
+      self.mismatches[j].append(new_mismatches[j])
 
     fold = self.k - 1
     for i in range(self.k - 1):
