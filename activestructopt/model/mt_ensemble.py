@@ -26,6 +26,8 @@ def torch_cell_to_cellpar(cell):
 
 def hparams(data, num_epochs, out_dim, mask, start_lr = 0.001, radius = 10.0, 
   max_num_neighbors = 250):
+  print(mask)
+
   import mattertune.configs as MC
   import mattertune as mt
 
