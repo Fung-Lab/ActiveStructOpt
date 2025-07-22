@@ -30,6 +30,7 @@ class Wyckoff(BaseSampler):
       210, 34, 1563, 45, 788, 9, 210, 105]
 
     self.rng = np.random.default_rng(seed)
+    self.initial_structure = initial_structure
     element_counter = Counter([site.species.elements[
       0].symbol for site in initial_structure.sites])
     self.zs = list(element_counter.keys())
@@ -102,5 +103,27 @@ class Wyckoff(BaseSampler):
         if p.exitcode == 0:
           new_structure = Structure.from_dict(d['struct'])
           rejected = lj_reject(new_structure)
+
+    new_z_inds = {}
+    for s in self.zs:
+      new_z_inds[s] = []
+    
+    new_zs = [site.species.elements[0].symbol for site in new_structure.sites]
+    for i in range(len(new_zs)):
+      new_z_inds[new_zs[i]].append(i)
+
+    z_inds = []
+    z_counts = {}
+    for s in self.zs:
+      z_counts[s] = 0
+
+    old_zs = [site.species.elements[0
+      ].symbol for site in self.initial_structure.sites]
+    for i in range(len(old_zs)):
+      z_inds.append(new_z_inds[old_zs[i]][z_counts[old_zs[i]]])
+      z_counts[old_zs[i]] += 1
+    
+    new_sites = [new_structure.sites[i] for i in z_inds]
+    new_structure.sites = new_sites
 
     return new_structure
