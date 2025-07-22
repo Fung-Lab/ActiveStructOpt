@@ -123,7 +123,7 @@ class Wyckoff(BaseSampler):
       z_inds.append(new_z_inds[old_zs[i]][z_counts[old_zs[i]]])
       z_counts[old_zs[i]] += 1
     
-    new_sites = [new_structure.sites[i] for i in range(z_inds)]
+    new_sites = [new_structure.sites[i] for i in z_inds]
     new_structure.sites = new_sites
 
     return new_structure
