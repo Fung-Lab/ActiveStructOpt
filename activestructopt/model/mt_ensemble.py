@@ -111,11 +111,10 @@ class MTEnsemble(BaseModel):
   
   def train(self, dataset: KFoldsDataset, sim_index, iterations = 250, lr = 0.001, 
     from_scratch = False, transfer = 1.0, prev_params = None, radius = 10.0, 
-    max_num_neighbors = 250, **kwargs):
+    max_num_neighbors = 250, batch_size = 64, **kwargs):
     import mattertune as mt
     from mattertune import MatterTuner
 
-    batch_size = 64
     self.sim_index = sim_index
 
     trainval_indices = np.setxor1d(np.arange(len(dataset.structures)), 
