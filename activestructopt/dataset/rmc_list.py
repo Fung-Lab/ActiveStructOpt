@@ -11,7 +11,7 @@ import time
 class RMCList(BaseDataset):
   def __init__(self, simulations: list[BaseSimulation], sampler: BaseSampler, 
     initial_structure: IStructure, targets, config, seed = 0, σ = 0.0025, 
-    max_sim_calls = 5, call_sequential = False, weights = None, progress_dict = None,
+    max_sim_calls = 5, weights = None, progress_dict = None,
     **kwargs) -> None:
     np.random.seed(seed)
     self.config = config
@@ -32,11 +32,6 @@ class RMCList(BaseDataset):
 
       y_promises = [[copy.deepcopy(self.simfuncs[j]
         ) for _ in self.structures] for j in range(len(self.simfuncs))]
-      if not call_sequential:
-        for i, s in enumerate(self.structures):
-          time.sleep(5)
-          for j in range(len(self.simfuncs)):
-            y_promises[j][i].get(s, group = True, separator = ' ')
       self.mismatches = [[np.NaN for _ in range(len(self.structures)
         )] for _ in range(len(self.simfuncs))]
 
@@ -48,8 +43,7 @@ class RMCList(BaseDataset):
             sim_updated = True
             try:
               for j in range(len(self.simfuncs)):
-                if call_sequential:
-                  y_promises[j][i].get(self.structures[i])
+                y_promises[j][i].get(self.structures[i])
                 self.ys[j][i] = y_promises[j][i].resolve()
                 self.mismatches[j][i] = y_promises[j][i].get_mismatch(
                   self.ys[j][i], targets[j])
@@ -67,10 +61,6 @@ class RMCList(BaseDataset):
                 for j in range(len(self.simfuncs)):
                   y_promises[j][i].garbage_collect(False)
                   y_promises[j][i] = copy.deepcopy(self.simfuncs[j])
-                  if not call_sequential:
-                    time.sleep(5)
-                    y_promises[j][i].get(self.structures[i], group = True, 
-                      separator = ' ')
               else:
                 raise Exception(f'Max sim calls reached for structure {i}')
         assert sim_updated
