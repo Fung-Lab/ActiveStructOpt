@@ -136,7 +136,7 @@ class RMCList(BaseDataset):
         save_structures) else self.structures[np.argmin(self.mismatches)].as_dict(),
       'ys': ys_to_save,
       'mismatches': self.mismatches,
-      'curr_structure': self.curr_structure,
+      'curr_structure': self.curr_structure.as_dict(),
       'curr_mismatch': self.curr_mismatch,
       'accepted': self.accepted,
     }
