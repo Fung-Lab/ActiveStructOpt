@@ -138,7 +138,7 @@ class RMCList(BaseDataset):
       'mismatches': self.mismatches,
       'curr_structure': self.curr_structure.as_dict(),
       'curr_mismatch': self.curr_mismatch,
-      'accepted': self.accepted.tolist(),
+      'accepted': np.array(self.accepted).tolist(),
     }
 
   def sims_incomplete(self, s = None):
