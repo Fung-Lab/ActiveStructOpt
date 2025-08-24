@@ -150,3 +150,14 @@ class RMCList(BaseDataset):
       'curr_mismatch': self.curr_mismatch,
       'accepted': self.accepted,
     }
+
+  def sims_incomplete(self, s = None):
+    for i in range(len(self.ys)):
+      if s is None:
+        for j in range(len(self.ys[i])):
+          if type(self.ys[i][j]) == type(None):
+            return True
+      else:
+        if type(self.ys[i][s]) == type(None):
+          return True
+    return False
