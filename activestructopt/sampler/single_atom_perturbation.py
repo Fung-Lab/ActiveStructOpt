@@ -7,13 +7,15 @@ import numpy as np
 @registry.register_sampler("SingleAtomPerturbation")
 class SingleAtomPerturbation(BaseSampler):
   def __init__(self, initial_structure: IStructure, perturbrmin = 0.1, 
-    perturbrmax = 1.0, perturblmax = 0.0, perturbθmax = 0.0, lattice_prob = 0.5) -> None:
+    perturbrmax = 1.0, perturblmax = 0.0, perturbθmax = 0.0, 
+    lattice_prob = 0.5, constraint_buffer = 0.85) -> None:
     self.initial_structure = initial_structure
     self.perturbrmin = perturbrmin
     self.perturbrmax = perturbrmax
     self.perturblmax = perturblmax
     self.perturbθmax = perturbθmax
     self.lattice_prob = lattice_prob
+    self.constraint_buffer = constraint_buffer
 
   def sample(self) -> IStructure:
     rejected = True
@@ -44,5 +46,5 @@ class SingleAtomPerturbation(BaseSampler):
           min(180.0, max(0.0, new_structure.lattice.gamma + np.random.uniform(
             -self.perturbθmax, self.perturbθmax))) if to_change == 5 else new_structure.lattice.gamma
         )
-      rejected = lj_reject(new_structure)
+      rejected = lj_reject(new_structure, buffer = self.constraint_buffer)
     return new_structure
