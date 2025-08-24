@@ -8,7 +8,7 @@ class NoModel(BaseModel):
   def __init__(self, config, **kwargs):
     pass
 
-  def train(self, dataset: BaseDataset, **kwargs):
+  def train(self, dataset: BaseDataset, sim_index, **kwargs):
     return None, None, torch.empty(0)
 
   def predict(self, structure, **kwargs):
