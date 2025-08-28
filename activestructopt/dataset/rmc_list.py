@@ -63,7 +63,7 @@ class RMCList(BaseDataset):
                 print(f'retrying structure {i}')
                 self.structures[i] = sampler.sample()
                 for j in range(len(self.simfuncs)):
-                  if hasattr(y_promises[j][i].folder):
+                  if hasattr(y_promises[j][i], 'folder'):
                     y_promises[j][i].garbage_collect(False)
                   y_promises[j][i] = copy.deepcopy(self.simfuncs[j])
               else:
