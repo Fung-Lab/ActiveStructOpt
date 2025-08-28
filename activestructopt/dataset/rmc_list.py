@@ -63,7 +63,8 @@ class RMCList(BaseDataset):
                 print(f'retrying structure {i}')
                 self.structures[i] = sampler.sample()
                 for j in range(len(self.simfuncs)):
-                  y_promises[j][i].garbage_collect(False)
+                  if hasattr(y_promises[j][i].folder):
+                    y_promises[j][i].garbage_collect(False)
                   y_promises[j][i] = copy.deepcopy(self.simfuncs[j])
               else:
                 raise Exception(f'Max sim calls reached for structure {i}')
