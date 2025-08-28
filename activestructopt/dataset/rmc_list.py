@@ -73,8 +73,8 @@ class RMCList(BaseDataset):
       self.curr_structure = self.structures[0]
       new_mismatch = 0
       for j in range(len(self.simfuncs)):  
-        new_mismatch += self.mismatches[0][j] if self.weights is None else (
-          self.mismatches[0][j] * self.weights[j])
+        new_mismatch += self.mismatches[j][0] if self.weights is None else (
+          self.mismatches[j][0] * self.weights[j])
       self.curr_mismatch = new_mismatch
       self.accepted = [True]
       self.σ = σ
