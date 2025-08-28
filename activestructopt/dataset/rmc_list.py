@@ -11,7 +11,7 @@ import time
 class RMCList(BaseDataset):
   def __init__(self, simulations: list[BaseSimulation], sampler: BaseSampler, 
     initial_structure: IStructure, targets, config, seed = 0, σ = 0.0025, 
-    max_sim_calls = 5, weights = None, progress_dict = None,
+    max_sim_calls = 5, weights = None, progress_dict = None, mae = False,
     **kwargs) -> None:
     np.random.seed(seed)
     self.config = config
@@ -21,6 +21,7 @@ class RMCList(BaseDataset):
     self.N = 1
     self.simfuncs = simulations
     self.weights = weights
+    self.mae = mae
 
     if progress_dict is None:
       self.structures = [initial_structure.copy()]
@@ -46,7 +47,10 @@ class RMCList(BaseDataset):
                 y_promises[j][i].get(self.structures[i])
                 self.ys[j][i] = y_promises[j][i].resolve()
                 self.mismatches[j][i] = y_promises[j][i].get_mismatch(
-                  self.ys[j][i], targets[j])
+                  self.ys[j][i], targets[j]) if not self.mae else np.mean(
+                  np.abs(np.mean(self.ys[j][i][np.array(y_promises[j][i].mask
+                  )], axis = 0) - targets[j]))
+
                 if self.mismatches[j][i] <= np.nanmin(self.mismatches[j]):
                   for k in range(self.N):
                     if type(self.ys[j][k]) != type(None) and i != k:
@@ -99,7 +103,9 @@ class RMCList(BaseDataset):
         y_promise.garbage_collect(False)
         raise ASOSimulationException
       
-      new_mismatch = self.simfuncs[j].get_mismatch(y, self.targets[j])
+      new_mismatch = self.simfuncs[j].get_mismatch(y, self.targets[j]
+        ) if not self.mae else np.mean(np.abs(np.mean(y[np.array(
+        self.simfuncs[j].mask)], axis = 0) - self.targets[j]))
       y_promise.garbage_collect(new_mismatch <= min(self.mismatches[j]))
 
       new_ys[j] = y
