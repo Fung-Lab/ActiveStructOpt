@@ -22,6 +22,7 @@ class RMCList(BaseDataset):
     self.simfuncs = simulations
     self.weights = weights
     self.mae = mae
+    print(f'MAE: {self.mae}')
 
     if progress_dict is None:
       self.structures = [initial_structure.copy()]
