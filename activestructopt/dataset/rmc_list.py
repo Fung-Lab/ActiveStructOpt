@@ -147,6 +147,7 @@ class RMCList(BaseDataset):
       'curr_structure': self.curr_structure.as_dict(),
       'curr_mismatch': self.curr_mismatch,
       'accepted': np.array(self.accepted).tolist(),
+      'mae': self.mae,
     }
 
   def sims_incomplete(self, s = None):
