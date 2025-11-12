@@ -87,15 +87,15 @@ def uspex_heredity(struct1, struct2, shift1prob = 1.0, shift2prob = 0.05,
   comp_to_match = s1.composition.as_dict()
 
   for k in comp_to_match.keys():
-    if comp_to_match[k] < new_struct.composition.as_dict()[k]:
-      n_to_remove = new_struct.composition.as_dict()[k] - comp_to_match[k]
+    if comp_to_match[k] < new_struct.composition.as_dict().get(k, 0):
+      n_to_remove = new_struct.composition.as_dict().get(k, 0) - comp_to_match[k]
       is_to_remove = np.random.choice(np.where(
         [s.species_string == k for s in new_struct.sites])[0], 
         int(n_to_remove), replace = False)
       new_struct = new_struct.remove_sites(is_to_remove)
 
-    if comp_to_match[k] > new_struct.composition.as_dict()[k]:
-      n_to_add = comp_to_match[k] - new_struct.composition.as_dict()[k]
+    if comp_to_match[k] > new_struct.composition.as_dict().get(k, 0):
+      n_to_add = comp_to_match[k] - new_struct.composition.as_dict().get(k, 0)
 
       added = 0
 
