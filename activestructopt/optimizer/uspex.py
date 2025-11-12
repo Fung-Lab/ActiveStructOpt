@@ -314,7 +314,7 @@ class USPEX(BaseOptimizer):
                 
               new_struct.scale_lattice(Vuc)
               rejected = lj_reject(new_struct, buffer = constraint_buffer)
-            pop[j + 1] = new_struct
+            population[j + 1] = new_struct
 
     return best_struct, obj_values
 
