@@ -45,7 +45,7 @@ def uspex_select_weights(pop, objectives, survival = 0.6, p = 1):
   Nsurv = int(np.floor(pop * survival))
   # https://stackoverflow.com/questions/5284646/rank-items-in-an-array-using-python-numpy-without-sorting-array-twice
   ranks = torch.argsort(torch.argsort(objectives)).detach().numpy()
-  weights = np.clip(Nsurv - ranks, a_min = 0) ** p
+  weights = np.clip(Nsurv - ranks, a_min = 0, a_max = None) ** p
   return weights / np.sum(weights)
   
 
