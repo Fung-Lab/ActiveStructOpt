@@ -221,7 +221,7 @@ class USPEX(BaseOptimizer):
         else:
           dyn = FIRE(atoms)
         dyn.run(fmax = fmax, steps = nmax)
-        population[si] = adaptor.get_structure(dyn.atoms)
+        population[si] = adaptor.get_structure(atoms)
 
       data_pos = [torch.Tensor([site.coords.tolist(
         ) for site in struct.sites]).to(model.device) for struct in population]
