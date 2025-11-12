@@ -229,9 +229,7 @@ class USPEX(BaseOptimizer):
       data_cell = [torch.Tensor(struct.lattice.matrix.tolist(
         )).to(model.device) for struct in population]
       
-      obj_values_gen = torch.zeros((pop,), device = 'cpu'
-        ) if save_obj_values else None
-
+      obj_values_gen = torch.zeros((pop,), device = 'cpu')
       while not predicted:
         try:
           for k in range(2 ** (orig_split - split)):
