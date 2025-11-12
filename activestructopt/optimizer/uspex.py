@@ -232,6 +232,7 @@ class USPEX(BaseOptimizer):
         
         print(atoms.get_potential_energy())
 
+        print("Model:", calc.model)
         print("Model heads:", calc.model.heads)
         print("Implemented properties:", calc.implemented_properties)
         print("Energy result shape:", calc.results.get("energy", None).shape)
