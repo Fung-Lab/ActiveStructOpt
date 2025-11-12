@@ -213,6 +213,7 @@ class USPEX(BaseOptimizer):
       # Local Energy Optimization (TODO: Make this parallel)
       for si in range(pop):
         print(si)
+        print(population[si])
         atoms = adaptor.get_atoms(population[si])
         print(atoms)
         atoms.calc = calc
