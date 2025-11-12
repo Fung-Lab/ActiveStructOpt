@@ -211,24 +211,10 @@ class USPEX(BaseOptimizer):
     for i in range(gens):
       predicted = False
       # Local Energy Optimization (TODO: Make this parallel)
-
-      ## TEST ##
-      from pymatgen.io.cif import CifParser
-      struct1 = CifParser("starting/2.cif").get_structures(primitive = False)[0]
-      atoms = adaptor.get_atoms(struct1)
-      atoms.calc = calc
-      print("Pristine Energy:", atoms.get_potential_energy())
-      
       for si in range(pop):
         atoms = adaptor.get_atoms(population[si])
         atoms.calc = calc
-        
-        print(atoms.get_potential_energy())
 
-        print("Model:", calc.model)
-        print("Model heads:", calc.model.heads)
-        print("Implemented properties:", calc.implemented_properties)
-        print("Energy result shape:", calc.results.get("energy", None).shape)
         # https://github.com/neutrons/inspired/blob/6ae3654647769be1f1619adcfc8e42266963d3dd/src/inspired/gui/mlff_worker.py#L124
         if optimize_lattice:
           ecf = ExpCellFilter(atoms)
