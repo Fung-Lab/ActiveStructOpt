@@ -220,7 +220,7 @@ class USPEX(BaseOptimizer):
           dyn = FIRE(ecf)
         else:
           dyn = FIRE(atoms)
-        dyn.run(fmax = fmax, steps = nmax)
+        dyn.run(fmax = fmax, steps = nmax, logfile = None)
         population[si] = adaptor.get_structure(atoms)
 
       data_pos = [torch.Tensor([site.coords.tolist(
