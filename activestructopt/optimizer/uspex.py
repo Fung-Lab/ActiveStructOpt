@@ -217,7 +217,7 @@ class USPEX(BaseOptimizer):
       struct1 = CifParser("starting/2.cif").get_structures(primitive = False)[0]
       atoms = adaptor.get_atoms(struct1)
       atoms.calc = calc
-      print("Pristine Energy": atoms.get_potential_energy())
+      print("Pristine Energy:", atoms.get_potential_energy())
       
       for si in range(pop):
         atoms = adaptor.get_atoms(population[si])
