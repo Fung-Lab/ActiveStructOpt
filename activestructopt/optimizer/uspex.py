@@ -193,6 +193,8 @@ class USPEX(BaseOptimizer):
         device=device,
         precision="float32-high",   # or "float32-highest" / "float64
     )
+    print(orbff.__dict__)
+    assert False
     calc = ORBCalculator(orbff, device=device)
 
     natoms = len(population[0])
