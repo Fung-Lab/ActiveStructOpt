@@ -219,6 +219,17 @@ class USPEX(BaseOptimizer):
         atoms = adaptor.get_atoms(population[si])
         print(atoms)
         atoms.calc = calc
+
+        print("atoms.info:", atoms.info)
+        print("atoms.arrays keys:", list(atoms.arrays.keys()))
+        for k in atoms.arrays:
+          print(f"{k}: shape={atoms.arrays[k].shape}, dtype={atoms.arrays[k].dtype}")
+        print("pbc:", atoms.pbc)
+        print("cell:", atoms.cell)
+        print("tags:", getattr(atoms, "tags", None))
+        print("constraints:", atoms.constraints)
+        print("calculator:", atoms.calc)
+        
         print(atoms.get_potential_energy())
 
         print("Model heads:", calc.model.heads)
