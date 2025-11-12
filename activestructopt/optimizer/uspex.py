@@ -218,9 +218,9 @@ class USPEX(BaseOptimizer):
         # https://github.com/neutrons/inspired/blob/6ae3654647769be1f1619adcfc8e42266963d3dd/src/inspired/gui/mlff_worker.py#L124
         if optimize_lattice:
           ecf = ExpCellFilter(atoms)
-          dyn = FIRE(ecf)
+          dyn = FIRE(ecf, logfile = None, loginterval = -1)
         else:
-          dyn = FIRE(atoms)
+          dyn = FIRE(atoms, logfile = None, loginterval = -1)
         dyn.run(fmax = fmax, steps = nmax)
         population[si] = adaptor.get_structure(atoms)
 
