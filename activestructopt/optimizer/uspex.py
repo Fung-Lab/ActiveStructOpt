@@ -292,8 +292,8 @@ class USPEX(BaseOptimizer):
           select_weights = uspex_select_weights(pop, obj_values_gen, survival, 
                                                 select_p)
           Vuc = w_adapt * Vuc + (1 - w_adapt) * np.mean(
-            [p.volume for p in population[np.argsort(
-            obj_values_gen.detach().numpy())[:N_adapt]]])
+            [population[pi].volume for pi in np.argsort(
+            obj_values_gen.detach().numpy())[:N_adapt]])
           for j in range(pop - 1):
             rejected = True
             while rejected:
