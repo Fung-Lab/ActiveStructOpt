@@ -217,10 +217,10 @@ class USPEX(BaseOptimizer):
         # https://github.com/neutrons/inspired/blob/6ae3654647769be1f1619adcfc8e42266963d3dd/src/inspired/gui/mlff_worker.py#L124
         if optimize_lattice:
           ecf = ExpCellFilter(atoms)
-          dyn = FIRE(ecf)
+          dyn = FIRE(ecf, logfile = None)
         else:
-          dyn = FIRE(atoms)
-        dyn.run(fmax = fmax, steps = nmax, logfile = None)
+          dyn = FIRE(atoms, logfile = None)
+        dyn.run(fmax = fmax, steps = nmax)
         population[si] = adaptor.get_structure(atoms)
 
       data_pos = [torch.Tensor([site.coords.tolist(
