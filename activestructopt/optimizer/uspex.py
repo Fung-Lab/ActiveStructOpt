@@ -212,6 +212,7 @@ class USPEX(BaseOptimizer):
       predicted = False
       # Local Energy Optimization (TODO: Make this parallel)
       for si in range(pop):
+        print(si)
         atoms = adaptor.get_atoms(population[si])
         atoms.calc = calc
         # https://github.com/neutrons/inspired/blob/6ae3654647769be1f1619adcfc8e42266963d3dd/src/inspired/gui/mlff_worker.py#L124
