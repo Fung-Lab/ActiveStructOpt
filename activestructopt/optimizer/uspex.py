@@ -214,6 +214,8 @@ class USPEX(BaseOptimizer):
       for si in range(pop):
         print(si)
         print(population[si])
+        print(population[si].site_properties)
+        print(population[si].sites[0].properties)
         atoms = adaptor.get_atoms(population[si])
         print(atoms)
         atoms.calc = calc
