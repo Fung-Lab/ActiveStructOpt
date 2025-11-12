@@ -117,7 +117,7 @@ def uspex_heredity(struct1, struct2, shift1prob = 1.0, shift2prob = 0.05,
         not_found_new_site = np.min([np.linalg.norm(
           s.frac_coords - new_site_coords) for s in new_struct.sites]
           ) > 1e-6
-        if not not_found_new_site:
+        if not_found_new_site:
           new_struct = new_struct.append(new_site_spec, 
               new_site_coords, coords_are_cartesian = False)
           added += 1
@@ -213,6 +213,7 @@ class USPEX(BaseOptimizer):
       # Local Energy Optimization (TODO: Make this parallel)
       for si in range(pop):
         atoms = adaptor.get_atoms(population[si])
+        atoms.calc = calc
         # https://github.com/neutrons/inspired/blob/6ae3654647769be1f1619adcfc8e42266963d3dd/src/inspired/gui/mlff_worker.py#L124
         if optimize_lattice:
           ecf = ExpCellFilter(atoms)
@@ -238,7 +239,7 @@ class USPEX(BaseOptimizer):
 
             batch_data = model.batch_pos_cell(
               data_pos[starti:(stopi+1)], data_cell[starti:(stopi+1)], 
-              pop[0])
+              population[0])
 
             #print("batched data")
             
@@ -252,7 +253,6 @@ class USPEX(BaseOptimizer):
 
             #print("objective obtained")
 
-            lj_repulsions = torch.zeros(stopi - starti + 1, device = device)
             lj_repuls = lj_repulsion_mt(batch_data, ljrmins)
 
             #print("repulsions calculated")
@@ -261,7 +261,6 @@ class USPEX(BaseOptimizer):
               objs[j] += constraint_scale * lj_repuls[j]
               obj_total += constraint_scale * lj_repuls[j]
               objs[j] = objs[j].detach()
-              lj_repulsions[j] = lj_repuls[j]
               if save_obj_values:
                 obj_values[i, starti + j] = objs[j].detach().cpu()
               obj_values_gen[starti + j] = objs[j].detach().cpu()
