@@ -193,8 +193,6 @@ class USPEX(BaseOptimizer):
         device=device,
         precision="float32-high",   # or "float32-highest" / "float64
     )
-    print(orbff.__dict__)
-    assert False
     calc = ORBCalculator(orbff, device=device)
 
     natoms = len(population[0])
@@ -213,24 +211,17 @@ class USPEX(BaseOptimizer):
     for i in range(gens):
       predicted = False
       # Local Energy Optimization (TODO: Make this parallel)
-      for si in range(pop):
-        print(si)
-        print(population[si])
-        print(population[si].site_properties)
-        print(population[si].sites[0].properties)
-        atoms = adaptor.get_atoms(population[si])
-        print(atoms)
-        atoms.calc = calc
 
-        print("atoms.info:", atoms.info)
-        print("atoms.arrays keys:", list(atoms.arrays.keys()))
-        for k in atoms.arrays:
-          print(f"{k}: shape={atoms.arrays[k].shape}, dtype={atoms.arrays[k].dtype}")
-        print("pbc:", atoms.pbc)
-        print("cell:", atoms.cell)
-        print("tags:", getattr(atoms, "tags", None))
-        print("constraints:", atoms.constraints)
-        print("calculator:", atoms.calc)
+      ## TEST ##
+      from pymatgen.io.cif import CifParser
+      struct1 = CifParser("starting/2.cif").get_structures(primitive = False)[0]
+      atoms = adaptor.get_atoms(struct1)
+      atoms.calc = calc
+      print("Pristine Energy": atoms.get_potential_energy())
+      
+      for si in range(pop):
+        atoms = adaptor.get_atoms(population[si])
+        atoms.calc = calc
         
         print(atoms.get_potential_energy())
 
