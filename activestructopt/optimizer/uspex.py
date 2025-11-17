@@ -312,6 +312,11 @@ class USPEX(BaseOptimizer):
     shift1prob = 1.0, shift2prob = 0.05, σl = 0.7, nperms = 3,
     w_adapt = 0.5, N_adapt = 4, 
     **kwargs) -> IStructure:
+
+    if len(dataset.structures[0].composition.as_dict().keys()) < 2:
+      # If monatomic, ignore permutations
+      p_her = p_her / (p_her + p_mut)
+      p_mut = 1.0 - p_her
     
     adaptor = AseAtomsAdaptor()
 
