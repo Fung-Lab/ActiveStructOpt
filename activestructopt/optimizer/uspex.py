@@ -184,7 +184,7 @@ class BatchFIRE():
   def __init__(self, atoms: list[Atoms], dt: float = 0.1, maxstep: float = 0.2,
     dtmax: float = 1.0, Nmin: int = 5, finc: float = 1.1, fdec: float = 0.5, 
     astart: float = 0.1, fa: float = 0.99, a: float = 0.1, 
-    downhill_check: bool = False, opt_lat = False, device = 'cuda', filtername = 'ExpCellFilter'):
+    downhill_check: bool = False, opt_lat = False, device = 'cuda', filtername = 'UnitCellFilter'):
     
     self.opt_lat = opt_lat
     self.nstructs = len(atoms)
@@ -310,7 +310,7 @@ class USPEX(BaseOptimizer):
     random_starts = False, fmax = 0.01, nmax = 100, 
     survival = 0.6, select_p = 1, p_her = 0.85, p_mut = 0.1,
     shift1prob = 1.0, shift2prob = 0.05, σl = 0.7, nperms = 3,
-    w_adapt = 0.5, N_adapt = 4, 
+    w_adapt = 0.5, N_adapt = 4, filter = 'UnitCellFilter',
     **kwargs) -> IStructure:
 
     if len(dataset.structures[0].composition.as_dict().keys()) < 2:
@@ -345,7 +345,7 @@ class USPEX(BaseOptimizer):
     for i in range(gens):
       # Local Energy Optimization (TODO: Make this parallel)
       dyn = BatchFIRE([adaptor.get_atoms(population[si]) for si in range(pop)], 
-                      opt_lat = optimize_lattice, device = device)
+                      opt_lat = optimize_lattice, device = device, filter = filter)
       dyn.run(fmax = fmax, steps = nmax)
       for si in range(pop):
         population[si] = adaptor.get_structure(dyn.atoms[si].atoms)
