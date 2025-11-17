@@ -116,10 +116,10 @@ def uspex_heredity(struct1, struct2, shift1prob = 1.0, shift2prob = 0.05,
         new_site_spec = (s1 if choose_from_s1 else s2
                           ).sites[new_site_i].species
 
-        not_found_new_site = np.min([np.linalg.norm(
+        found_new_site = np.min([np.linalg.norm(
           s.frac_coords - new_site_coords) for s in new_struct.sites]
-          ) > 1e-6
-        if not_found_new_site:
+          ) > 1e-6 if len(new_struct.sites) > 0 else True
+        if found_new_site:
           new_struct = new_struct.append(new_site_spec, 
               new_site_coords, coords_are_cartesian = False)
           added += 1
