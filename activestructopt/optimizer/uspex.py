@@ -10,10 +10,12 @@ from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.core.structure import IStructure
 from pymatgen.core import Structure, Lattice
 from ase import Atoms
-from ase.optimize import FIRE
-from ase.constraints import ExpCellFilter
+from ase.filters import FrechetCellFilter
+from ase.calculators.calculator import Calculator
 from orb_models.forcefield import pretrained
 from orb_models.forcefield.calculator import ORBCalculator
+from orb_models.forcefield.atomic_system import ase_atoms_to_atom_graphs
+from orb_models.forcefield.base import batch_graphs
 import torch
 import numpy as np
 
@@ -161,6 +163,139 @@ def uspex_permutation(struct, nperms = 3):
 
   return new_struct
 
+class PassThroughCalc(Calculator):
+  def __init__(self, directory = "."):
+    Calculator.__init__(self, directory = directory)
+    self.results = {}
+    self.implemented_properties = ["free_energy", "stress", "forces"]
+    pass
+
+  def get_property(self, name, atoms = None, allow_calculation = True):
+    result = self.results[name]
+    if isinstance(result, np.ndarray):
+      result = result.copy()
+    return result
+
+# A modified version of the ASE FIRE Optimizer to make batched predictions
+# https://gitlab.com/ase/ase/-/blob/9fe18854390079711a314b0ce4bf34109b0eb19a/ase/optimize/fire.py#L6
+# https://gitlab.com/ase/ase/-/blob/master/ase/optimize/optimize.py
+# https://gitlab.com/ase/ase/-/blob/master/ase/filters.py
+class BatchFIRE():
+  def __init__(self, atoms: list[Atoms], dt: float = 0.1, maxstep: float = 0.2,
+    dtmax: float = 1.0, Nmin: int = 5, finc: float = 1.1, fdec: float = 0.5, 
+    astart: float = 0.1, fa: float = 0.99, a: float = 0.1, 
+    downhill_check: bool = False, opt_lat = False, device = 'cuda'):
+    
+    self.opt_lat = opt_lat
+    self.nstructs = len(atoms)
+    self.atoms = atoms
+    self.natoms = len(self.atoms[0])
+    self.calcs = [PassThroughCalc() for _ in self.atoms]
+    for i in range(self.nstructs):
+        self.atoms[i].calc = self.calcs[i]
+    self.atoms = [FrechetCellFilter(a) for a in self.atoms] if opt_lat else self.atoms
+    
+    orbff = pretrained.orb_v3_conservative_inf_omat(
+        device=device,
+        precision="float32-high",   # or "float32-highest" / "float64
+    )
+    self.calc = ORBCalculator(orbff, device='cuda')
+    self.ndofs = 3 * len(self.atoms[0])
+    self.fmax = None
+    self.downhill_check = downhill_check
+    self.maxstep = maxstep
+    self.dtmax = dtmax
+    self.Nmin = Nmin
+    self.finc = finc
+    self.fdec = fdec
+    self.astart = astart
+    self.nsteps = 0
+    self.dts = [dt for _ in atoms]
+    self.Nsteps = [0 for _ in atoms]
+    self.fas = [fa for _ in atoms]
+    self.a_s = [a for _ in atoms]
+    self.optimizables = [a.__ase_optimizable__() for a in atoms]
+    self.initialize()
+
+  def initialize(self):
+    self.vels = [None for _ in self.atoms]
+    self.e_lasts = [None for _ in self.atoms]
+    self.r_lasts = [None for _ in self.atoms]
+    self.vel_lasts = [None for _ in self.atoms]
+
+  def run(self, fmax = 0.05, steps = 100_000_000):
+    self.fmax = fmax
+    while self.nsteps < steps:
+      # compute the next step
+      self.step()
+      self.nsteps += 1
+
+  def step(self):
+    atom_graphs = [ase_atoms_to_atom_graphs(
+      a.atoms if self.opt_lat else a,
+      system_config = self.calc.system_config,
+      max_num_neighbors = self.calc.max_num_neighbors,
+      edge_method = self.calc.edge_method,
+      half_supercell = self.calc.half_supercell,
+      device = self.calc.device,
+    ) for a in self.atoms]
+    batch = batch_graphs(atom_graphs)
+    out = self.calc.model.predict(batch)
+    for i in range(self.nstructs):
+      self.calcs[i].results = {
+        'free_energy':  out['energy'][i].detach().cpu().item(),
+        'forces': out['grad_forces'][(i * self.natoms):((i + 1) * 
+                                      self.natoms)].detach().cpu().numpy(),
+        'stress': out['grad_stress'][i].detach().cpu().numpy(),
+      }
+      self.atoms[i].results = self.calcs[i].results
+
+    xs = [a.get_positions().ravel()  for a in self.atoms]
+    values = [a.get_potential_energy(force_consistent=True) for a in self.atoms]
+    gradients = [a.get_forces().ravel() for a in self.atoms]
+    
+    for i in range(self.nstructs):
+      if self.vels[i] is None:
+        self.vels[i] = np.zeros(self.ndofs)
+        if self.downhill_check:
+          self.e_lasts[i] = values[i]
+          self.r_lasts[i] = xs[i]
+          self.vel_lasts[i] = self.vels[i].copy()
+      else:
+        is_uphill = False
+        if self.downhill_check:
+          e = values[i]
+          # Check if the energy actually decreased
+          if e > self.e_lasts[i]:
+            self.atoms[i].set_positions(self.r_lasts[i].reshape(-1, 3))
+            is_uphill = True
+          self.e_lasts[i] = values[i]
+          self.r_lasts[i] = xs[i]
+          self.vel_last = self.vels[i].copy()
+
+        vf = np.vdot(gradients[i], self.vels[i])
+        grad2 = np.vdot(gradients[i], gradients[i])
+        if vf > 0.0 and not is_uphill:
+          self.vels[i] = ((1.0 - self.a_s[i]) * self.vels[i] + self.a_s[i] * 
+            gradients[i] / np.sqrt(grad2) * np.sqrt(np.vdot(self.vels[i], 
+                                                            self.vels[i])))
+          if self.Nsteps[i] > self.Nmin:
+            self.dts[i] = min(self.dts[i] * self.finc, self.dtmax)
+            self.a_s[i] *= self.fas[i]
+          self.Nsteps[i] += 1
+        else:
+          self.vels[i][:] *= 0.0
+          self.a_s[i] = self.astart
+          self.dts[i] *= self.fdec
+          self.Nsteps[i] = 0
+
+        self.vels[i] += self.dts[i] * gradients[i]
+        dr = self.dts[i] * self.vels[i]
+        normdr = np.sqrt(np.vdot(dr, dr))
+        if normdr > self.maxstep:
+          dr = self.maxstep * dr / normdr
+        r = self.atoms[i].get_positions().ravel()
+        self.atoms[i].set_positions((r + dr).reshape(-1, 3))
 
 @registry.register_optimizer("USPEX")
 class USPEX(BaseOptimizer):
@@ -189,13 +324,7 @@ class USPEX(BaseOptimizer):
       ) if save_obj_values else None
     
     device = model.device
-    orbff = pretrained.orb_v3_conservative_inf_omat(
-        device=device,
-        precision="float32-high",   # or "float32-highest" / "float64
-    )
-    calc = ORBCalculator(orbff, device=device)
 
-    natoms = len(population[0])
     ljrmins = torch.tensor(lj_rmins, device = device) * constraint_buffer
     best_obj = torch.tensor([float('inf')], device = device)
     best_struct = population[0].copy()
@@ -209,20 +338,12 @@ class USPEX(BaseOptimizer):
     Vuc = dataset.structures[0].volume
 
     for i in range(gens):
-      predicted = False
       # Local Energy Optimization (TODO: Make this parallel)
+      dyn = BatchFIRE([adaptor.get_atoms(population[si]) for si in range(pop)], 
+                      opt_lat = optimize_lattice, device = device)
+      dyn.run(fmax = fmax, steps = nmax)
       for si in range(pop):
-        atoms = adaptor.get_atoms(population[si])
-        atoms.calc = calc
-
-        # https://github.com/neutrons/inspired/blob/6ae3654647769be1f1619adcfc8e42266963d3dd/src/inspired/gui/mlff_worker.py#L124
-        if optimize_lattice:
-          ecf = ExpCellFilter(atoms)
-          dyn = FIRE(ecf, logfile = None, loginterval = -1)
-        else:
-          dyn = FIRE(atoms, logfile = None, loginterval = -1)
-        dyn.run(fmax = fmax, steps = nmax)
-        population[si] = adaptor.get_structure(atoms)
+        population[si] = adaptor.get_structure(dyn.atoms[si])
 
       data_pos = [torch.Tensor([site.coords.tolist(
         ) for site in struct.sites]).to(model.device) for struct in population]
@@ -230,6 +351,7 @@ class USPEX(BaseOptimizer):
         )).to(model.device) for struct in population]
       
       obj_values_gen = torch.zeros((pop,), device = 'cpu')
+      predicted = False
       while not predicted:
         try:
           for k in range(2 ** (orig_split - split)):
