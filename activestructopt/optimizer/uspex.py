@@ -343,7 +343,7 @@ class USPEX(BaseOptimizer):
                       opt_lat = optimize_lattice, device = device)
       dyn.run(fmax = fmax, steps = nmax)
       for si in range(pop):
-        population[si] = adaptor.get_structure(dyn.atoms[si])
+        population[si] = adaptor.get_structure(dyn.atoms[si].atoms)
 
       data_pos = [torch.Tensor([site.coords.tolist(
         ) for site in struct.sites]).to(model.device) for struct in population]
