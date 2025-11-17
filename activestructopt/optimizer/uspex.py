@@ -10,7 +10,7 @@ from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.core.structure import IStructure
 from pymatgen.core import Structure, Lattice
 from ase import Atoms
-from ase.filters import FrechetCellFilter
+from ase import filters as asefilters
 from ase.calculators.calculator import Calculator
 from orb_models.forcefield import pretrained
 from orb_models.forcefield.calculator import ORBCalculator
@@ -184,7 +184,7 @@ class BatchFIRE():
   def __init__(self, atoms: list[Atoms], dt: float = 0.1, maxstep: float = 0.2,
     dtmax: float = 1.0, Nmin: int = 5, finc: float = 1.1, fdec: float = 0.5, 
     astart: float = 0.1, fa: float = 0.99, a: float = 0.1, 
-    downhill_check: bool = False, opt_lat = False, device = 'cuda'):
+    downhill_check: bool = False, opt_lat = False, device = 'cuda', filtername = 'ExpCellFilter'):
     
     self.opt_lat = opt_lat
     self.nstructs = len(atoms)
@@ -193,7 +193,7 @@ class BatchFIRE():
     self.calcs = [PassThroughCalc() for _ in self.atoms]
     for i in range(self.nstructs):
         self.atoms[i].calc = self.calcs[i]
-    self.atoms = [FrechetCellFilter(a) for a in self.atoms] if opt_lat else self.atoms
+    self.atoms = [getattr(asefilters, filtername)(a) for a in self.atoms] if opt_lat else self.atoms
     
     orbff = pretrained.orb_v3_conservative_inf_omat(
         device=device,
