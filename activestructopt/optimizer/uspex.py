@@ -1,23 +1,23 @@
 from activestructopt.common.constraints import lj_rmins, lj_repulsion_mt, lj_reject
-from activestructopt.model.base import BaseModel
-from activestructopt.dataset.base import BaseDataset
 from activestructopt.objective.base import BaseObjective
 from activestructopt.optimizer.base import BaseOptimizer
+from activestructopt.dataset.base import BaseDataset
 from activestructopt.sampler.base import BaseSampler
 from activestructopt.common.registry import registry
+from activestructopt.model.base import BaseModel
 from pymatgen.transformations.standard_transformations import RotationTransformation
-from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.core.structure import IStructure
 from pymatgen.core import Structure, Lattice
-from ase import Atoms
-from ase import filters as asefilters
+from pymatgen.io.ase import AseAtomsAdaptor
 from ase.calculators.calculator import Calculator
-from orb_models.forcefield import pretrained
-from orb_models.forcefield.calculator import ORBCalculator
+from ase import filters as asefilters
+from ase import Atoms
 from orb_models.forcefield.atomic_system import ase_atoms_to_atom_graphs
+from orb_models.forcefield.calculator import ORBCalculator
 from orb_models.forcefield.base import batch_graphs
-import torch
+from orb_models.forcefield import pretrained
 import numpy as np
+import torch
 
 # Glass, Colin W., Artem R. Oganov, and Nikolaus Hansen. 
 # USPEX—Evolutionary crystal structure prediction." 
