@@ -181,7 +181,7 @@ class PassThroughCalc(Calculator):
 # https://gitlab.com/ase/ase/-/blob/master/ase/optimize/optimize.py
 # https://gitlab.com/ase/ase/-/blob/master/ase/filters.py
 class BatchFIRE():
-  def __init__(self, atoms: list[Atoms], dt: float = 0.1, maxstep: float = 0.2,
+  def __init__(self, atoms: list[Atoms], calc, dt: float = 0.1, maxstep: float = 0.2,
     dtmax: float = 1.0, Nmin: int = 5, finc: float = 1.1, fdec: float = 0.5, 
     astart: float = 0.1, fa: float = 0.99, a: float = 0.1, 
     downhill_check: bool = False, opt_lat = False, device = 'cuda', filtername = 'UnitCellFilter'):
@@ -195,11 +195,7 @@ class BatchFIRE():
         self.atoms[i].calc = self.calcs[i]
     self.atoms = [getattr(asefilters, filtername)(a) for a in self.atoms] if opt_lat else self.atoms
     
-    orbff = pretrained.orb_v3_conservative_inf_omat(
-        device=device,
-        precision="float32-high",   # or "float32-highest" / "float64
-    )
-    self.calc = ORBCalculator(orbff, device='cuda')
+    self.calc = calc
     self.ndofs = 3 * len(self.atoms[0])
     self.fmax = None
     self.downhill_check = downhill_check
@@ -300,7 +296,11 @@ class BatchFIRE():
 @registry.register_optimizer("USPEX")
 class USPEX(BaseOptimizer):
   def __init__(self) -> None:
-    pass
+    orbff = pretrained.orb_v3_conservative_inf_omat(
+        device=device,
+        precision="float32-high",   # or "float32-highest" / "float64
+    )
+    self.calc = ORBCalculator(orbff, device='cuda')
   
   def run(self, model: BaseModel, dataset: BaseDataset, 
     objective: BaseObjective, sampler: BaseSampler, 
@@ -344,7 +344,7 @@ class USPEX(BaseOptimizer):
 
     for i in range(gens):
       # Local Energy Optimization (TODO: Make this parallel)
-      dyn = BatchFIRE([adaptor.get_atoms(population[si]) for si in range(pop)], 
+      dyn = BatchFIRE([adaptor.get_atoms(population[si]) for si in range(pop)], self.calc,
                       opt_lat = optimize_lattice, device = device, filtername = filtername)
       dyn.run(fmax = fmax, steps = nmax)
       for si in range(pop):
