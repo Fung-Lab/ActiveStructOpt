@@ -297,7 +297,7 @@ class BatchFIRE():
 class USPEX(BaseOptimizer):
   def __init__(self) -> None:
     orbff = pretrained.orb_v3_conservative_inf_omat(
-        device=device,
+        device='cuda',
         precision="float32-high",   # or "float32-highest" / "float64
     )
     self.calc = ORBCalculator(orbff, device='cuda')
