@@ -25,7 +25,7 @@ def torch_cell_to_cellpar(cell):
     return cellpar
 
 def hparams(data, num_epochs, out_dim, start_lr = 0.001, radius = 10.0, 
-  max_num_neighbors = 250):
+  max_num_neighbors = 250, pretrained = True):
   import mattertune.configs as MC
   import mattertune as mt
 
@@ -58,7 +58,7 @@ def hparams(data, num_epochs, out_dim, start_lr = 0.001, radius = 10.0,
       threshold = 1e-4,
   )
   hparams.model.reset_output_heads = True
-  hparams.model.reset_backbone = False
+  hparams.model.reset_backbone = not pretrained
 
   hparams.model.properties = []
   spectra = MC.AtomInvariantVectorPropertyConfig(name = 'spectra', 
