@@ -148,6 +148,12 @@ class TorchMT(BaseOptimizer):
         except torch.cuda.OutOfMemoryError:
           split -= 1
           assert split >= 0, "Out of memory with only one structure"
+        except RuntimeError as e:
+          if "out of memory" in str(e):
+            split -= 1
+            assert split >= 0, "Out of memory with only one structure"
+          else:
+            raise e
 
     if optimize_atoms:
       new_x = best_x.detach().cpu().numpy()
