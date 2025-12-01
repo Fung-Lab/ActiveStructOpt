@@ -121,7 +121,7 @@ class TorchMT(BaseOptimizer):
                 objs_to_compare[j].isnan().any()):
                 objs_to_compare[j] = torch.inf
 
-            print(objs_to_compare)
+            print(objs_to_compare.detach().cpu().numpy())
             min_obj_iter = torch.min(objs_to_compare)
             if (min_obj_iter < best_obj).item():
               best_obj = min_obj_iter.detach()
