@@ -149,7 +149,7 @@ class TorchMT(BaseOptimizer):
           split -= 1
           assert split >= 0, "Out of memory with only one structure"
         except RuntimeError as e:
-          if "out of memory" in str(e):
+          if "out of memory" in str(e) or "unknown error" in str(e):
             split -= 1
             assert split >= 0, "Out of memory with only one structure"
           else:
