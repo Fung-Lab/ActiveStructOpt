@@ -3,6 +3,7 @@ from activestructopt.common.registry import registry
 from pymatgen.io import feff
 from pymatgen.io.feff.sets import MPEXAFSSet
 from pymatgen.io.feff.outputs import Xmu
+from larch.xafs import autobk
 import numpy as np
 import os
 import time
@@ -11,15 +12,70 @@ import shutil
 import traceback
 import stat
 
+def get_aligned_sim(chi_sims, exp_g, rbkg = 1.0, kmax = 12.5, kmax_fit = 12.0, kmin_fit = 4.5, abs_el = None, edge = 'K'):
+    chi_sim = np.mean(chi_sims, axis = 0)
+    energies = np.concatenate(([chi_sim[0, 0] - 100], chi_sim[:, 0]))
+    mus = np.concatenate(([0.0], chi_sim[:, 3]))
+    e0start = np.mean(chi_sim[:, 0] - chi_sim[:, 1])
+
+    kmini = np.argmin(np.abs(exp_g.k - kmin_fit))
+    kmaxi = np.argmin(np.abs(exp_g.k - kmax_fit))
+    k3 = exp_g.k[kmini:kmaxi] ** 3
+    expfitk3 = exp_g.chi[kmini:kmaxi] * k3
+    expnorm = np.linalg.norm(exp_g.chi[kmini:kmaxi] * k3)
+    sim_g = Group(energy = energies, mu = mus, e0 = e0start, 
+            edge_step = 1.0, edge_step_poly = 1.0, atsym = edge, edge = 'K')
+    
+    def f_e0_offset(x):
+        sim_g.e0 = e0start - x[0]
+        sim_g.ek0 = e0start - x[0]
+        autobk(sim_g, rbkg = rbkg, kmax = kmax, kmin = kmin, kweight = 1)
+
+        kmini = np.argmin(np.abs(sim_g.k - kmin_fit))
+        kmaxi = np.argmin(np.abs(sim_g.k - kmax_fit))
+        
+        sim_g.chi *= expnorm / np.linalg.norm(sim_g.chi[kmini:kmaxi] * k3)
+        mse = np.mean((expfitk3 - (sim_g.chi[kmini:kmaxi] * k3)) ** 2)
+        delattr(sim_g, 'journal')
+        delattr(sim_g, 'bkg')
+        delattr(sim_g, 'chie')
+        delattr(sim_g, 'k')
+        delattr(sim_g, 'chi')
+        delattr(sim_g, 'autobk_details')
+        delattr(sim_g, 'callargs')
+        return mse
+    res = sp.optimize.minimize(f_e0_offset, [0.0], bounds = [(-80., 80.)], method = 'Nelder-Mead')
+    e0_offset = res.x[0]
+    
+    sim_g = Group(energy = energies, mu = mus, e0 = e0start - e0_offset, 
+        edge_step = 1.0, edge_step_poly = 1.0, atsym = abs_el, edge = edge)
+    autobk(sim_g, rbkg = rbkg, kmax = kmax, kweight = 1)
+    scalar = expnorm / np.linalg.norm(sim_g.chi[kmini:kmaxi] * k3)
+
+    aligned_chis = []
+    for i in range(len(chi_sims.shape[0])):
+      energies = np.concatenate(([chi_sims[i, 0, 0] - 100], chi_sims[i, :, 0]))
+      mus = np.concatenate(([0.0], chi_sims[i, :, 3]))
+      sim_g = Group(energy = energies, mu = mus, e0 = e0start - e0_offset, 
+          edge_step = 1.0, edge_step_poly = 1.0, atsym = abs_el, edge = edge)
+      autobk(sim_g, rbkg = rbkg, kmax = kmax, kweight = 1)
+      kmini = np.argmin(np.abs(sim_g.k - kmin_fit))
+      kmaxi = np.argmin(np.abs(sim_g.k - kmax_fit))
+      aligned_chis.append(sim_g[kmini:kmaxi])
+    return np.stack(aligned_chis)
+
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
-  def __init__(self, initial_structure, feff_location = "", folder = "", 
-    absorber = 'Co', edge = 'K', radius = 10.0, 
+  def __init__(self, initial_structure, exp_g, feff_location = "", folder = "", 
+    absorber = 'Co', edge = 'K', radius = 10.0, fit_kmin = 3.0, fit_kmax = 12.0,
     additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1'},
     sh_template = None, 
     sbatch_template = None, sbatch_group_template = None,
     number_absorbers = None, save_sim = True,
     **kwargs) -> None:
+    self.exp_g = exp_g
+    self.fit_kmin = fit_kmin
+    self.fit_kmax = fit_kmax
     self.feff_location = feff_location
     self.parent_folder = folder
     self.absorber = absorber
@@ -160,32 +216,30 @@ class EXAFS(BaseSimulation):
     while not finished:
       finished = self.check_done()
       time.sleep(30)
-
-    chi_ks = np.zeros((self.N, 181))
+      
+    xmus = []
     for i in range(len(self.inds)):
-      absorb_ind = self.inds[i]
       new_abs_folder = os.path.join(self.folder, str(i))
       xmu_file = os.path.join(new_abs_folder, "xmu.dat")
       try:
-        f = open(xmu_file, "r")
-        start = 0
-        i = 0
-        while start == 0:
-          i += 1
-          if f.readline().startswith("#  omega"):
-            start = i
-        f.close()
+        skips = np.where([not l.startswith('#') for l in open(
+            xmu_file, "r").readlines()])[0][0]
       except:
         raise ASOSimulationException(f"Could not open {xmu_file}")
-
       try:
         xmu = Xmu(self.params.header, feff.inputs.Tags(self.params.tags), 
           int(absorb_ind), np.genfromtxt(xmu_file, skip_header = start))
       except:
         raise ASOSimulationException(f"Could not parse {xmu_file}")
-      
-      chi_ks[int(np.round(absorb_ind / 8))] = xmu.chi[60:]
+      xmus.append(np.genfromtxt(xmu_file, skip_header=skips))
+    xmus = np.stack(xmus)
+    aligned_chis = get_aligned_sim(xmus, exp_g, kmin_fit = self.kmin_fit, 
+      kmax_fit = self.kmax_fit, kmax = self.additional_settings['EXAFS'], 
+      abs_el = self.absorber, edge = self.edge)
 
+    chi_ks = np.zeros((self.N, aligned_chis.shape[1]))
+    for i, absorb_ind in enumerate(self.inds):
+      chi_ks[int(np.round(absorb_ind / 8))] = aligned_chis[i]
       if not self.save_sim:
         shutil.rmtree(new_abs_folder)
     
