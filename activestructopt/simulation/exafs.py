@@ -70,7 +70,8 @@ def get_aligned_sim(chi_sims, exp_g, rbkg = 1.0, kmax = 12.5, kmax_fit = 12.0, k
 class EXAFS(BaseSimulation):
   def __init__(self, initial_structure, exp_g, feff_location = "", folder = "", 
     absorber = 'Co', edge = 'K', radius = 10.0, fit_kmin = 3.0, fit_kmax = 12.0,
-    additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1'},
+    time_limit = 240,
+    additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1',},
     sh_template = None, 
     sbatch_template = None, sbatch_group_template = None,
     number_absorbers = None, save_sim = True,
@@ -92,6 +93,7 @@ class EXAFS(BaseSimulation):
     self.sh_template = sh_template
     self.number_absorbers = number_absorbers
     self.save_sim = save_sim
+    self.time_limit = time_limit
 
   def setup_config(self, config):
     config['dataset']['preprocess_params']['prediction_level'] = 'node'
@@ -207,6 +209,9 @@ class EXAFS(BaseSimulation):
     self.inds = absorber_indices 
 
   def check_done(self):
+    if not os.path.isdir(self.folder):
+      raise ASOSimulationException(f"Folder {self.folder} was deleted")
+
     for i in range(len(self.inds)):
       new_abs_folder = os.path.join(self.folder, str(i))
       if not os.path.isfile(os.path.join(new_abs_folder, "DONE")):
@@ -215,9 +220,14 @@ class EXAFS(BaseSimulation):
 
   def resolve(self):
     finished = False
-    while not finished:
+    for _ in range(2*self.time_limit):
       finished = self.check_done()
+      if finished:
+        break
       time.sleep(30)
+
+    if not finished:
+      raise ASOSimulationException(f"Simulation not finished in time limit")
       
     xmus = []
     for i in range(len(self.inds)):
