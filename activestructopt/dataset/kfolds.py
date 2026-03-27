@@ -59,6 +59,8 @@ class KFoldsDataset(BaseDataset):
                 if not call_sequential:
                   y_promises[i].get(self.structures[i], group = True, 
                     separator = ' ')
+              else:
+                raise ASOSimulationException("Max sim calls exceeded")
 
       structure_indices = np.random.permutation(np.arange(1, N))
       trainval_indices = structure_indices[:int(np.round(split * N) - 1)]
