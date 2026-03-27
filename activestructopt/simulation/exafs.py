@@ -4,7 +4,9 @@ from pymatgen.io import feff
 from pymatgen.io.feff.sets import MPEXAFSSet
 from pymatgen.io.feff.outputs import Xmu
 from larch.xafs import autobk
+from larch import Group
 import numpy as np
+import scipy as sp
 import os
 import time
 import subprocess
@@ -29,7 +31,7 @@ def get_aligned_sim(chi_sims, exp_g, rbkg = 1.0, kmax = 12.5, kmax_fit = 12.0, k
     def f_e0_offset(x):
         sim_g.e0 = e0start - x[0]
         sim_g.ek0 = e0start - x[0]
-        autobk(sim_g, rbkg = rbkg, kmax = kmax, kmin = kmin, kweight = 1)
+        autobk(sim_g, rbkg = rbkg, kmax = kmax, kweight = 1)
 
         kmini = np.argmin(np.abs(sim_g.k - kmin_fit))
         kmaxi = np.argmin(np.abs(sim_g.k - kmax_fit))
@@ -61,7 +63,7 @@ def get_aligned_sim(chi_sims, exp_g, rbkg = 1.0, kmax = 12.5, kmax_fit = 12.0, k
       autobk(sim_g, rbkg = rbkg, kmax = kmax, kweight = 1)
       kmini = np.argmin(np.abs(sim_g.k - kmin_fit))
       kmaxi = np.argmin(np.abs(sim_g.k - kmax_fit))
-      aligned_chis.append(sim_g[kmini:kmaxi])
+      aligned_chis.append(sim_g[kmini:kmaxi] * scalar)
     return np.stack(aligned_chis)
 
 @registry.register_simulation("EXAFS")
