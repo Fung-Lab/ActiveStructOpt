@@ -246,8 +246,8 @@ class EXAFS(BaseSimulation):
       xmus.append(np.genfromtxt(xmu_file, skip_header=skips))
     num_rows = np.min([xmu.shape[0] for xmu in xmus])
     xmus = np.stack([xmu[-num_rows:, :] for xmu in xmus])
-    aligned_chis = get_aligned_sim(xmus, self.exp_g, kmin_fit = self.kmin_fit, 
-      kmax_fit = self.kmax_fit, kmax = self.additional_settings['EXAFS'], 
+    aligned_chis = get_aligned_sim(xmus, self.exp_g, kmin_fit = self.fit_kmin, 
+      kmax_fit = self.fit_kmax, kmax = self.additional_settings['EXAFS'], 
       abs_el = self.absorber, edge = self.edge)
 
     chi_ks = np.zeros((self.N, aligned_chis.shape[1]))
