@@ -238,13 +238,14 @@ class EXAFS(BaseSimulation):
             xmu_file, "r").readlines()])[0][0]
       except:
         raise ASOSimulationException(f"Could not open {xmu_file}")
-      try:
-        xmu = Xmu(self.params.header, feff.inputs.Tags(self.params.tags), 
-          int(absorb_ind), np.genfromtxt(xmu_file, skip_header = skips))
-      except:
-        raise ASOSimulationException(f"Could not parse {xmu_file}")
+      #try:
+      #  xmu = Xmu(self.params.header, feff.inputs.Tags(self.params.tags), 
+      #    int(absorb_ind), np.genfromtxt(xmu_file, skip_header = skips))
+      #except:
+      #  raise ASOSimulationException(f"Could not parse {xmu_file}")
       xmus.append(np.genfromtxt(xmu_file, skip_header=skips))
-    xmus = np.stack(xmus)
+    num_rows = np.min([xmu.shape[0] for xmu in xmus])
+    xmus = np.stack([xmu[-num_rows:, :] for xmu in xmus])
     aligned_chis = get_aligned_sim(xmus, self.exp_g, kmin_fit = self.kmin_fit, 
       kmax_fit = self.kmax_fit, kmax = self.additional_settings['EXAFS'], 
       abs_el = self.absorber, edge = self.edge)
