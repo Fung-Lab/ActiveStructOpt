@@ -38,6 +38,8 @@ def get_aligned_sim(chi_sims, exp_g, rbkg = 1.0, kmax = 12.5, kmax_fit = 12.0, k
         
         sim_g.chi *= expnorm / np.linalg.norm(sim_g.chi[kmini:kmaxi] * k3)
         mse = np.mean((expfitk3 - (sim_g.chi[kmini:kmaxi] * k3)) ** 2)
+        if np.isnan(mse):
+            mse = 100.
         delattr(sim_g, 'journal')
         delattr(sim_g, 'bkg')
         delattr(sim_g, 'chie')
