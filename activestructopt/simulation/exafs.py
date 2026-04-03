@@ -81,7 +81,7 @@ class EXAFS(BaseSimulation):
     self.exp_g = exp_g
     kmini = np.argmin(np.abs(exp_g.k - fit_kmin))
     kmaxi = np.argmin(np.abs(exp_g.k - fit_kmax))
-    self.outdim = kmaxi - kmini + 1
+    self.outdim = kmaxi - kmini
     self.fit_kmin = fit_kmin
     self.fit_kmax = fit_kmax
     self.feff_location = feff_location
