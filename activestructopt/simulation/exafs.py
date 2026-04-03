@@ -77,6 +77,9 @@ class EXAFS(BaseSimulation):
     number_absorbers = None, save_sim = True,
     **kwargs) -> None:
     self.exp_g = exp_g
+    kmini = np.argmin(np.abs(exp_g.k - fit_kmin))
+    kmaxi = np.argmin(np.abs(exp_g.k - fit_kmax))
+    self.outdim = kmaxi - kmini + 1
     self.fit_kmin = fit_kmin
     self.fit_kmax = fit_kmax
     self.feff_location = feff_location
@@ -104,7 +107,7 @@ class EXAFS(BaseSimulation):
         'mask': self.mask,
       }
     }
-    config['dataset']['preprocess_params']['output_dim'] = 181
+    config['dataset']['preprocess_params']['output_dim'] = self.outdim
     return config
 
   def get(self, struct, group = False, separator = ','):
@@ -250,6 +253,7 @@ class EXAFS(BaseSimulation):
       kmax_fit = self.fit_kmax, kmax = self.additional_settings['EXAFS'], 
       abs_el = self.absorber, edge = self.edge)
 
+    assert aligned_chis.shape[1] == self.outdim
     chi_ks = np.zeros((self.N, aligned_chis.shape[1]))
     for i, absorb_ind in enumerate(self.inds):
       chi_ks[int(np.round(absorb_ind / 8))] = aligned_chis[i]
