@@ -41,8 +41,12 @@ class KFoldsDataset(BaseDataset):
             try:
               if call_sequential:
                 y_promises[i].get(self.structures[i])
-              self.ys[i] = y_promises[i].resolve()
-              self.mismatches[i] = simulation.get_mismatch(self.ys[i], target)
+              new_y = y_promises[i].resolve()
+              new_mismatch = simulation.get_mismatch(new_y, target)
+              if np.isnan(new_mismatch):
+                raise ASOSimulationException('NaN Mismatch')
+              self.ys[i] = new_y
+              self.mismatches[i] = new_mismatch
               #if self.mismatches[i] <= np.nanmin(self.mismatches):
               #  for j in range(len(self.structures)):
               #    if (self.ys[j] is not None) and i != j:

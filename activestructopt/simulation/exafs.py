@@ -38,6 +38,8 @@ def get_aligned_sim(chi_sims, exp_g, rbkg = 1.0, kmax = 12.5, kmax_fit = 12.0, k
         
         sim_g.chi *= expnorm / np.linalg.norm(sim_g.chi[kmini:kmaxi] * k3)
         mse = np.mean((expfitk3 - (sim_g.chi[kmini:kmaxi] * k3)) ** 2)
+        if np.isnan(mse):
+            mse = 100.
         delattr(sim_g, 'journal')
         delattr(sim_g, 'bkg')
         delattr(sim_g, 'chie')
@@ -55,7 +57,7 @@ def get_aligned_sim(chi_sims, exp_g, rbkg = 1.0, kmax = 12.5, kmax_fit = 12.0, k
     scalar = expnorm / np.linalg.norm(sim_g.chi[kmini:kmaxi] * k3)
 
     aligned_chis = []
-    for i in range(len(chi_sims.shape[0])):
+    for i in range(chi_sims.shape[0]):
       energies = np.concatenate(([chi_sims[i, 0, 0] - 100], chi_sims[i, :, 0]))
       mus = np.concatenate(([0.0], chi_sims[i, :, 3]))
       sim_g = Group(energy = energies, mu = mus, e0 = e0start - e0_offset, 
@@ -63,7 +65,7 @@ def get_aligned_sim(chi_sims, exp_g, rbkg = 1.0, kmax = 12.5, kmax_fit = 12.0, k
       autobk(sim_g, rbkg = rbkg, kmax = kmax, kweight = 1)
       kmini = np.argmin(np.abs(sim_g.k - kmin_fit))
       kmaxi = np.argmin(np.abs(sim_g.k - kmax_fit))
-      aligned_chis.append(sim_g[kmini:kmaxi] * scalar)
+      aligned_chis.append(sim_g.chi[kmini:kmaxi] * scalar)
     return np.stack(aligned_chis)
 
 @registry.register_simulation("EXAFS")
@@ -250,7 +252,7 @@ class EXAFS(BaseSimulation):
     num_rows = np.min([xmu.shape[0] for xmu in xmus])
     xmus = np.stack([xmu[-num_rows:, :] for xmu in xmus])
     aligned_chis = get_aligned_sim(xmus, self.exp_g, kmin_fit = self.fit_kmin, 
-      kmax_fit = self.fit_kmax, kmax = self.additional_settings['EXAFS'], 
+      kmax_fit = self.fit_kmax, kmax = float(self.additional_settings['EXAFS']), 
       abs_el = self.absorber, edge = self.edge)
 
     assert aligned_chis.shape[1] == self.outdim
