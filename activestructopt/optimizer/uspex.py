@@ -366,7 +366,7 @@ class USPEX(BaseOptimizer):
 
             if type(model) is GroundTruth:
               predictions = model.predict(population[starti:(stopi+1)], 
-                prepared = False, mask = mask = dataset.simfunc.mask)
+                prepared = False, mask = dataset.simfunc.mask)
             else:
               batch_data = model.batch_pos_cell(
                 data_pos[starti:(stopi+1)], data_cell[starti:(stopi+1)], 
