@@ -99,4 +99,4 @@ if __name__ == "__main__":
     return np.mean(spec, axis = 0)
 
   def get_mismatch(self, to_compare, target):
-    return np.mean((collate(to_compare) - target) ** 2)
+    return np.mean((self.collate(to_compare) - target) ** 2)
