@@ -364,13 +364,13 @@ class USPEX(BaseOptimizer):
             starti = k * (2 ** split)
             stopi = min((k + 1) * (2 ** split) - 1, pop - 1)
 
+            batch_data = model.batch_pos_cell(
+              data_pos[starti:(stopi+1)], data_cell[starti:(stopi+1)], 
+              population[0])
             if type(model) is GroundTruth:
               predictions = model.predict(population[starti:(stopi+1)], 
                 prepared = False, mask = dataset.simfunc.mask)
             else:
-              batch_data = model.batch_pos_cell(
-                data_pos[starti:(stopi+1)], data_cell[starti:(stopi+1)], 
-                population[0])
               #print("batched data")
               predictions = model.predict(batch_data, prepared = True, 
                 mask = dataset.simfunc.mask)
