@@ -306,7 +306,8 @@ class USPEX(BaseOptimizer):
   def run(self, model: BaseModel, dataset: BaseDataset, 
     objective: BaseObjective, sampler: BaseSampler, 
     pop = 64, gens = 100, optimize_atoms = True, 
-    optimize_lattice = True, save_obj_values = False, 
+    optimize_lattice = True, save_obj_values = False,
+    save_structures = False, 
     constraint_scale = 1.0, constraint_buffer = 0.85, 
     random_starts = False, fmax = 0.01, nmax = 100, 
     survival = 0.6, select_p = 1, p_her = 0.85, p_mut = 0.1,
@@ -328,6 +329,8 @@ class USPEX(BaseOptimizer):
 
     obj_values = torch.zeros((gens, pop), device = 'cpu'
       ) if save_obj_values else None
+
+    all_structures = [] if save_structures else None
     
     device = model.device
 
@@ -344,12 +347,13 @@ class USPEX(BaseOptimizer):
     Vuc = dataset.structures[0].volume
 
     for i in range(gens):
-      # Local Energy Optimization (TODO: Make this parallel)
+      # Local Energy Optimization
       dyn = BatchFIRE([adaptor.get_atoms(population[si]) for si in range(pop)], self.calc,
                       opt_lat = optimize_lattice, device = device, filtername = filtername)
       dyn.run(fmax = fmax, steps = nmax)
       for si in range(pop):
         population[si] = adaptor.get_structure(dyn.atoms[si].atoms)
+        all_structures.append(population[si].as_dict())
 
       data_pos = [torch.Tensor([site.coords.tolist(
         ) for site in struct.sites]).to(model.device) for struct in population]
@@ -450,5 +454,5 @@ class USPEX(BaseOptimizer):
               rejected = lj_reject(new_struct, buffer = constraint_buffer)
             population[j + 1] = new_struct
 
-    return best_struct, obj_values
+    return best_struct, obj_values, all_structures
 
