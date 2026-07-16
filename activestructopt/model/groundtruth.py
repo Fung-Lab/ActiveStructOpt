@@ -23,7 +23,7 @@ class GroundTruth(BaseModel):
         sim_promise = copy.deepcopy(self.simfunc)
         sim_promise.get(data[i])
         sim_spec = sim_promise.resolve()
-        gt[i, :] = np.mean(sim_spec[np.array(sim_promise.mask)], axis = 0)
+        gt[i, :] = torch.mean(sim_spec[torch.tensor(sim_promise.mask)], axis = 0)
 
     unc = torch.zeros(gt.size(), device = gt.device)
 
