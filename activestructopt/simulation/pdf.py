@@ -95,5 +95,8 @@ if __name__ == "__main__":
   def garbage_collect(self, is_better):
     return
 
+  def collate(self, spec):
+    return np.mean(spec, axis = 0)
+
   def get_mismatch(self, to_compare, target):
-    return np.mean((np.mean(to_compare, axis = 0) - target) ** 2)
+    return np.mean((collate(to_compare) - target) ** 2)
