@@ -364,13 +364,13 @@ class USPEX(BaseOptimizer):
             starti = k * (2 ** split)
             stopi = min((k + 1) * (2 ** split) - 1, pop - 1)
 
-            batch_data = model.batch_pos_cell(
-              data_pos[starti:(stopi+1)], data_cell[starti:(stopi+1)], 
-              population[0])
             if type(model) is GroundTruth:
               predictions = model.predict(population[starti:(stopi+1)], 
                 prepared = False, mask = dataset.simfunc.mask)
             else:
+              batch_data = model.batch_pos_cell(
+                data_pos[starti:(stopi+1)], data_cell[starti:(stopi+1)], 
+                population[0])
               #print("batched data")
               predictions = model.predict(batch_data, prepared = True, 
                 mask = dataset.simfunc.mask)
@@ -379,17 +379,24 @@ class USPEX(BaseOptimizer):
             objs, obj_total = objective.get(predictions, target, 
               device = device, N = stopi - starti + 1)
 
-            #print("objective obtained")
-            lj_repuls = lj_repulsion_mt(batch_data, ljrmins)
-            #print("repulsions calculated")
+            if type(model) is GroundTruth:
+              for j in range(stopi - starti + 1):
+                objs[j] = objs[j].detach()
+                if save_obj_values:
+                  obj_values[i, starti + j] = objs[j].detach().cpu()
+                obj_values_gen[starti + j] = objs[j].detach().cpu()
+            else:
+              #print("objective obtained")
+              lj_repuls = lj_repulsion_mt(batch_data, ljrmins)
+              #print("repulsions calculated")
 
-            for j in range(stopi - starti + 1):
-              objs[j] += constraint_scale * lj_repuls[j]
-              obj_total += constraint_scale * lj_repuls[j]
-              objs[j] = objs[j].detach()
-              if save_obj_values:
-                obj_values[i, starti + j] = objs[j].detach().cpu()
-              obj_values_gen[starti + j] = objs[j].detach().cpu()
+              for j in range(stopi - starti + 1):
+                objs[j] += constraint_scale * lj_repuls[j]
+                obj_total += constraint_scale * lj_repuls[j]
+                objs[j] = objs[j].detach()
+                if save_obj_values:
+                  obj_values[i, starti + j] = objs[j].detach().cpu()
+                obj_values_gen[starti + j] = objs[j].detach().cpu()
 
             #print("objectives added")
 
