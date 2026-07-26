@@ -322,8 +322,7 @@ class ActiveLearning():
             'model_params': model_params,
             'obj_values': [[] if x is None else x.tolist(
               ) for x in self.opt_obj_values],
-            'opt_structures': [[] if x is None else x.tolist(
-              ) for x in self.opt_structures],
+            'opt_structures': [[] if x is None else x for x in self.opt_structures],
             'config': self.config,
       }
       with open(filename, "w") as file: 
