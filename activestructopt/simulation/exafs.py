@@ -13,6 +13,169 @@ import subprocess
 import shutil
 import traceback
 import stat
+from lmfit import Minimizer, Parameters
+from larch.xafs import feffpath, sigma2_debye
+from mattertune.backbones import ORBBackboneModule
+from mattertune.backbones.orb import ORBBackboneConfig
+
+
+def get_sims(folder):
+  n = len(os.listdir(folder))
+  paths = []
+  for i in range(n):
+    path_files = np.sort(list(filter(lambda x: x.startswith('feff'
+      ) and x.endswith('.dat'), 
+      os.listdir(f"{folder}/{i}"))))
+    abs_paths = []
+    for j in range(len(path_files)):
+      try:
+          abs_paths.append(feffpath(f'{folder}/{i}/{path_files[j]}'))
+      except:
+          print(f'Skipping {path_files[j]}')
+    assert len(abs_paths) > 1
+    paths.append(abs_paths)
+  return paths
+
+def get_s02(folder):
+  n = len(os.listdir(folder))
+  s02s = []
+  for i in range(n):
+    f = open(f'{folder}/{i}/xmu.dat')
+    lines = f.readlines()
+    s02_line = np.where(['S02=' in line for line in lines])[0][0]
+    s02s.append(float(lines[s02_line].split('S02=')[1].split()[0]))
+  return s02s
+
+TD_mean = 2.460525700259601
+TD_std = 0.2499737087979493
+unnormalize_TD = lambda x: 10 ** (2 * TD_std * x + TD_mean)
+
+def get_debye_predictor(ckpt_path):
+  ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+  hparams = ckpt["hyper_parameters"].copy()
+  hparams.pop("pruning_message_passing", None)
+  hparams.pop("using_partition", None)
+  model = ORBBackboneModule(ORBBackboneConfig.model_validate(hparams))
+  model.load_state_dict(ckpt["state_dict"])
+  model = model.eval().to("cpu")
+  return model
+
+def get_paths_info(sim, debye_t = None):
+  struct_info = []
+
+  for j, abs_paths in enumerate(sim):
+    abs_reffs = []
+    abs_m_a = []
+    abs_m_s = []
+    abs_rnorman = []
+    abs_scatter_Zs = []
+    abs_degens = []
+    abs_amp = []
+    abs_pha = []
+    abs_rep = []
+    abs_lam = []
+    abs_sigma2_debye = []
+
+    abs_reffs_ms = []
+    abs_nlegs_ms = []
+    abs_degen_ms = []
+    abs_rnorman_ms = []
+    abs_amp_ms = []
+    abs_pha_ms = []
+    abs_rep_ms = []
+    abs_lam_ms = []
+    abs_atwt_ms = []
+    abs_pos_ms = []
+    abs_sigma2_debye_ms = []
+
+    for pathi, path in enumerate(abs_paths):
+      if len(path._feffdat.geom) == 2:
+        reff = np.linalg.norm(np.array(path._feffdat.geom[1][4:7]).astype(float))
+        m_a = path._feffdat.geom[0][3]
+        m_s = path._feffdat.geom[1][3]
+        rnorman = path._feffdat.rnorman
+        if len(abs_reffs) > 0 and np.min(np.abs(np.array(abs_reffs) - reff)
+              ) < 0.00005 and abs_scatter_Zs[np.argmin(np.abs(np.array(
+              abs_reffs) - reff))] == path._feffdat.geom[1][1]:
+          abs_degens[np.argmin(np.abs(np.array(
+              abs_reffs) - reff))] += path._feffdat.degen
+        else:
+          abs_reffs.append(reff)
+          abs_m_a.append(m_a)
+          abs_m_s.append(m_s)
+          abs_rnorman.append(rnorman)
+          abs_scatter_Zs.append(path._feffdat.geom[1][1])
+          abs_degens.append(path._feffdat.degen)
+          abs_amp.append(path._feffdat.amp)
+          abs_pha.append(path._feffdat.pha)
+          abs_rep.append(path._feffdat.rep)
+          abs_lam.append(path._feffdat.lam)
+          if debye_t is not None:
+              abs_sigma2_debye.append(sigma2_debye(300., debye_t, path))
+      else:
+        for leg in path._feffdat.geom:
+          abs_atwt_ms.append(leg[3])
+          abs_pos_ms.append([float(leg[4]), float(leg[5]), float(leg[6])])
+        rnorman = path._feffdat.rnorman
+        abs_rnorman_ms.append(rnorman)
+        abs_reffs_ms.append(path._feffdat.reff)
+        abs_nlegs_ms.append(len(path._feffdat.geom))
+        abs_degen_ms.append(path._feffdat.degen)
+        abs_amp_ms.append(path._feffdat.amp)
+        abs_pha_ms.append(path._feffdat.pha)
+        abs_rep_ms.append(path._feffdat.rep)
+        abs_lam_ms.append(path._feffdat.lam)
+        if debye_t is not None:
+          abs_sigma2_debye_ms.append(sigma2_debye(300., debye_t, path))
+    abs_info = {
+      "k_feff": path._feffdat.k,
+      "Reffs": abs_reffs,
+      "m_a": m_a,
+      "m_s": m_s,
+      "rnorman": rnorman,
+      "degen": abs_degens,
+      "scatterer_Zs": abs_scatter_Zs,
+      "amp": abs_amp,
+      "pha": abs_pha,
+      "rep": abs_rep,
+      "lam": abs_lam,
+      "sigma2_debye": abs_sigma2_debye,
+      "Reffs_MS": abs_reffs_ms,
+      "nlegs_MS": abs_nlegs_ms,
+      "degen_MS": abs_degen_ms,
+      "rnorman_MS": abs_rnorman_ms,
+      "amp_MS": abs_amp_ms,
+      "pha_MS": abs_pha_ms,
+      "rep_MS": abs_rep_ms,
+      "lam_MS": abs_lam_ms,
+      "atwt_MS": abs_atwt_ms,
+      "pos_MS": abs_pos_ms,
+      "sigma2_debye_MS": abs_sigma2_debye_ms,
+    }
+    struct_info.append(abs_info)
+  return struct_info
+
+# https://github.com/xraypy/xraylarch/blob/dafed7db999523d366f482f6a260bc983c4defe4/larch/xafs/feffdat.py#L638
+KTOE = 1.e20*consts.hbar**2 / (2*consts.m_e * consts.e) # 3.8099819442818976
+ETOK = 1.0/KTOE
+def _calc_chi(k, feffk, reff, degen, pha, amp, rep, lam, deltar, sigma2, third, fourth, s02 = 1.0, e0 = 0.0, ei = 0.0):
+  """calculate chi(k) with the provided parameters"""
+  en = k*k - e0*ETOK # create e0-shifted energy and k
+  q = np.sign(en)*np.sqrt(abs(en)) # q is the e0-shifted wavenumber
+  pha = np.interp(q, feffk, pha) # lookup Feff.dat values
+  amp = np.interp(q, feffk, amp)
+  rep = np.interp(q, feffk, rep)
+  lam = np.interp(q, feffk, lam)
+  pp   = (rep + 1j/lam)**2 + 1j * ei * ETOK  # p = complex wavenumber, and its square:
+  p    = np.sqrt(pp)
+  cchi = np.exp(-2*reff*p.imag - # the xafs equation:
+      2*pp*(sigma2 - pp*fourth/3) +
+      1j*(2*q*reff + pha +
+      2*p*(deltar - 2*sigma2/reff - 2*pp*third/3) ))
+  cchi = degen * s02 * amp * cchi / (q*(reff + deltar)**2)
+  cchi[0] = 2*cchi[1] - cchi[2]
+  return cchi.imag
+
 
 def get_aligned_sim(chi_sims, exp_g, rbkg = 1.0, kmax = 12.5, kmax_fit = 12.0, kmin_fit = 4.5, abs_el = None, edge = 'K'):
     chi_sim = np.mean(chi_sims, axis = 0)
