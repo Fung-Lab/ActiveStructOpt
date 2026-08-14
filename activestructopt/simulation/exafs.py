@@ -335,6 +335,12 @@ class EXAFS(BaseSimulation):
     new_folder = os.path.join(self.parent_folder, str(np.max(
       subfolders) + 1 if len(subfolders) > 0 else 0))
     os.mkdir(new_folder)
+
+    if self.TD_predictor_path is not None:
+      additional_settings.pop('DEBYE', None)
+      debye_predictor = get_debye_predictor(TD_predictor_path)
+      predicted_debye_t = debye_predictor(self.structure)
+      additional_settings['DEBYE'] = f'300 {predicted_debye_t} 0'
     
     for i in range(len(absorber_indices)):
       new_abs_folder = os.path.join(new_folder, str(i))
