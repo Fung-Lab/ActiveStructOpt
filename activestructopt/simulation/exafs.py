@@ -46,11 +46,11 @@ def get_s02(folder):
     s02s.append(float(lines[s02_line].split('S02=')[1].split()[0]))
   return s02s
 
-TD_mean = 2.460525700259601
-TD_std = 0.2499737087979493
-unnormalize_TD = lambda x: 10 ** (2 * TD_std * x + TD_mean)
-
 def get_debye_predictor(ckpt_path):
+  TD_mean = 2.460525700259601
+  TD_std = 0.2499737087979493
+  unnormalize_TD = lambda x: 10 ** (2 * TD_std * x + TD_mean)
+
   ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
   hparams = ckpt["hyper_parameters"].copy()
   hparams.pop("pruning_message_passing", None)
@@ -58,7 +58,16 @@ def get_debye_predictor(ckpt_path):
   model = ORBBackboneModule(ORBBackboneConfig.model_validate(hparams))
   model.load_state_dict(ckpt["state_dict"])
   model = model.eval().to("cpu")
-  return model
+  def predict_debye_temp(s):
+    return unnormalize_TD(model.model_forward(model.atoms_to_data(
+    Atoms(
+        numbers=np.array(s.atomic_numbers),
+        positions=np.array(s.cart_coords),
+        cell=np.array(s.lattice.matrix),
+        pbc=True,
+    ), has_labels = False).to('cpu'), 
+    mode = 'predict')['predicted_properties']['debye_temp'].item())
+  return predict_debye_temp
 
 def get_paths_info(sim, debye_t = None):
   struct_info = []
