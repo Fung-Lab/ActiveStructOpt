@@ -250,7 +250,7 @@ def get_aligned_sim(sim, exp_g, rbkg = 1.0, kmax = 12.5, kmax_fit = 15.0, kmin_f
     eis = [result.params[f'Ei_{i}'] for i in range(len(new_sim))]
     e0s = [result.params[f'ΔE0_{i}'] for i in range(len(new_sim))]
     chi_spec = np.stack([get_absorber_spectra_debye(paths_info[i], 
-      e0s[i], eis[i], s02s[i], exp_g.k) for i in range(len(new_sim))])
+      e0s[i], eis[i], s02s[i], ks) for i in range(len(new_sim))])
     return chi_spec    
 
 @registry.register_simulation("EXAFS")
