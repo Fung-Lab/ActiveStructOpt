@@ -222,36 +222,48 @@ def get_structure_spectra_debye(structure_info, e0s, eis, s02s, k):
   return np.mean(np.stack([get_absorber_spectra_debye(structure_info[i], 
     e0s[i], eis[i], s02s[i], k) for i in range(len(structure_info))]), axis = 0)
 
-def get_aligned_sim(sim, exp_g, rbkg = 1.0, kmax = 12.5, kmax_fit = 15.0, kmin_fit = 4.0, kwfit = 3, abs_el = None, edge = 'K', vary_TD = True):
-    kmini = np.argmin(np.abs(exp_g.k - kmin_fit))
-    kmaxi = np.argmin(np.abs(exp_g.k - kmax_fit))
-    ks = exp_g.k[kmini:kmaxi]
-    exp_chi = exp_g.chi[kmini:kmaxi]
-    
-    def res_fun_lmfit(params):
-      n = len(params) // 2
-      paths_info = get_paths_info(sim, debye_t = params['θD'])
-      dev = (ks ** kwfit *  exp_chi) - (
-        ks ** kwfit * get_structure_spectra_debye(paths_info, 
-          [params[f'ΔE0_{i}'] for i in range(n)],
-          [params[f'Ei_{i}'] for i in range(n)], s02s, ks))
-      return dev
+def get_aligned_sim(sim, s02s, exp_g, structure, rbkg = 1.0, kmax = 12.5, kmax_fit = 15.0, 
+  kmin_fit = 4.0, kwfit = 3, abs_el = None, edge = 'K', vary_TD = True, 
+  TD_predictor_path = None):
+  kmini = np.argmin(np.abs(exp_g.k - kmin_fit))
+  kmaxi = np.argmin(np.abs(exp_g.k - kmax_fit))
+  ks = exp_g.k[kmini:kmaxi]
+  exp_chi = exp_g.chi[kmini:kmaxi]
+  
+  def res_fun_lmfit(params):
+    n = len(params) // 2
+    paths_info = get_paths_info(sim, debye_t = params['θD'])
+    dev = (ks ** kwfit *  exp_chi) - (
+      ks ** kwfit * get_structure_spectra_debye(paths_info, 
+        [params[f'ΔE0_{i}'] for i in range(n)],
+        [params[f'Ei_{i}'] for i in range(n)], s02s, ks))
+    return dev
 
-    params = Parameters()
-    for i in range(len(sim)):
-        params.add(f'Ei_{i}', value = 0.0, min = -5.0, max = 5.0)
-        params.add(f'ΔE0_{i}', value = 0.0, min = -30.0, max = 30.0)
-    params.add(f'θD', value = predicted_debye_t, min = max(0, predicted_debye_t - 250), 
-      max = predicted_debye_t + 250, vary = vary_TD)
+  if TD_predictor_path is None:
+    predicted_debye_t = 500.0
+    debye_lb = 100.0
+    debye_ub = 2000.0
+  else:
+    debye_predictor = get_debye_predictor(TD_predictor_path)
+    predicted_debye_t = debye_predictor(structure)
+    debye_lb = max(0, predicted_debye_t - 250)
+    debye_ub = predicted_debye_t + 250
 
-    minner = Minimizer(res_fun_lmfit, params)
-    result = minner.minimize()
-    paths_info = get_paths_info(new_sim, debye_t = result.params['θD'])
-    eis = [result.params[f'Ei_{i}'] for i in range(len(new_sim))]
-    e0s = [result.params[f'ΔE0_{i}'] for i in range(len(new_sim))]
-    chi_spec = np.stack([get_absorber_spectra_debye(paths_info[i], 
-      e0s[i], eis[i], s02s[i], ks) for i in range(len(new_sim))])
-    return chi_spec    
+  params = Parameters()
+  for i in range(len(sim)):
+      params.add(f'Ei_{i}', value = 0.0, min = -5.0, max = 5.0)
+      params.add(f'ΔE0_{i}', value = 0.0, min = -30.0, max = 30.0)
+  params.add(f'θD', value = predicted_debye_t, min = debye_lb, 
+    max = debye_ub, vary = vary_TD)
+
+  minner = Minimizer(res_fun_lmfit, params)
+  result = minner.minimize()
+  paths_info = get_paths_info(new_sim, debye_t = result.params['θD'])
+  eis = [result.params[f'Ei_{i}'] for i in range(len(new_sim))]
+  e0s = [result.params[f'ΔE0_{i}'] for i in range(len(new_sim))]
+  chi_spec = np.stack([get_absorber_spectra_debye(paths_info[i], 
+    e0s[i], eis[i], s02s[i], ks) for i in range(len(new_sim))])
+  return chi_spec
 
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
@@ -261,7 +273,7 @@ class EXAFS(BaseSimulation):
     additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1',},
     sh_template = None, 
     sbatch_template = None, sbatch_group_template = None,
-    number_absorbers = None, save_sim = True,
+    number_absorbers = None, save_sim = True, TD_predictor_path = None,
     **kwargs) -> None:
     self.exp_g = exp_g
     kmini = np.argmin(np.abs(exp_g.k - fit_kmin))
@@ -284,6 +296,8 @@ class EXAFS(BaseSimulation):
     self.number_absorbers = number_absorbers
     self.save_sim = save_sim
     self.time_limit = time_limit
+    self.structure = None
+    self.TD_predictor_path = TD_predictor_path
 
   def setup_config(self, config):
     config['dataset']['preprocess_params']['prediction_level'] = 'node'
@@ -299,6 +313,7 @@ class EXAFS(BaseSimulation):
 
   def get(self, struct, group = False, separator = ','):
     structure = struct.copy()
+    self.structure = struct.copy()
 
     # get all indices of the absorber
     absorber_indices = 8 * np.argwhere(
@@ -436,9 +451,12 @@ class EXAFS(BaseSimulation):
       xmus.append(np.genfromtxt(xmu_file, skip_header=skips))
     num_rows = np.min([xmu.shape[0] for xmu in xmus])
     xmus = np.stack([xmu[-num_rows:, :] for xmu in xmus])
-    aligned_chis = get_aligned_sim(xmus, self.exp_g, kmin_fit = self.fit_kmin, 
+
+    sim = get_sims(self.folder)
+    s02s = get_s02(self.folder)
+    aligned_chis = get_aligned_sim(sim, s02s, self.exp_g, self.structure, kmin_fit = self.fit_kmin, 
       kmax_fit = self.fit_kmax, kmax = float(self.additional_settings['EXAFS']), 
-      abs_el = self.absorber, edge = self.edge)
+      abs_el = self.absorber, edge = self.edge, TD_predictor_path = self.TD_predictor_path)
 
     assert aligned_chis.shape[1] == self.outdim
     chi_ks = np.zeros((self.N, aligned_chis.shape[1]))
