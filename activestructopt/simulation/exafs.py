@@ -222,9 +222,8 @@ def get_structure_spectra_debye(structure_info, e0s, eis, s02s, k):
   return np.mean(np.stack([get_absorber_spectra_debye(structure_info[i], 
     e0s[i], eis[i], s02s[i], k) for i in range(len(structure_info))]), axis = 0)
 
-def get_aligned_sim(sim, s02s, exp_g, structure, rbkg = 1.0, kmax = 12.5, kmax_fit = 15.0, 
-  kmin_fit = 4.0, kwfit = 3, abs_el = None, edge = 'K', vary_TD = True, 
-  TD_predictor_path = None):
+def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0, 
+  kwfit = 3, vary_TD = True, TD_predictor_path = None):
   kmini = np.argmin(np.abs(exp_g.k - kmin_fit))
   kmaxi = np.argmin(np.abs(exp_g.k - kmax_fit))
   ks = exp_g.k[kmini:kmaxi]
@@ -274,6 +273,7 @@ class EXAFS(BaseSimulation):
     sh_template = None, 
     sbatch_template = None, sbatch_group_template = None,
     number_absorbers = None, save_sim = True, TD_predictor_path = None,
+    vary_TD = True, kwfit = 3,
     **kwargs) -> None:
     self.exp_g = exp_g
     kmini = np.argmin(np.abs(exp_g.k - fit_kmin))
@@ -298,6 +298,8 @@ class EXAFS(BaseSimulation):
     self.time_limit = time_limit
     self.structure = None
     self.TD_predictor_path = TD_predictor_path
+    self.vary_TD = vary_TD
+    self.kwfit = kwfit
 
   def setup_config(self, config):
     config['dataset']['preprocess_params']['prediction_level'] = 'node'
@@ -461,8 +463,8 @@ class EXAFS(BaseSimulation):
     sim = get_sims(self.folder)
     s02s = get_s02(self.folder)
     aligned_chis = get_aligned_sim(sim, s02s, self.exp_g, self.structure, kmin_fit = self.fit_kmin, 
-      kmax_fit = self.fit_kmax, kmax = float(self.additional_settings['EXAFS']), 
-      abs_el = self.absorber, edge = self.edge, TD_predictor_path = self.TD_predictor_path)
+      kmax_fit = self.fit_kmax, kmax = float(self.additional_settings['EXAFS']), kwfit = self.kwfit,
+      TD_predictor_path = self.TD_predictor_path, vary_TD = self.vary_TD)
 
     assert aligned_chis.shape[1] == self.outdim
     chi_ks = np.zeros((self.N, aligned_chis.shape[1]))
