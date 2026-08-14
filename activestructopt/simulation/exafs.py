@@ -185,60 +185,73 @@ def _calc_chi(k, feffk, reff, degen, pha, amp, rep, lam, deltar, sigma2, third, 
   cchi[0] = 2*cchi[1] - cchi[2]
   return cchi.imag
 
+def get_absorber_spectra_debye(absorber_info, e0, ei, s02, k):
+  chi_ss = np.zeros((len(absorber_info['Reffs']), len(k)))
+  chi_ms = np.zeros((len(absorber_info['Reffs_MS']), len(k)))
+  for i in range(len(absorber_info['Reffs'])):
+    chi_ss[i] += _calc_chi(k, absorber_info['k_feff'], 
+      absorber_info['Reffs'][i], 
+      int(absorber_info['degen'][i]),
+      absorber_info['pha'][i],
+      absorber_info['amp'][i],
+      absorber_info['rep'][i],
+      absorber_info['lam'][i],
+      0.0, 
+      absorber_info['sigma2_debye'][i],
+      0.0,
+      0.0,
+      e0 = e0, ei = ei, s02 = s02,
+      )
+  for i in range(len(absorber_info['Reffs_MS'])):
+    chi_ms[i] += _calc_chi(k, absorber_info['k_feff'], 
+      absorber_info['Reffs_MS'][i], 
+      int(absorber_info['degen_MS'][i]),
+      absorber_info['pha_MS'][i],
+      absorber_info['amp_MS'][i],
+      absorber_info['rep_MS'][i],
+      absorber_info['lam_MS'][i],
+      0.0, 
+      absorber_info['sigma2_debye_MS'][i], 
+      0.0, 
+      0.0, 
+      e0 = e0, ei = ei, s02 = s02,
+    )    
+  return np.sum(chi_ss, axis = 0) + np.sum(chi_ms, axis = 0)
 
-def get_aligned_sim(chi_sims, exp_g, rbkg = 1.0, kmax = 12.5, kmax_fit = 12.0, kmin_fit = 4.5, abs_el = None, edge = 'K'):
-    chi_sim = np.mean(chi_sims, axis = 0)
-    energies = np.concatenate(([chi_sim[0, 0] - 100], chi_sim[:, 0]))
-    mus = np.concatenate(([0.0], chi_sim[:, 3]))
-    e0start = np.mean(chi_sim[:, 0] - chi_sim[:, 1])
+def get_structure_spectra_debye(structure_info, e0s, eis, s02s, k):
+  return np.mean(np.stack([get_absorber_spectra_debye(structure_info[i], 
+    e0s[i], eis[i], s02s[i], k) for i in range(len(structure_info))]), axis = 0)
 
+def get_aligned_sim(sim, exp_g, rbkg = 1.0, kmax = 12.5, kmax_fit = 15.0, kmin_fit = 4.0, kwfit = 3, abs_el = None, edge = 'K', vary_TD = True):
     kmini = np.argmin(np.abs(exp_g.k - kmin_fit))
     kmaxi = np.argmin(np.abs(exp_g.k - kmax_fit))
-    k3 = exp_g.k[kmini:kmaxi] ** 3
-    expfitk3 = exp_g.chi[kmini:kmaxi] * k3
-    expnorm = np.linalg.norm(exp_g.chi[kmini:kmaxi] * k3)
-    sim_g = Group(energy = energies, mu = mus, e0 = e0start, 
-            edge_step = 1.0, edge_step_poly = 1.0, atsym = edge, edge = 'K')
+    ks = exp_g.k[kmini:kmaxi]
+    exp_chi = exp_g.chi[kmini:kmaxi]
     
-    def f_e0_offset(x):
-        sim_g.e0 = e0start - x[0]
-        sim_g.ek0 = e0start - x[0]
-        autobk(sim_g, rbkg = rbkg, kmax = kmax, kweight = 1)
+    def res_fun_lmfit(params):
+      n = len(params) // 2
+      paths_info = get_paths_info(sim, debye_t = params['θD'])
+      dev = (ks ** kwfit *  exp_chi) - (
+        ks ** kwfit * get_structure_spectra_debye(paths_info, 
+          [params[f'ΔE0_{i}'] for i in range(n)],
+          [params[f'Ei_{i}'] for i in range(n)], s02s, ks))
+      return dev
 
-        kmini = np.argmin(np.abs(sim_g.k - kmin_fit))
-        kmaxi = np.argmin(np.abs(sim_g.k - kmax_fit))
-        
-        sim_g.chi *= expnorm / np.linalg.norm(sim_g.chi[kmini:kmaxi] * k3)
-        mse = np.mean((expfitk3 - (sim_g.chi[kmini:kmaxi] * k3)) ** 2)
-        if np.isnan(mse):
-            mse = 100.
-        delattr(sim_g, 'journal')
-        delattr(sim_g, 'bkg')
-        delattr(sim_g, 'chie')
-        delattr(sim_g, 'k')
-        delattr(sim_g, 'chi')
-        delattr(sim_g, 'autobk_details')
-        delattr(sim_g, 'callargs')
-        return mse
-    res = sp.optimize.minimize(f_e0_offset, [0.0], bounds = [(-80., 80.)], method = 'Nelder-Mead')
-    e0_offset = res.x[0]
-    
-    sim_g = Group(energy = energies, mu = mus, e0 = e0start - e0_offset, 
-        edge_step = 1.0, edge_step_poly = 1.0, atsym = abs_el, edge = edge)
-    autobk(sim_g, rbkg = rbkg, kmax = kmax, kweight = 1)
-    scalar = expnorm / np.linalg.norm(sim_g.chi[kmini:kmaxi] * k3)
+    params = Parameters()
+    for i in range(len(sim)):
+        params.add(f'Ei_{i}', value = 0.0, min = -5.0, max = 5.0)
+        params.add(f'ΔE0_{i}', value = 0.0, min = -30.0, max = 30.0)
+    params.add(f'θD', value = predicted_debye_t, min = max(0, predicted_debye_t - 250), 
+      max = predicted_debye_t + 250, vary = vary_TD)
 
-    aligned_chis = []
-    for i in range(chi_sims.shape[0]):
-      energies = np.concatenate(([chi_sims[i, 0, 0] - 100], chi_sims[i, :, 0]))
-      mus = np.concatenate(([0.0], chi_sims[i, :, 3]))
-      sim_g = Group(energy = energies, mu = mus, e0 = e0start - e0_offset, 
-          edge_step = 1.0, edge_step_poly = 1.0, atsym = abs_el, edge = edge)
-      autobk(sim_g, rbkg = rbkg, kmax = kmax, kweight = 1)
-      kmini = np.argmin(np.abs(sim_g.k - kmin_fit))
-      kmaxi = np.argmin(np.abs(sim_g.k - kmax_fit))
-      aligned_chis.append(sim_g.chi[kmini:kmaxi] * scalar)
-    return np.stack(aligned_chis)
+    minner = Minimizer(res_fun_lmfit, params)
+    result = minner.minimize()
+    paths_info = get_paths_info(new_sim, debye_t = result.params['θD'])
+    eis = [result.params[f'Ei_{i}'] for i in range(len(new_sim))]
+    e0s = [result.params[f'ΔE0_{i}'] for i in range(len(new_sim))]
+    chi_spec = np.stack([get_absorber_spectra_debye(paths_info[i], 
+      e0s[i], eis[i], s02s[i], exp_g.k) for i in range(len(new_sim))])
+    return chi_spec    
 
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
