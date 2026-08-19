@@ -19,8 +19,7 @@ from mattertune.backbones import ORBBackboneModule
 from mattertune.backbones.orb import ORBBackboneConfig
 import scipy.constants as consts
 
-def get_sims(folder):
-  n = len(os.listdir(folder))
+def get_sims(folder, n):
   paths = []
   for i in range(n):
     path_files = np.sort(list(filter(lambda x: x.startswith('feff'
@@ -36,8 +35,7 @@ def get_sims(folder):
     paths.append(abs_paths)
   return paths
 
-def get_s02(folder):
-  n = len(os.listdir(folder))
+def get_s02(folder, n):
   s02s = []
   for i in range(n):
     f = open(f'{folder}/{i}/xmu.dat')
@@ -460,8 +458,8 @@ class EXAFS(BaseSimulation):
     num_rows = np.min([xmu.shape[0] for xmu in xmus])
     xmus = np.stack([xmu[-num_rows:, :] for xmu in xmus])
 
-    sim = get_sims(self.folder)
-    s02s = get_s02(self.folder)
+    sim = get_sims(self.folder, len(self.inds))
+    s02s = get_s02(self.folder, len(self.inds))
     aligned_chis = get_aligned_sim(sim, s02s, self.exp_g, self.structure, kmin_fit = self.fit_kmin, 
       kmax_fit = self.fit_kmax, kmax = float(self.additional_settings['EXAFS']), kwfit = self.kwfit,
       TD_predictor_path = self.TD_predictor_path, vary_TD = self.vary_TD)
