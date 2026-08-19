@@ -461,7 +461,7 @@ class EXAFS(BaseSimulation):
     sim = get_sims(self.folder, len(self.inds))
     s02s = get_s02(self.folder, len(self.inds))
     aligned_chis = get_aligned_sim(sim, s02s, self.exp_g, self.structure, kmin_fit = self.fit_kmin, 
-      kmax_fit = self.fit_kmax, kmax = float(self.additional_settings['EXAFS']), kwfit = self.kwfit,
+      kmax_fit = self.fit_kmax, kwfit = self.kwfit,
       TD_predictor_path = self.TD_predictor_path, vary_TD = self.vary_TD)
 
     assert aligned_chis.shape[1] == self.outdim
