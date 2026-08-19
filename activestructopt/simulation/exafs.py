@@ -255,11 +255,11 @@ def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0
 
   minner = Minimizer(res_fun_lmfit, params)
   result = minner.minimize()
-  paths_info = get_paths_info(new_sim, debye_t = result.params['θD'])
-  eis = [result.params[f'Ei_{i}'] for i in range(len(new_sim))]
-  e0s = [result.params[f'ΔE0_{i}'] for i in range(len(new_sim))]
+  paths_info = get_paths_info(sim, debye_t = result.params['θD'])
+  eis = [result.params[f'Ei_{i}'] for i in range(len(sim))]
+  e0s = [result.params[f'ΔE0_{i}'] for i in range(len(sim))]
   chi_spec = np.stack([get_absorber_spectra_debye(paths_info[i], 
-    e0s[i], eis[i], s02s[i], ks) for i in range(len(new_sim))])
+    e0s[i], eis[i], s02s[i], ks) for i in range(len(sim))])
   return chi_spec
 
 @registry.register_simulation("EXAFS")
