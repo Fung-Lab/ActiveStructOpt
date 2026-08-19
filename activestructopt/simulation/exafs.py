@@ -31,7 +31,8 @@ def get_sims(folder, n):
           abs_paths.append(feffpath(f'{folder}/{i}/{path_files[j]}'))
       except:
           print(f'Skipping {path_files[j]}')
-    assert len(abs_paths) > 1
+    if len(abs_paths) < 1:
+      raise ASOSimulationException(f"Folder {folder} has no feffXXXX.dat files")
     paths.append(abs_paths)
   return paths
 
