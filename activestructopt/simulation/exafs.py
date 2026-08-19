@@ -17,7 +17,7 @@ from lmfit import Minimizer, Parameters
 from larch.xafs import feffpath, sigma2_debye
 from mattertune.backbones import ORBBackboneModule
 from mattertune.backbones.orb import ORBBackboneConfig
-
+import scipy.constants as consts
 
 def get_sims(folder):
   n = len(os.listdir(folder))
