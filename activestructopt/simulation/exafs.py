@@ -270,7 +270,7 @@ class EXAFS(BaseSimulation):
     time_limit = 240,
     additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1',},
     sh_template = None, 
-    sbatch_template = None, sbatch_group_template = None,
+    sbatch_template = None, sbatch_group_template = None, sbatch_opt_template = None,
     number_absorbers = None, save_sim = True, TD_predictor_path = None,
     vary_TD = True, kwfit = 3,
     **kwargs) -> None:
@@ -291,6 +291,7 @@ class EXAFS(BaseSimulation):
     self.N = len(self.mask)
     self.sbatch_template = sbatch_template
     self.sbatch_group_template = sbatch_group_template
+    self.sbatch_opt_template = sbatch_opt_template
     self.sh_template = sh_template
     self.number_absorbers = number_absorbers
     self.save_sim = save_sim
@@ -430,6 +431,12 @@ class EXAFS(BaseSimulation):
         return False
     return True
 
+  def check_opt_done(self):
+    if not os.path.isdir(self.folder):
+      raise ASOSimulationException(f"Folder {self.folder} was deleted")
+
+    return os.path.isfile(os.path.join(self.folder, "DONE"))
+
   def resolve(self):
     finished = False
     for _ in range(2*self.time_limit):
@@ -440,39 +447,44 @@ class EXAFS(BaseSimulation):
 
     if not finished:
       raise ASOSimulationException(f"Simulation not finished in time limit")
-      
-    xmus = []
-    for i in range(len(self.inds)):
-      new_abs_folder = os.path.join(self.folder, str(i))
-      xmu_file = os.path.join(new_abs_folder, "xmu.dat")
-      try:
-        skips = np.where([not l.startswith('#') for l in open(
-            xmu_file, "r").readlines()])[0][0]
-      except:
-        raise ASOSimulationException(f"Could not open {xmu_file}")
-      #try:
-      #  xmu = Xmu(self.params.header, feff.inputs.Tags(self.params.tags), 
-      #    int(absorb_ind), np.genfromtxt(xmu_file, skip_header = skips))
-      #except:
-      #  raise ASOSimulationException(f"Could not parse {xmu_file}")
-      xmus.append(np.genfromtxt(xmu_file, skip_header=skips))
-    num_rows = np.min([xmu.shape[0] for xmu in xmus])
-    xmus = np.stack([xmu[-num_rows:, :] for xmu in xmus])
 
-    sim = get_sims(self.folder, len(self.inds))
-    s02s = get_s02(self.folder, len(self.inds))
-    aligned_chis = get_aligned_sim(sim, s02s, self.exp_g, self.structure, kmin_fit = self.fit_kmin, 
-      kmax_fit = self.fit_kmax, kwfit = self.kwfit,
-      TD_predictor_path = self.TD_predictor_path, vary_TD = self.vary_TD)
+    assert self.sbatch_opt_template is not None, "Need opt template for now"
 
-    assert aligned_chis.shape[1] == self.outdim
-    chi_ks = np.zeros((self.N, aligned_chis.shape[1]))
+    with open(self.sbatch_opt_template, 'r') as file:
+      sbatch_opt_data = file.read()
+    job_name = int(time.time()) % 604800
+    sbatch_opt_data = sbatch_opt_data.replace('##DIRECTORY##', self.folder)
+    sbatch_opt_data = sbatch_opt_data.replace('##JOB_NAME##', str(job_name))
+    new_job_file = os.path.join(self.folder, 'opt_job.sbatch')
+    with open(new_job_file, 'w') as file:
+      file.write(sbatch_opt_data)
+    
+    try:
+      subprocess.check_output(["sbatch", f"{new_job_file}"])
+    except subprocess.CalledProcessError as e:
+      print(e.output)
+
+    print(f'Running optimization for {self.folder}')
+
+    finished = False
+    for _ in range(self.time_limit):
+      finished = self.check_opt_done()
+      if finished:
+        break
+      time.sleep(30)
+
+    if not finished:
+      raise ASOSimulationException(f"Optimization not finished in time limit")
+
+    if not os.path.join(self.folder, 'chi_k.dat'):
+      raise ASOSimulationException(f"Optimization failed")
+
     for i, absorb_ind in enumerate(self.inds):
-      chi_ks[int(np.round(absorb_ind / 8))] = aligned_chis[i]
       if not self.save_sim:
         shutil.rmtree(new_abs_folder)
     
-    return chi_ks #np.mean(np.array(chi_ks), axis = 0)
+    chi_ks = np.genfromtxt(os.path.join(self.folder, 'chi_k.dat'))
+    return chi_ks 
 
   def garbage_collect(self, is_better):
     parent_folder = os.path.dirname(self.folder)
