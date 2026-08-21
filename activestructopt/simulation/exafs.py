@@ -179,18 +179,18 @@ def batch_interp_rows(x, xp, ys):
 KTOE = 1.e20*consts.hbar**2 / (2*consts.m_e * consts.e) # 3.8099819442818976
 ETOK = 1.0/KTOE
 def _calc_chi(k, feffk, reff, degen, pha, amp, rep, lam, sigma2, s02 = 1.0, e0 = 0.0, ei = 0.0):
-  en = k**2 - float(e0) * ETOK
+  en = k ** 2 - float(e0) * ETOK
   q = np.sign(en) * np.sqrt(np.abs(en))
 
   n_paths = len(reff)
 
-  feff_tables = np.concatenate((phas, amps, reps, lams), axis = 0)
+  feff_tables = np.concatenate((pha, amp, rep, lam), axis = 0)
   interpolated = batch_interp_rows(q, feffk, feff_tables)
   pha, amp, rep, lam = np.split(interpolated, [n_paths, 2 * n_paths, 3 * n_paths], axis = 0)
 
-  reff = reffs[:, None]
-  degen = degens[:, None]
-  sigma2 = sigma2s[:, None]
+  reff = reff[:, None]
+  degen = degen[:, None]
+  sigma2 = sigma2[:, None]
 
   pp = ((rep + 1j / lam) ** 2 + 1j * float(ei) * ETOK)
   p = np.sqrt(pp)
