@@ -182,7 +182,7 @@ def _calc_chi(k, feffk, reff, degen, pha, amp, rep, lam, sigma2, s02 = 1.0, e0 =
   en = k**2 - float(e0) * ETOK
   q = np.sign(en) * np.sqrt(np.abs(en))
 
-  n_paths = len(reffs)
+  n_paths = len(reff)
 
   feff_tables = np.concatenate((phas, amps, reps, lams), axis = 0)
   interpolated = batch_interp_rows(q, feffk, feff_tables)
