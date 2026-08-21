@@ -202,16 +202,16 @@ def _calc_chi(k, feffk, reff, degen, pha, amp, rep, lam, sigma2, s02 = 1.0, e0 =
   return cchi.imag
 
 def get_absorber_spectra_debye(reffs, degens, 
-        phas, amps, lams, reps, sigma2s, e0, ei, s02, dt, k, feffk):
+        phas, amps, lams, reps, sigma2s, e0, ei, s02, k, feffk):
   return np.sum(_calc_chi_vectorized(k, feffk, reffs, degens, 
     phas, amps, reps, lams, sigma2s, s02 = s02, e0 = e0, ei = ei,
     ), axis = 0)
 
 def get_structure_spectra_debye(reffs, degens, 
-        phas, amps, lams, reps, sigma2s, e0s, eis, s02s, dt, k, feffk):
+        phas, amps, lams, reps, sigma2s, e0s, eis, s02s, k, feffk):
   return np.mean(np.stack([get_absorber_spectra_debye(reffs[i], degens[i], 
     phas[i], amps[i], lams[i], reps[i], sigma2s[i], 
-    e0s[i], eis[i], s02s[i], dt, k, feffk) for i in range(len(structure_info))]), axis = 0)
+    e0s[i], eis[i], s02s[i], k, feffk) for i in range(len(structure_info))]), axis = 0)
 
 def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0, 
   kwfit = 3, vary_TD = True, TD_predictor_path = None):
@@ -220,6 +220,7 @@ def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0
   ks = exp_g.k[kmini:kmaxi]
   exp_chi = exp_g.chi[kmini:kmaxi]
 
+  n = len(sim)
   paths_info = get_paths_info(sim)
 
   reffs = []
@@ -229,7 +230,7 @@ def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0
   lams = []
   reps = []
   sigma2_grids = []
-  for i in range(len(paths_info)):
+  for i in range(n):
     reffs.append(np.concatenate((paths_info[i]['Reffs'], paths_info[i]['Reffs_MS'])))
     degens.append(np.concatenate((paths_info[i]['degen'], paths_info[i]['degen_MS'])))
     phas.append(np.concatenate((paths_info[i]['pha'], paths_info[i]['pha_MS'])))
@@ -240,10 +241,9 @@ def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0
 
   def res_fun_lmfit(params):
     sigma2s = []
-    for i in range(len(sigma2_grids)):
+    for i in range(n):
       sigma2s.append(batch_interp_rows(np.atleast_1d(params[f'θD']), 
         np.arange(100, 2000, 10), sigma2_grids[i]).flatten())
-    n = len(params) // 2
     dev = (ks ** kwfit *  exp_chi) - (
       ks ** kwfit * get_structure_spectra_debye(reffs, degens, 
         phas, amps, lams, reps, sigma2s, 
@@ -270,10 +270,15 @@ def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0
 
   minner = Minimizer(res_fun_lmfit, params)
   result = minner.minimize()
-  eis = [result.params[f'Ei_{i}'] for i in range(len(sim))]
-  e0s = [result.params[f'ΔE0_{i}'] for i in range(len(sim))]
-  chi_spec = np.stack([get_absorber_spectra_debye(paths_info[i], 
-    e0s[i], eis[i], s02s[i], result.params[f'θD'], ks) for i in range(len(sim))])
+  eis = [result.params[f'Ei_{i}'] for i in range(n)]
+  e0s = [result.params[f'ΔE0_{i}'] for i in range(n)]
+  sigma2s = []
+  for i in range(len(sigma2_grids)):
+    sigma2s.append(batch_interp_rows(np.atleast_1d(result.params[f'θD']), 
+      np.arange(100, 2000, 10), sigma2_grids[i]).flatten())
+  chi_spec = np.stack([get_absorber_spectra_debye(reffs[i], degens[i], 
+    phas[i], amps[i], lams[i], reps[i], sigma2s[i], 
+    e0s[i], eis[i], s02s[i], ks, paths_info[0]['k_feff']) for i in range(n)])
   return chi_spec
 
 @registry.register_simulation("EXAFS")
