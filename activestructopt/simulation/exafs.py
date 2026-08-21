@@ -188,7 +188,7 @@ def get_absorber_spectra_debye(absorber_info, e0, ei, s02, dt, k):
   chi_ss = np.zeros((len(absorber_info['Reffs']), len(k)))
   chi_ms = np.zeros((len(absorber_info['Reffs_MS']), len(k)))
 
-  debye_t_x = np.arange(100, 2000, 200)
+  debye_t_x = np.arange(100, 2000, 10)
   for i in range(len(absorber_info['Reffs'])):
     sigma2 = np.interp(dt, debye_t_x, absorber_info['sigma2_debye'][i])
     chi_ss[i] += _calc_chi(k, absorber_info['k_feff'], 
