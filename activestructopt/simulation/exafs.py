@@ -211,7 +211,7 @@ def get_structure_spectra_debye(reffs, degens,
         phas, amps, lams, reps, sigma2s, e0s, eis, s02s, k, feffk):
   return np.mean(np.stack([get_absorber_spectra_debye(reffs[i], degens[i], 
     phas[i], amps[i], lams[i], reps[i], sigma2s[i], 
-    e0s[i], eis[i], s02s[i], k, feffk) for i in range(len(structure_info))]), axis = 0)
+    e0s[i], eis[i], s02s[i], k, feffk) for i in range(len(reffs))]), axis = 0)
 
 def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0, 
   kwfit = 3, vary_TD = True, TD_predictor_path = None):
