@@ -68,8 +68,10 @@ def get_debye_predictor(ckpt_path):
     mode = 'predict')['predicted_properties']['debye_temp'].item())
   return predict_debye_temp
 
-def get_paths_info(sim, debye_t = None):
+def get_paths_info(sim):
   struct_info = []
+
+  debye_t_x = np.arange(100, 2000, 200)
 
   for j, abs_paths in enumerate(sim):
     abs_reffs = []
@@ -119,7 +121,7 @@ def get_paths_info(sim, debye_t = None):
           abs_rep.append(path._feffdat.rep)
           abs_lam.append(path._feffdat.lam)
           if debye_t is not None:
-              abs_sigma2_debye.append(sigma2_debye(300., debye_t, path))
+              abs_sigma2_debye.append([sigma2_debye(300., debye_t, path) for debye_t in debye_t_x])
       else:
         for leg in path._feffdat.geom:
           abs_atwt_ms.append(leg[3])
@@ -134,7 +136,7 @@ def get_paths_info(sim, debye_t = None):
         abs_rep_ms.append(path._feffdat.rep)
         abs_lam_ms.append(path._feffdat.lam)
         if debye_t is not None:
-          abs_sigma2_debye_ms.append(sigma2_debye(300., debye_t, path))
+          abs_sigma2_debye_ms.append([sigma2_debye(300., debye_t, path) for debye_t in debye_t_x])
     abs_info = {
       "k_feff": path._feffdat.k,
       "Reffs": abs_reffs,
@@ -184,10 +186,13 @@ def _calc_chi(k, feffk, reff, degen, pha, amp, rep, lam, deltar, sigma2, third, 
   cchi[0] = 2*cchi[1] - cchi[2]
   return cchi.imag
 
-def get_absorber_spectra_debye(absorber_info, e0, ei, s02, k):
+def get_absorber_spectra_debye(absorber_info, e0, ei, s02, dt, k):
   chi_ss = np.zeros((len(absorber_info['Reffs']), len(k)))
   chi_ms = np.zeros((len(absorber_info['Reffs_MS']), len(k)))
+
+  debye_t_x = np.arange(100, 2000, 200)
   for i in range(len(absorber_info['Reffs'])):
+    sigma2 = np.interp(dt, debye_t_x, absorber_info['sigma2_debye'][i])
     chi_ss[i] += _calc_chi(k, absorber_info['k_feff'], 
       absorber_info['Reffs'][i], 
       int(absorber_info['degen'][i]),
@@ -196,12 +201,13 @@ def get_absorber_spectra_debye(absorber_info, e0, ei, s02, k):
       absorber_info['rep'][i],
       absorber_info['lam'][i],
       0.0, 
-      absorber_info['sigma2_debye'][i],
+      sigma2,
       0.0,
       0.0,
       e0 = e0, ei = ei, s02 = s02,
       )
   for i in range(len(absorber_info['Reffs_MS'])):
+    sigma2 = np.interp(dt, debye_t_x, absorber_info['sigma2_debye_MS'][i])
     chi_ms[i] += _calc_chi(k, absorber_info['k_feff'], 
       absorber_info['Reffs_MS'][i], 
       int(absorber_info['degen_MS'][i]),
@@ -210,16 +216,16 @@ def get_absorber_spectra_debye(absorber_info, e0, ei, s02, k):
       absorber_info['rep_MS'][i],
       absorber_info['lam_MS'][i],
       0.0, 
-      absorber_info['sigma2_debye_MS'][i], 
+      sigma2, 
       0.0, 
       0.0, 
       e0 = e0, ei = ei, s02 = s02,
     )    
   return np.sum(chi_ss, axis = 0) + np.sum(chi_ms, axis = 0)
 
-def get_structure_spectra_debye(structure_info, e0s, eis, s02s, k):
+def get_structure_spectra_debye(structure_info, e0s, eis, s02s, dt, k):
   return np.mean(np.stack([get_absorber_spectra_debye(structure_info[i], 
-    e0s[i], eis[i], s02s[i], k) for i in range(len(structure_info))]), axis = 0)
+    e0s[i], eis[i], s02s[i], dt, k) for i in range(len(structure_info))]), axis = 0)
 
 def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0, 
   kwfit = 3, vary_TD = True, TD_predictor_path = None):
@@ -227,14 +233,14 @@ def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0
   kmaxi = np.argmin(np.abs(exp_g.k - kmax_fit))
   ks = exp_g.k[kmini:kmaxi]
   exp_chi = exp_g.chi[kmini:kmaxi]
-  
+
+  paths_info = get_paths_info(sim)
   def res_fun_lmfit(params):
     n = len(params) // 2
-    paths_info = get_paths_info(sim, debye_t = params['θD'])
     dev = (ks ** kwfit *  exp_chi) - (
       ks ** kwfit * get_structure_spectra_debye(paths_info, 
         [params[f'ΔE0_{i}'] for i in range(n)],
-        [params[f'Ei_{i}'] for i in range(n)], s02s, ks))
+        [params[f'Ei_{i}'] for i in range(n)], s02s, params[f'θD'], ks))
     return dev
 
   if TD_predictor_path is None:
