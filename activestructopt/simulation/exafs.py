@@ -203,7 +203,7 @@ def _calc_chi(k, feffk, reff, degen, pha, amp, rep, lam, sigma2, s02 = 1.0, e0 =
 
 def get_absorber_spectra_debye(reffs, degens, 
         phas, amps, lams, reps, sigma2s, e0, ei, s02, k, feffk):
-  return np.sum(_calc_chi_vectorized(k, feffk, reffs, degens, 
+  return np.sum(_calc_chi(k, feffk, reffs, degens, 
     phas, amps, reps, lams, sigma2s, s02 = s02, e0 = e0, ei = ei,
     ), axis = 0)
 
