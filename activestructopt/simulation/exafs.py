@@ -120,8 +120,7 @@ def get_paths_info(sim):
           abs_pha.append(path._feffdat.pha)
           abs_rep.append(path._feffdat.rep)
           abs_lam.append(path._feffdat.lam)
-          if debye_t is not None:
-              abs_sigma2_debye.append([sigma2_debye(300., debye_t, path) for debye_t in debye_t_x])
+          abs_sigma2_debye.append([sigma2_debye(300., debye_t, path) for debye_t in debye_t_x])
       else:
         for leg in path._feffdat.geom:
           abs_atwt_ms.append(leg[3])
@@ -135,8 +134,7 @@ def get_paths_info(sim):
         abs_pha_ms.append(path._feffdat.pha)
         abs_rep_ms.append(path._feffdat.rep)
         abs_lam_ms.append(path._feffdat.lam)
-        if debye_t is not None:
-          abs_sigma2_debye_ms.append([sigma2_debye(300., debye_t, path) for debye_t in debye_t_x])
+        abs_sigma2_debye_ms.append([sigma2_debye(300., debye_t, path) for debye_t in debye_t_x])
     abs_info = {
       "k_feff": path._feffdat.k,
       "Reffs": abs_reffs,
@@ -262,11 +260,10 @@ def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0
 
   minner = Minimizer(res_fun_lmfit, params)
   result = minner.minimize()
-  paths_info = get_paths_info(sim, debye_t = result.params['θD'])
   eis = [result.params[f'Ei_{i}'] for i in range(len(sim))]
   e0s = [result.params[f'ΔE0_{i}'] for i in range(len(sim))]
   chi_spec = np.stack([get_absorber_spectra_debye(paths_info[i], 
-    e0s[i], eis[i], s02s[i], ks) for i in range(len(sim))])
+    e0s[i], eis[i], s02s[i], result.params[f'θD'], ks) for i in range(len(sim))])
   return chi_spec
 
 @registry.register_simulation("EXAFS")
