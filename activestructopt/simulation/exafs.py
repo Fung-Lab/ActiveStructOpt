@@ -163,67 +163,98 @@ def get_paths_info(sim):
     struct_info.append(abs_info)
   return struct_info
 
+def batch_interp_rows(x, xp, ys):
+    x = np.clip(x, xp[0], xp[-1])
+
+    right = np.searchsorted(xp, x, side="right")
+    right = np.clip(right, 1, len(xp) - 1)
+    left = right - 1
+
+    weight = (x - xp[left]) / (xp[right] - xp[left])
+
+    return (ys[:, left] * (1.0 - weight)[None, :]
+        + ys[:, right] * weight[None, :])
+
+
+def get_absorber_spectra_debye(
+    feffk,
+    reffs,
+    degens,
+    phas,
+    amps,
+    lams,
+    reps,
+    sigma2s,
+    e0,
+    ei,
+    s02,
+    dt,
+    k,
+):
+    """
+    Calculate the total spectrum for one absorber.
+
+    sigma2s is assumed to have already been interpolated onto dt.
+    The dt argument is retained so this can fit your existing calling
+    convention, but it is not used here.
+    """
+    if len(reffs) == 0:
+        return np.zeros_like(k, dtype=float)
+
+    chi_paths = _calc_chi_vectorized(
+        k=k,
+        feffk=feffk,
+        reffs=reffs,
+        degens=degens,
+        phas=phas,
+        amps=amps,
+        reps=reps,
+        lams=lams,
+        sigma2s=sigma2s,
+        s02=s02,
+        e0=e0,
+        ei=ei,
+    )
+
+    return np.sum(chi_paths, axis=0)
+
 # https://github.com/xraypy/xraylarch/blob/dafed7db999523d366f482f6a260bc983c4defe4/larch/xafs/feffdat.py#L638
 KTOE = 1.e20*consts.hbar**2 / (2*consts.m_e * consts.e) # 3.8099819442818976
 ETOK = 1.0/KTOE
-def _calc_chi(k, feffk, reff, degen, pha, amp, rep, lam, deltar, sigma2, third, fourth, s02 = 1.0, e0 = 0.0, ei = 0.0):
-  """calculate chi(k) with the provided parameters"""
-  en = k*k - e0*ETOK # create e0-shifted energy and k
-  q = np.sign(en)*np.sqrt(abs(en)) # q is the e0-shifted wavenumber
-  pha = np.interp(q, feffk, pha) # lookup Feff.dat values
-  amp = np.interp(q, feffk, amp)
-  rep = np.interp(q, feffk, rep)
-  lam = np.interp(q, feffk, lam)
-  pp   = (rep + 1j/lam)**2 + 1j * ei * ETOK  # p = complex wavenumber, and its square:
-  p    = np.sqrt(pp)
-  cchi = np.exp(-2*reff*p.imag - # the xafs equation:
-      2*pp*(sigma2 - pp*fourth/3) +
-      1j*(2*q*reff + pha +
-      2*p*(deltar - 2*sigma2/reff - 2*pp*third/3) ))
-  cchi = degen * s02 * amp * cchi / (q*(reff + deltar)**2)
-  cchi[0] = 2*cchi[1] - cchi[2]
+def _calc_chi(k, feffk, reff, degen, pha, amp, rep, lam, sigma2, s02 = 1.0, e0 = 0.0, ei = 0.0):
+  en = k**2 - float(e0) * ETOK
+  q = np.sign(en) * np.sqrt(np.abs(en))
+
+  n_paths = len(reffs)
+
+  feff_tables = np.concatenate((phas, amps, reps, lams), axis = 0)
+  interpolated = batch_interp_rows(q, feffk, feff_tables)
+  pha, amp, rep, lam = np.split(interpolated, [n_paths, 2 * n_paths, 3 * n_paths], axis = 0)
+
+  reff = reffs[:, None]
+  degen = degens[:, None]
+  sigma2 = sigma2s[:, None]
+
+  pp = ((rep + 1j / lam) ** 2 + 1j * float(ei) * ETOK)
+  p = np.sqrt(pp)
+
+  cchi = np.exp(-2.0 * reff * p.imag - 2.0 * pp * sigma2
+    + 1j * (2.0 * q[None, :] * reff + pha - 4.0 * p * sigma2 / reff))
+  cchi *= (degen * float(s02) * amp / (q[None, :] * reff ** 2))
+  cchi[:, 0] = 2.0 * cchi[:, 1] - cchi[:, 2]
   return cchi.imag
 
-def get_absorber_spectra_debye(absorber_info, e0, ei, s02, dt, k):
-  chi_ss = np.zeros((len(absorber_info['Reffs']), len(k)))
-  chi_ms = np.zeros((len(absorber_info['Reffs_MS']), len(k)))
+def get_absorber_spectra_debye(reffs, degens, 
+        phas, amps, lams, reps, sigma2s, e0, ei, s02, dt, k, feffk):
+  return np.sum(_calc_chi_vectorized(k, feffk, reffs, degens, 
+    phas, amps, reps, lams, sigma2s, s02 = s02, e0 = e0, ei = ei,
+    ), axis = 0)
 
-  debye_t_x = np.arange(100, 2000, 10)
-  for i in range(len(absorber_info['Reffs'])):
-    sigma2 = np.interp(dt, debye_t_x, absorber_info['sigma2_debye'][i])
-    chi_ss[i] += _calc_chi(k, absorber_info['k_feff'], 
-      absorber_info['Reffs'][i], 
-      int(absorber_info['degen'][i]),
-      absorber_info['pha'][i],
-      absorber_info['amp'][i],
-      absorber_info['rep'][i],
-      absorber_info['lam'][i],
-      0.0, 
-      sigma2,
-      0.0,
-      0.0,
-      e0 = e0, ei = ei, s02 = s02,
-      )
-  for i in range(len(absorber_info['Reffs_MS'])):
-    sigma2 = np.interp(dt, debye_t_x, absorber_info['sigma2_debye_MS'][i])
-    chi_ms[i] += _calc_chi(k, absorber_info['k_feff'], 
-      absorber_info['Reffs_MS'][i], 
-      int(absorber_info['degen_MS'][i]),
-      absorber_info['pha_MS'][i],
-      absorber_info['amp_MS'][i],
-      absorber_info['rep_MS'][i],
-      absorber_info['lam_MS'][i],
-      0.0, 
-      sigma2, 
-      0.0, 
-      0.0, 
-      e0 = e0, ei = ei, s02 = s02,
-    )    
-  return np.sum(chi_ss, axis = 0) + np.sum(chi_ms, axis = 0)
-
-def get_structure_spectra_debye(structure_info, e0s, eis, s02s, dt, k):
-  return np.mean(np.stack([get_absorber_spectra_debye(structure_info[i], 
-    e0s[i], eis[i], s02s[i], dt, k) for i in range(len(structure_info))]), axis = 0)
+def get_structure_spectra_debye(reffs, degens, 
+        phas, amps, lams, reps, sigma2s, e0s, eis, s02s, dt, k, feffk):
+  return np.mean(np.stack([get_absorber_spectra_debye(reffs[i], degens[i], 
+    phas[i], amps[i], lams[i], reps[i], sigma2s[i], 
+    e0s[i], eis[i], s02s[i], dt, k, feffk) for i in range(len(structure_info))]), axis = 0)
 
 def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0, 
   kwfit = 3, vary_TD = True, TD_predictor_path = None):
@@ -233,12 +264,34 @@ def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0
   exp_chi = exp_g.chi[kmini:kmaxi]
 
   paths_info = get_paths_info(sim)
+
+  reffs = []
+  degens = []
+  phas = []
+  amps = []
+  lams = []
+  reps = []
+  sigma2_grids = []
+  for i in range(len(paths_info)):
+    reffs.append(np.concat((paths_info['Reffs'], paths_info['Reffs_MS'])))
+    degens.append(np.concat((paths_info['degen'], paths_info['degen_MS'])))
+    phas.append(np.concat((paths_info['pha'], paths_info['pha_MS'])))
+    amps.append(np.concat((paths_info['amp'], paths_info['amp_MS'])))
+    lams.append(np.concat((paths_info['lam'], paths_info['lam_MS'])))
+    reps.append(np.concat((paths_info['rep'], paths_info['rep_MS'])))
+    sigma2_grids.append(np.concat((paths_info['sigma2_debye'], paths_info['sigma2_debye_MS'])))
+
   def res_fun_lmfit(params):
+    sigma2s = []
+    for i in range(len(sigma2_grids)):
+      sigma2s.append(batch_interp_rows(np.atleast_1d(params[f'θD']), 
+        np.arange(100, 2000, 10), sigma2_grids[i]).flatten())
     n = len(params) // 2
     dev = (ks ** kwfit *  exp_chi) - (
-      ks ** kwfit * get_structure_spectra_debye(paths_info, 
+      ks ** kwfit * get_structure_spectra_debye(reffs, degens, 
+        phas, amps, lams, reps, sigma2s, 
         [params[f'ΔE0_{i}'] for i in range(n)],
-        [params[f'Ei_{i}'] for i in range(n)], s02s, params[f'θD'], ks))
+        [params[f'Ei_{i}'] for i in range(n)], s02s, ks, paths_info[0]['k_feff']))
     return dev
 
   if TD_predictor_path is None:
