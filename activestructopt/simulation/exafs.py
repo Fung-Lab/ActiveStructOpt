@@ -273,13 +273,13 @@ def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0
   reps = []
   sigma2_grids = []
   for i in range(len(paths_info)):
-    reffs.append(np.concatenate((paths_info['Reffs'], paths_info['Reffs_MS'])))
-    degens.append(np.concatenate((paths_info['degen'], paths_info['degen_MS'])))
-    phas.append(np.concatenate((paths_info['pha'], paths_info['pha_MS'])))
-    amps.append(np.concatenate((paths_info['amp'], paths_info['amp_MS'])))
-    lams.append(np.concatenate((paths_info['lam'], paths_info['lam_MS'])))
-    reps.append(np.concatenate((paths_info['rep'], paths_info['rep_MS'])))
-    sigma2_grids.append(np.concatenate((paths_info['sigma2_debye'], paths_info['sigma2_debye_MS'])))
+    reffs.append(np.concatenate((paths_info[i]['Reffs'], paths_info[i]['Reffs_MS'])))
+    degens.append(np.concatenate((paths_info[i]['degen'], paths_info[i]['degen_MS'])))
+    phas.append(np.concatenate((paths_info[i]['pha'], paths_info[i]['pha_MS'])))
+    amps.append(np.concatenate((paths_info[i]['amp'], paths_info[i]['amp_MS'])))
+    lams.append(np.concatenate((paths_info[i]['lam'], paths_info[i]['lam_MS'])))
+    reps.append(np.concatenate((paths_info[i]['rep'], paths_info[i]['rep_MS'])))
+    sigma2_grids.append(np.concatenate((paths_info[i]['sigma2_debye'], paths_info[i]['sigma2_debye_MS'])))
 
   def res_fun_lmfit(params):
     sigma2s = []
