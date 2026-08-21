@@ -175,49 +175,6 @@ def batch_interp_rows(x, xp, ys):
     return (ys[:, left] * (1.0 - weight)[None, :]
         + ys[:, right] * weight[None, :])
 
-
-def get_absorber_spectra_debye(
-    feffk,
-    reffs,
-    degens,
-    phas,
-    amps,
-    lams,
-    reps,
-    sigma2s,
-    e0,
-    ei,
-    s02,
-    dt,
-    k,
-):
-    """
-    Calculate the total spectrum for one absorber.
-
-    sigma2s is assumed to have already been interpolated onto dt.
-    The dt argument is retained so this can fit your existing calling
-    convention, but it is not used here.
-    """
-    if len(reffs) == 0:
-        return np.zeros_like(k, dtype=float)
-
-    chi_paths = _calc_chi_vectorized(
-        k=k,
-        feffk=feffk,
-        reffs=reffs,
-        degens=degens,
-        phas=phas,
-        amps=amps,
-        reps=reps,
-        lams=lams,
-        sigma2s=sigma2s,
-        s02=s02,
-        e0=e0,
-        ei=ei,
-    )
-
-    return np.sum(chi_paths, axis=0)
-
 # https://github.com/xraypy/xraylarch/blob/dafed7db999523d366f482f6a260bc983c4defe4/larch/xafs/feffdat.py#L638
 KTOE = 1.e20*consts.hbar**2 / (2*consts.m_e * consts.e) # 3.8099819442818976
 ETOK = 1.0/KTOE
