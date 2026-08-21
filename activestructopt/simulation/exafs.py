@@ -71,7 +71,7 @@ def get_debye_predictor(ckpt_path):
 def get_paths_info(sim):
   struct_info = []
 
-  debye_t_x = np.arange(100, 2000, 200)
+  debye_t_x = np.arange(100, 2000, 10)
 
   for j, abs_paths in enumerate(sim):
     abs_reffs = []
