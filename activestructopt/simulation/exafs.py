@@ -494,7 +494,7 @@ class EXAFS(BaseSimulation):
     if not finished:
       raise ASOSimulationException(f"Optimization not finished in time limit")
 
-    if not os.path.join(self.folder, 'chi_k.dat'):
+    if not os.path.isfile(os.path.join(self.folder, 'chi_k.dat')):
       raise ASOSimulationException(f"Optimization failed")
 
     for i, absorb_ind in enumerate(self.inds):
