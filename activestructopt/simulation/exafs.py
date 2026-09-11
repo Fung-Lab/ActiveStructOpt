@@ -435,6 +435,7 @@ class EXAFS(BaseSimulation):
       except subprocess.CalledProcessError as e:
         print(e.output)
 
+    self.group = group
     self.folder = new_folder
     self.params = params
     self.inds = absorber_indices 
@@ -457,46 +458,60 @@ class EXAFS(BaseSimulation):
     return os.path.isfile(os.path.join(self.folder, "DONE"))
 
   def resolve(self):
-    finished = False
-    for _ in range(2 * self.time_limit):
-      finished = self.check_done()
-      if finished:
-        break
-      time.sleep(30)
+    if not self.group:
+      finished = False
+      for _ in range(2 * self.time_limit):
+        finished = self.check_done()
+        if finished:
+          break
+        time.sleep(30)
 
-    if not finished:
-      raise ASOSimulationException(f"Simulation not finished in time limit")
+      if not finished:
+        raise ASOSimulationException(f"Simulation not finished in time limit")
 
-    assert self.sbatch_opt_template is not None, "Need opt template for now"
+      assert self.sbatch_opt_template is not None, "Need opt template for now"
 
-    with open(self.sbatch_opt_template, 'r') as file:
-      sbatch_opt_data = file.read()
-    job_name = int(time.time()) % 604800
-    sbatch_opt_data = sbatch_opt_data.replace('##DIRECTORY##', self.folder)
-    sbatch_opt_data = sbatch_opt_data.replace('##JOB_NAME##', str(job_name))
-    new_job_file = os.path.join(self.folder, 'opt_job.sbatch')
-    with open(new_job_file, 'w') as file:
-      file.write(sbatch_opt_data)
+      with open(self.sbatch_opt_template, 'r') as file:
+        sbatch_opt_data = file.read()
+      job_name = int(time.time()) % 604800
+      sbatch_opt_data = sbatch_opt_data.replace('##DIRECTORY##', self.folder)
+      sbatch_opt_data = sbatch_opt_data.replace('##JOB_NAME##', str(job_name))
+      new_job_file = os.path.join(self.folder, 'opt_job.sbatch')
+      with open(new_job_file, 'w') as file:
+        file.write(sbatch_opt_data)
 
-    try:
-      subprocess.check_output(["sbatch", f"{new_job_file}"])
-    except subprocess.CalledProcessError as e:
-      print(e.output)
+      try:
+        subprocess.check_output(["sbatch", f"{new_job_file}"])
+      except subprocess.CalledProcessError as e:
+        print(e.output)
 
-    print(f'Running optimization for {self.folder}')
+      print(f'Running optimization for {self.folder}')
 
-    finished = False
-    for _ in range(self.time_limit):
-      finished = self.check_opt_done()
-      if finished:
-        break
-      time.sleep(30)
+      finished = False
+      for _ in range(self.time_limit):
+        finished = self.check_opt_done()
+        if finished:
+          break
+        time.sleep(30)
 
-    if not finished:
-      raise ASOSimulationException(f"Optimization not finished in time limit")
+      if not finished:
+        raise ASOSimulationException(f"Optimization not finished in time limit")
 
-    if not os.path.isfile(os.path.join(self.folder, 'chi_k.dat')):
-      raise ASOSimulationException(f"Optimization failed")
+      if not os.path.isfile(os.path.join(self.folder, 'chi_k.dat')):
+        raise ASOSimulationException(f"Optimization failed")
+    else:
+      finished = False
+      for _ in range(3 * self.time_limit):
+        finished = self.check_done()
+        if finished:
+          break
+        time.sleep(30)
+
+      if not finished:
+        raise ASOSimulationException(f"Simulation/Optimization not finished in time limit")
+
+      if not os.path.isfile(os.path.join(self.folder, 'chi_k.dat')):
+        raise ASOSimulationException(f"Optimization failed")
 
     for i, absorb_ind in enumerate(self.inds):
       if not self.save_sim:
