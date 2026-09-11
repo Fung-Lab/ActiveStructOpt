@@ -55,6 +55,8 @@ class KFoldsDataset(BaseDataset):
                 self.ys[j][i] = y_promises[j][i].resolve()
                 self.mismatches[j][i] = y_promises[j][i].get_mismatch(
                   self.ys[j][i], targets[j])
+                if np.isnan(self.mismatches[j][i]):
+                  raise ASOSimulationException('NaN Mismatch')
                 if self.mismatches[j][i] <= np.nanmin(self.mismatches[j]):
                   for k in range(self.N):
                     if type(self.ys[j][k]) != type(None) and i != k:

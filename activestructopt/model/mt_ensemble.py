@@ -25,7 +25,7 @@ def torch_cell_to_cellpar(cell):
     return cellpar
 
 def hparams(data, num_epochs, out_dim, mask, natoms, start_lr = 0.001, 
-  radius = 10.0, max_num_neighbors = 250):
+  radius = 10.0, max_num_neighbors = 250, pretrained = True):
 
   import mattertune.configs as MC
   import mattertune as mt
@@ -40,7 +40,7 @@ def hparams(data, num_epochs, out_dim, mask, natoms, start_lr = 0.001,
   #hparams.model.pretrained_model = "orb-v3-conservative-inf-omat"
 
   hparams.model.ignore_gpu_batch_transform_error = True
-  hparams.model.freeze_backbone = False
+  hparams.model.freeze_backbone = not pretrained
 
   hparams.model.optimizer = MC.AdamWConfig(
       lr = start_lr,
@@ -111,7 +111,7 @@ class MTEnsemble(BaseModel):
   
   def train(self, dataset: KFoldsDataset, sim_index, iterations = 250, lr = 0.001, 
     from_scratch = False, transfer = 1.0, prev_params = None, radius = 10.0, 
-    max_num_neighbors = 250, batch_size = 64, **kwargs):
+    max_num_neighbors = 250, batch_size = 64, pretrained = True, **kwargs):
     import mattertune as mt
     from mattertune import MatterTuner
 
@@ -157,7 +157,8 @@ class MTEnsemble(BaseModel):
       self.hp = hparams(mt_dataset, iterations, 
         self.config['dataset']['preprocess_params']['output_dim'], 
         dataset.simfuncs[sim_index].mask, natoms, lr, 
-        radius = radius, max_num_neighbors = max_num_neighbors)
+        radius = radius, max_num_neighbors = max_num_neighbors,
+        pretrained = pretrained)
       tune_output = MatterTuner(self.hp).tune()
       model = tune_output.model.to('cuda')
       self.device = model.device
