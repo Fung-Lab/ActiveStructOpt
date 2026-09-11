@@ -263,7 +263,7 @@ def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0
 
   params = Parameters()
   for i in range(len(sim)):
-      params.add(f'Ei_{i}', value = 0.0, min = -5.0, max = 5.0)
+      params.add(f'Ei_{i}', value = 0.0, min = -5.0, max = 5.0, vary = False)
       params.add(f'ΔE0_{i}', value = 0.0, min = -30.0, max = 30.0)
   params.add(f'θD', value = predicted_debye_t, min = debye_lb, 
     max = debye_ub, vary = vary_TD)
