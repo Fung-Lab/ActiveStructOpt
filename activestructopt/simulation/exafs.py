@@ -214,7 +214,7 @@ def get_structure_spectra_debye(reffs, degens,
     e0s[i], eis[i], s02s[i], k, feffk) for i in range(len(reffs))]), axis = 0)
 
 def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0, 
-  kwfit = 3, vary_TD = True, TD_predictor_path = None):
+  kwfit = 3, vary_TD = True, TD_predictor_path = None, kwout = 3):
   kmini = np.argmin(np.abs(exp_g.k - kmin_fit))
   kmaxi = np.argmin(np.abs(exp_g.k - kmax_fit))
   ks = exp_g.k[kmini:kmaxi]
@@ -279,7 +279,7 @@ def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0
   chi_spec = np.stack([get_absorber_spectra_debye(reffs[i], degens[i], 
     phas[i], amps[i], lams[i], reps[i], sigma2s[i], 
     e0s[i], eis[i], s02s[i], ks, paths_info[0]['k_feff']) for i in range(n)])
-  return chi_spec
+  return ks ** kwout * chi_spec
 
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
