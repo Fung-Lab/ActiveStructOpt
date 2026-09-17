@@ -283,7 +283,7 @@ def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0
 
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
-  def __init__(self, initial_structure, feff_location = "", folder = "", 
+  def __init__(self, initial_structure, exp_g, feff_location = "", folder = "", 
     absorber = 'Co', edge = 'K', radius = 10.0, fit_kmin = 3.0, 
     fit_kmax = 12.0, time_limit = 240,
     additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1'},
