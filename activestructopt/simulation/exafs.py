@@ -357,10 +357,10 @@ class EXAFS(BaseSimulation):
     os.mkdir(new_folder)
 
     if self.TD_predictor_path is not None:
-      additional_settings.pop('DEBYE', None)
+      self.additional_settings.pop('DEBYE', None)
       debye_predictor = get_debye_predictor(TD_predictor_path)
       predicted_debye_t = debye_predictor(self.structure)
-      additional_settings['DEBYE'] = f'300 {predicted_debye_t} 0'
+      self.additional_settings['DEBYE'] = f'300 {predicted_debye_t} 0'
     
     for i in range(len(absorber_indices)):
       new_abs_folder = os.path.join(new_folder, str(i))
@@ -444,6 +444,9 @@ class EXAFS(BaseSimulation):
     if not os.path.isdir(self.folder):
       raise ASOSimulationException(f"Folder {self.folder} was deleted")
 
+    if self.group:
+      return self.check_opt_done()
+
     for i in range(len(self.inds)):
       new_abs_folder = os.path.join(self.folder, str(i))
       if not os.path.isfile(os.path.join(new_abs_folder, "DONE")):
@@ -500,16 +503,6 @@ class EXAFS(BaseSimulation):
       if not os.path.isfile(os.path.join(self.folder, 'chi_k.dat')):
         raise ASOSimulationException(f"Optimization failed")
     else:
-      finished = False
-      for _ in range(3 * self.time_limit):
-        finished = self.check_done()
-        if finished:
-          break
-        time.sleep(30)
-
-      if not finished:
-        raise ASOSimulationException(f"Simulation/Optimization not finished in time limit")
-
       if not os.path.isfile(os.path.join(self.folder, 'chi_k.dat')):
         raise ASOSimulationException(f"Optimization failed")
 

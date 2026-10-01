@@ -11,8 +11,7 @@ import time
 class KFoldsDataset(BaseDataset):
   def __init__(self, simulations: list[BaseSimulation], sampler: BaseSampler, 
     initial_structure: IStructure, targets, config, N = 100, split = 0.85, 
-    k = 5, seed = 0, progress_dict = None, max_sim_calls = 5, 
-    call_sequential = False,
+    k = 5, seed = 0, progress_dict = None, max_sim_calls = 5, sim_time_limit = 60 * 180,
     **kwargs) -> None:
     np.random.seed(seed)
     self.config = config
@@ -29,55 +28,58 @@ class KFoldsDataset(BaseDataset):
       
       self.ys = [[None for _ in range(self.N)] for _ in range(len(
         self.simfuncs))]
-      
-      sim_calls = 0
+      self.mismatches = [[np.nan for _ in range(len(self.structures)
+        )] for _ in range(len(self.simfuncs))]
 
       y_promises = [[copy.deepcopy(self.simfuncs[j]
         ) for _ in self.structures] for j in range(len(self.simfuncs))]
-      if not call_sequential:
-        for i, s in enumerate(self.structures):
-          time.sleep(5)
-          for j in range(len(self.simfuncs)):
-            y_promises[j][i].get(s, group = True, separator = ' ')
-      self.mismatches = [[np.NaN for _ in range(len(self.structures)
-        )] for _ in range(len(self.simfuncs))]
+      for i, s in enumerate(self.structures):
+        time.sleep(5)
+        for j in range(len(self.simfuncs)):
+          y_promises[j][i].get(s, group = True, separator = ' ')
 
+      sim_calls = [1 for _ in range(self.N)]
+      sim_timers = [0 for _ in range(self.N)]
       while self.sims_incomplete():
-        sim_calls += 1
-        sim_updated = False
         for i in range(self.N):
           if self.sims_incomplete(s = i):
-            sim_updated = True
+            sim_timers[i] += 30
             try:
               for j in range(len(self.simfuncs)):
-                if call_sequential:
-                  y_promises[j][i].get(self.structures[i])
-                self.ys[j][i] = y_promises[j][i].resolve()
-                self.mismatches[j][i] = y_promises[j][i].get_mismatch(
-                  self.ys[j][i], targets[j])
-                if np.isnan(self.mismatches[j][i]):
-                  raise ASOSimulationException('NaN Mismatch')
-                if self.mismatches[j][i] <= np.nanmin(self.mismatches[j]):
-                  for k in range(self.N):
-                    if type(self.ys[j][k]) != type(None) and i != k:
-                      y_promises[j][k].garbage_collect(False)
-                else:
-                  y_promises[j][i].garbage_collect(False)
-            except ASOSimulationException:
-              if sim_calls <= max_sim_calls:
+                if self.ys[j][i] is None:
+                  if y_promises[j][i].check_done():
+                    self.ys[j][i] = y_promises[j][i].resolve()
+                    self.mismatches[j][i] = y_promises[j][i].get_mismatch(
+                      self.ys[j][i], targets[j])
+                    if not np.isfinite(self.mismatches[j][i]):
+                      raise ASOSimulationException('NaN Mismatch')
+                    if self.mismatches[j][i] <= np.nanmin(self.mismatches[j]):
+                      for k in range(self.N):
+                        if self.ys[j][k] is not None and i != k:
+                          y_promises[j][k].garbage_collect(False)
+                    else:
+                      y_promises[j][i].garbage_collect(False)
+                  elif sim_timers[i] > sim_time_limit:
+                    raise ASOSimulationException('Simulation exceeded time limit')
+            except ASOSimulationException as e:
+              if sim_calls[i] < max_sim_calls:
                 # resample and try again
                 print(f'retrying structure {i}')
+                print(f'exception: {e}')
                 self.structures[i] = sampler.sample()
                 for j in range(len(self.simfuncs)):
+                  self.ys[j][i] = None
+                  self.mismatches[j][i] = np.nan
                   y_promises[j][i].garbage_collect(False)
                   y_promises[j][i] = copy.deepcopy(self.simfuncs[j])
-                  if not call_sequential:
-                    time.sleep(5)
-                    y_promises[j][i].get(self.structures[i], group = True, 
-                      separator = ' ')
+                  time.sleep(5)
+                  y_promises[j][i].get(self.structures[i], group = True, 
+                    separator = ' ')
+                sim_calls[i] += 1
+                sim_timers[i] = 0
               else:
-                raise Exception(f'Max sim calls reached for structure {i}')
-        assert sim_updated
+                raise RuntimeError(f"Max simulation calls reached for structure {i}")
+        time.sleep(30)
 
       structure_indices = np.random.permutation(np.arange(1, self.N))
       trainval_indices = structure_indices[:int(np.round(split * self.N) - 1)]
