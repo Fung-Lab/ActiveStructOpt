@@ -14,7 +14,7 @@ class MSEUncertainty(BaseObjective):
     else:
       weights = torch.tensor(self.weights, device = device)
     
-    mses = torch.zeros((M, N),, device = device)
+    mses = torch.zeros((M, N), device = device)
     mse_total = torch.tensor([0.0], device = device)
     for i in range(N):
       for j in range(M):
