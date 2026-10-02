@@ -19,7 +19,7 @@ class MSEUncertainty(BaseObjective):
     for i in range(N):
       for j in range(M):
         mse =  weights[j] * torch.maximum(torch.mean(torch.pow(targets[j] - predictions[j][0][i], 2)) - 
-          self.λ * torch.mean(predictions[j][1][i]), torch.tensor(0.)) 
+          self.λ * torch.mean(torch.abs(predictions[j][1][i])), torch.tensor(0., device = predictions[j][1][i].device)) 
         mse_total = mse_total + mse
         mses[j][i] = mse.detach()
         del mse
