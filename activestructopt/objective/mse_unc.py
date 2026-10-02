@@ -4,7 +4,7 @@ from activestructopt.common.registry import registry
 
 @registry.register_objective("MSEUncertainty")
 class MSEUncertainty(BaseObjective):
-  def __init__(self, λ = 0.1, weights = None, **kwargs) -> None:
+  def __init__(self, λ = 0.0005, weights = None, **kwargs) -> None:
     self.λ = λ
     self.weights = weights
 
@@ -18,8 +18,9 @@ class MSEUncertainty(BaseObjective):
     mse_total = torch.tensor([0.0], device = device)
     for i in range(N):
       for j in range(M):
-        mse =  weights[j] * torch.maximum(torch.mean(torch.pow(targets[j] - predictions[j][0][i], 2)) - 
-          self.λ * torch.mean(torch.abs(predictions[j][1][i])), torch.tensor(0., device = predictions[j][1][i].device)) 
+        mean_unc = torch.mean(torch.abs(predictions[j][1][i]))
+        unc_term = torch.tanh(mean_unc / 1.0)
+        mse =  weights[j] * (torch.mean(torch.pow(targets[j] - predictions[j][0][i], 2)) - self.λ * unc_term)
         mse_total = mse_total + mse
         mses[j][i] = mse.detach()
         del mse
