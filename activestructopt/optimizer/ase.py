@@ -88,7 +88,6 @@ class ASE(BaseOptimizer):
   
     device = model.device
     nstarts = len(starting_structures)
-    ljrmins = torch.tensor(lj_rmins, device = device)
     best_obj = np.inf
     best_struct = None
     target = torch.tensor(dataset.target, device = device)

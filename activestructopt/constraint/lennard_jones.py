@@ -11,6 +11,7 @@ class LennardJonesRepulsion(BaseConstraint)
   def __init__(self, scale = 40, buffer = 0.85,)
     self.lj_rmins = np.genfromtxt(str(Path(__file__
       ).parent / 'lj_rmins.csv'), delimiter = ',') * self.buffer
+    self.lj_rmins_t = None
     self.el_symbols = np.array([periodictable.elements[
       i].symbol for i in range(95)])
     self.scale = scale
@@ -21,12 +22,16 @@ class LennardJonesRepulsion(BaseConstraint)
 
   def soft_constraint(self, data, data_style = ""):
     if data_style == 'mdl':
-      rmins = self.lj_rmins[(data.z[data.edge_index[0]] - 1), 
+      if self.lj_rmins_t is None:
+        self.lj_rmins_t = torch.tensor(self.lj_rmins, device = data.device)
+      rmins = self.lj_rmins_t[(data.z[data.edge_index[0]] - 1), 
         (data.z[data.edge_index[1]] - 1)] 
       repulsions = torch.where(rmins > data.edge_weight, 
         torch.pow(rmins / data.edge_weight, 12), 1.0)
       return (torch.mean(repulsions) - 1) / self.scale
     elif data_style == 'mt':
+      if self.lj_rmins_t is None:
+        self.lj_rmins_t = torch.tensor(self.lj_rmins, device = data.device)
       edge_splitter = data.n_edge.to('cpu').detach().tolist()
       senders = torch.split(data.senders, edge_splitter)
       receivers = torch.split(data.receivers, edge_splitter)
@@ -39,7 +44,7 @@ class LennardJonesRepulsion(BaseConstraint)
         senders_z = data.atomic_numbers[senders[i]]
         receivers_z = data.atomic_numbers[receivers[i]]
 
-        rmins = self.lj_rmins[(senders_z - 1), (receivers_z - 1)]
+        rmins = sself.lj_rmins_t[(senders_z - 1), (receivers_z - 1)]
         repulsions = torch.where(rmins > edge_weights[i], 
           torch.pow(rmins / edge_weights[i], 12), 1.0)
         to_return[i] = ((torch.mean(repulsions) - 1) / self.scale).clone()
