@@ -2,6 +2,7 @@ from activestructopt.model.base import BaseModel
 from activestructopt.dataset.base import BaseDataset
 from activestructopt.objective.base import BaseObjective
 from activestructopt.sampler.base import BaseSampler
+from activestructopt.constraint.base import BaseConstraint
 from abc import ABC, abstractmethod
 
 class BaseOptimizer(ABC):
@@ -11,5 +12,5 @@ class BaseOptimizer(ABC):
 
   @abstractmethod
   def run(self, model: list[BaseModel], dataset: BaseDataset, 
-    objective: BaseObjective, sampler: BaseSampler, **kwargs):
+    objective: BaseObjective, sampler: BaseSampler, constraints: list[BaseConstraint], **kwargs):
     pass

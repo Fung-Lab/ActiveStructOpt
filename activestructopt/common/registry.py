@@ -27,7 +27,7 @@ def setup_imports():
     project_root = root_folder.parent.resolve().absolute()
 
     import_keys = ["sampler", "dataset", "model", "objective", "optimizer", 
-        "simulation"]
+        "simulation", "constraint"]
     for key in import_keys:
         dir_list = (project_root / "activestructopt" / key).rglob("*.py")
         for f in dir_list:
@@ -45,6 +45,7 @@ class Registry:
         "optimizer_name_mapping": {},
         "objective_name_mapping": {},
         "simulation_name_mapping": {},
+        "constraint_name_mapping": {},
     }
 
     @classmethod
@@ -90,6 +91,13 @@ class Registry:
         return wrap
 
     @classmethod
+    def register_constraint(cls, name):
+        def wrap(func):
+            cls.mapping["constraint_name_mapping"][name] = func
+            return func
+        return wrap
+
+    @classmethod
     def get_class(cls, name: str, mapping_name: str):
         return cls.mapping[mapping_name].get(name, None)
 
@@ -116,5 +124,8 @@ class Registry:
     @classmethod
     def get_simulation_class(cls, name):
         return cls.get_class(name, "simulation_name_mapping")
+
+    def get_constraint_class(cls, name):
+        return cls.get_class(name, "constraint_name_mapping")
 
 registry = Registry()

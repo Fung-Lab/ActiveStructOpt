@@ -1,10 +1,10 @@
 from activestructopt.common.dataloader import prepare_data_ase
-from activestructopt.common.constraints import lj_rmins, lj_repulsion
 from activestructopt.model.base import BaseModel
 from activestructopt.dataset.base import BaseDataset
 from activestructopt.objective.base import BaseObjective
 from activestructopt.optimizer.base import BaseOptimizer
 from activestructopt.sampler.base import BaseSampler
+from activestructopt.constraint.base import BaseConstraint
 from activestructopt.common.registry import registry
 from pymatgen.core.structure import IStructure
 from pymatgen.io.ase import AseAtomsAdaptor
@@ -37,7 +37,7 @@ class ASOTraj():
 
 class ASOCalc(Calculator):
   def __init__(self, model, dataset, objective, target, device, 
-    constraint_scale, ljrmins, **kwargs):
+    constraints, **kwargs):
     self.implemented_properties = ['energy', 'energies', 'forces', 'stress']
     Calculator.__init__(self, **kwargs)
     self.model = model
@@ -45,8 +45,7 @@ class ASOCalc(Calculator):
     self.device = device
     self.objective = objective
     self.target = target
-    self.constraint_scale = constraint_scale
-    self.ljrmins = ljrmins
+    self.constraints = constraints
 
   def calculate(self, atoms = None, properties = ['energy'],
                 system_changes = all_changes):
@@ -61,8 +60,8 @@ class ASOCalc(Calculator):
     _, obj_total = self.objective.get(predictions, self.target, 
       device = self.device, N = 1)
     
-    obj_total = obj_total + self.constraint_scale * lj_repulsion(data[0], 
-      self.ljrmins)
+    for constraint in self.constraints:
+      obj_total = obj_total + constraint.soft_constraint(data[0], data_style = 'mdl')
 
     grads = torch.autograd.grad(obj_total, [data[0].pos, data[0].cell]) 
 
@@ -77,10 +76,10 @@ class ASE(BaseOptimizer):
     pass
 
   def run(self, model: BaseModel, dataset: BaseDataset, 
-    objective: BaseObjective, sampler: BaseSampler, 
+    objective: BaseObjective, sampler: BaseSampler, constraints: list[BaseConstraint], 
     starts = 128, iters_per_start = 100, optimizer = "FIRE",
     optimizer_args = {}, optimize_atoms = True, 
-    optimize_lattice = False, constraint_scale = 1.0,
+    optimize_lattice = False,
     **kwargs) -> IStructure:
     
     starting_structures = [dataset.structures[j].copy(
@@ -97,7 +96,7 @@ class ASE(BaseOptimizer):
     for j in range(nstarts):
       ase_crystal = AseAtomsAdaptor().get_atoms(starting_structures[j])
       ase_crystal.calc = ASOCalc(model, dataset, objective, 
-        target, device, constraint_scale, ljrmins)
+        target, device, constraints)
       if optimize_lattice:
         ase_crystal = FrechetCellFilter(ase_crystal)
       traj = ASOTraj(optimize_lattice)
