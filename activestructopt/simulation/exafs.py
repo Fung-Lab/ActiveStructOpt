@@ -18,268 +18,373 @@ import subprocess
 import shutil
 import traceback
 import stat
+from pymatgen.io.ase import AseAtomsAdaptor
 
-def get_sims(folder, n):
-  paths = []
-  for i in range(n):
-    path_files = np.sort(list(filter(lambda x: x.startswith('feff'
-      ) and x.endswith('.dat'), 
-      os.listdir(f"{folder}/{i}"))))
-    abs_paths = []
-    for j in range(len(path_files)):
-      try:
-          abs_paths.append(feffpath(f'{folder}/{i}/{path_files[j]}'))
-      except:
-          print(f'Skipping {path_files[j]}')
-    if len(abs_paths) < 1:
-      raise ASOSimulationException(f"Folder {folder} has no feffXXXX.dat files")
-    paths.append(abs_paths)
-  return paths
+def run_md(structure, trajectory_path, log_path, timestep = 1.25, 
+  temp = 300, friction = 0.002, loginterval = 4, nsteps = 41600,
+  burnin_steps = 1600, max_rms_burnin = 0.5)
+  try:
+    from ase import units
+    from ase.build.supercells import make_supercell
+    from ase.constraints import FixCom
+    from ase.io import Trajectory
+    from ase.md import MDLogger
+    from ase.md.langevin import Langevin
+    from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
+    from fairchem.core import FAIRChemCalculator, pretrained_mlip
+  except ImportError as e:
+    raise ImportError('Error loading required packages for MD') from e
 
-def get_s02(folder, n):
-  s02s = []
-  for i in range(n):
-    f = open(f'{folder}/{i}/xmu.dat')
-    lines = f.readlines()
-    s02_line = np.where(['S02=' in line for line in lines])[0][0]
-    s02s.append(float(lines[s02_line].split('S02=')[1].split()[0]))
-  return s02s
+  atoms = AseAtomsAdaptor().get_atoms(structure)
+  minimum_length = 8.4  # Angstrom
+  cell_lengths = np.linalg.norm(atoms.cell.array, axis = 1)
+  repetitions = np.maximum(1, np.ceil(minimum_length / cell_lengths).astype(int),)
+  M = np.diag(repetitions)
+  atoms = make_supercell(atoms, M)
+  atoms.set_constraint(FixCom())
 
-def get_debye_predictor(ckpt_path):
-  TD_mean = 2.460525700259601
-  TD_std = 0.2499737087979493
-  unnormalize_TD = lambda x: 10 ** (2 * TD_std * x + TD_mean)
+  predictor = pretrained_mlip.get_predict_unit('uma-s-1p2p1', 
+    device = 'cuda', inference_settings = 'nitro')
+  atoms.calc = FAIRChemCalculator(predictor, task_name = 'omat')
+  rng = np.random.RandomState(0)
+  MaxwellBoltzmannDistribution(atoms, temperature_K = temp, rng=rng)
+  initial_positions = atoms.get_scaled_positions().copy()
 
-  ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-  hparams = ckpt["hyper_parameters"].copy()
-  hparams.pop("pruning_message_passing", None)
-  hparams.pop("using_partition", None)
-  model = ORBBackboneModule(ORBBackboneConfig.model_validate(hparams))
-  model.load_state_dict(ckpt["state_dict"])
-  model = model.eval().to("cpu")
-  def predict_debye_temp(s):
-    return unnormalize_TD(model.model_forward(model.atoms_to_data(
-    Atoms(
-        numbers=np.array(s.atomic_numbers),
-        positions=np.array(s.cart_coords),
-        cell=np.array(s.lattice.matrix),
-        pbc=True,
-    ), has_labels = False).to('cpu'), 
-    mode = 'predict')['predicted_properties']['debye_temp'].item())
-  return predict_debye_temp
+  def check_initial_drift():
+    if dyn.nsteps >= burnin_steps:
+      return
 
-def get_paths_info(sim):
-  struct_info = []
+    disp_frac = (atoms.get_scaled_positions() - 
+      initial_positions)
+    disp_frac -= np.round(disp_frac)
+    disp_cart = disp_frac @ atoms.cell.array
+    rms_displacement = np.sqrt(np.mean(np.sum(
+      disp_cart ** 2, axis = 1)))
 
-  debye_t_x = np.arange(100, 2000, 10)
+    if rms_displacement > max_rms_burnin:
+      raise ASOSimulationException(
+        f"RMS displacement exceeded threshold: "
+        f"{rms_displacement} Å > {max_rms_burnin} Å "
+        f"at step {dyn.nsteps}")
 
-  for j, abs_paths in enumerate(sim):
-    abs_reffs = []
-    abs_m_a = []
-    abs_m_s = []
-    abs_rnorman = []
-    abs_scatter_Zs = []
-    abs_degens = []
-    abs_amp = []
-    abs_pha = []
-    abs_rep = []
-    abs_lam = []
-    abs_sigma2_debye = []
+  dyn = Langevin(atoms,
+    timestep = timestep * units.fs,
+    temperature_K = temp,
+    friction = friction / units.fs,
+    fixcm = False)
+  trajectory = Trajectory(trajectory_path, 'w', atoms)
+  logger = MDLogger(dyn, atoms, log_path, header = True, mode = 'w')
+  dyn.attach(trajectory.write, interval = loginterval)
+  dyn.attach(logger, interval = loginterval)
+  dyn.attach(check_initial_drift, interval = loginterval)
+  try:
+    dyn.run(nsteps)
+  finally:
+    trajectory.close()
+    logger.close()
 
-    abs_reffs_ms = []
-    abs_nlegs_ms = []
-    abs_degen_ms = []
-    abs_rnorman_ms = []
-    abs_amp_ms = []
-    abs_pha_ms = []
-    abs_rep_ms = []
-    abs_lam_ms = []
-    abs_atwt_ms = []
-    abs_pos_ms = []
-    abs_sigma2_debye_ms = []
+def autobk_lmfit(energy, mu, ek0, edge_step, std_de = None,
+  rbkg=1, nknots=None, kmin=0, kmax=None, kweight=1, dk=0.1,
+  win='hanning', k_std=None, chi_std=None, nfft=2048, kstep=0.05,
+  nclamp=3, clamp_lo=0, clamp_hi=0,  **kws):
+  """
+  Essentially https://github.com/xraypy/xraylarch/blob/170d8ee342ad809722c9e6e0cd361fea0579865c/larch/xafs/autobk.py#L330 
+  but with wider range of dE0, and outputs chi directly
+  """
+  # get array indices for rkbg and ek0: irbkg, iek0
+  iek0 = index_of(energy, ek0)
+  rgrid = np.pi / (kstep * nfft)
+  if rbkg < 2 * rgrid: rbkg = 2 * rgrid
 
-    for pathi, path in enumerate(abs_paths):
-      if len(path._feffdat.geom) == 2:
-        reff = np.linalg.norm(np.array(path._feffdat.geom[1][4:7]).astype(float))
-        m_a = path._feffdat.geom[0][3]
-        m_s = path._feffdat.geom[1][3]
-        rnorman = path._feffdat.rnorman
-        if len(abs_reffs) > 0 and np.min(np.abs(np.array(abs_reffs) - reff)
-              ) < 0.00005 and abs_scatter_Zs[np.argmin(np.abs(np.array(
-              abs_reffs) - reff))] == path._feffdat.geom[1][1]:
-          abs_degens[np.argmin(np.abs(np.array(
-              abs_reffs) - reff))] += path._feffdat.degen
-        else:
-          abs_reffs.append(reff)
-          abs_m_a.append(m_a)
-          abs_m_s.append(m_s)
-          abs_rnorman.append(rnorman)
-          abs_scatter_Zs.append(path._feffdat.geom[1][1])
-          abs_degens.append(path._feffdat.degen)
-          abs_amp.append(path._feffdat.amp)
-          abs_pha.append(path._feffdat.pha)
-          abs_rep.append(path._feffdat.rep)
-          abs_lam.append(path._feffdat.lam)
-          abs_sigma2_debye.append([sigma2_debye(300., debye_t, path) for debye_t in debye_t_x])
-      else:
-        for leg in path._feffdat.geom:
-          abs_atwt_ms.append(leg[3])
-          abs_pos_ms.append([float(leg[4]), float(leg[5]), float(leg[6])])
-        rnorman = path._feffdat.rnorman
-        abs_rnorman_ms.append(rnorman)
-        abs_reffs_ms.append(path._feffdat.reff)
-        abs_nlegs_ms.append(len(path._feffdat.geom))
-        abs_degen_ms.append(path._feffdat.degen)
-        abs_amp_ms.append(path._feffdat.amp)
-        abs_pha_ms.append(path._feffdat.pha)
-        abs_rep_ms.append(path._feffdat.rep)
-        abs_lam_ms.append(path._feffdat.lam)
-        abs_sigma2_debye_ms.append([sigma2_debye(300., debye_t, path) for debye_t in debye_t_x])
-    abs_info = {
-      "k_feff": path._feffdat.k,
-      "Reffs": abs_reffs,
-      "m_a": m_a,
-      "m_s": m_s,
-      "rnorman": rnorman,
-      "degen": abs_degens,
-      "scatterer_Zs": abs_scatter_Zs,
-      "amp": abs_amp,
-      "pha": abs_pha,
-      "rep": abs_rep,
-      "lam": abs_lam,
-      "sigma2_debye": abs_sigma2_debye,
-      "Reffs_MS": abs_reffs_ms,
-      "nlegs_MS": abs_nlegs_ms,
-      "degen_MS": abs_degen_ms,
-      "rnorman_MS": abs_rnorman_ms,
-      "amp_MS": abs_amp_ms,
-      "pha_MS": abs_pha_ms,
-      "rep_MS": abs_rep_ms,
-      "lam_MS": abs_lam_ms,
-      "atwt_MS": abs_atwt_ms,
-      "pos_MS": abs_pos_ms,
-      "sigma2_debye_MS": abs_sigma2_debye_ms,
-    }
-    struct_info.append(abs_info)
-  return struct_info
+  # save ungridded k (kraw) and grided k (kout)
+  # and ftwin (*k-weighting) for FT in residual
+  enpe = energy[iek0:] - ek0
+  kraw = np.sign(enpe) * np.sqrt(ETOK * abs(enpe))
+  kmax = max(kraw) if kmax is None else max(0, min(max(kraw), kmax))
+  kout  = kstep * np.arange(int(1.01 + kmax / kstep), dtype = 'float64')
+  iemax = min(len(energy), 2 + index_of(energy, ek0 + kmax * kmax / ETOK)) - 1
 
-def batch_interp_rows(x, xp, ys):
-    x = np.clip(x, xp[0], xp[-1])
+  # pre-load FT window
+  ftwin = kout ** kweight * ftwindow(kout, xmin = kmin, 
+    xmax = kmax, window = win, dx = dk, dx2 = dk)
+  # calc k-value and initial guess for y-values of spline params
+  nspl = 1 + int(2 * rbkg * (kmax - kmin) / np.pi)
+  irbkg = int(1 + (nspl - 1) * np.pi / (2 * rgrid * (kmax - kmin)))
+  if nknots is not None: nspl = nknots
+  nspl = max(5, min(128, nspl))
+  spl_y, spl_k  = np.ones(nspl), np.zeros(nspl)
+  for i in range(nspl):
+      q  = kmin + i * (kmax - kmin) / (nspl - 1)
+      ik = index_nearest(kraw, q)
+      i1 = min(len(kraw) - 1, ik + 5)
+      i2 = max(0, ik - 5)
+      spl_k[i] = kraw[ik]
+      spl_y[i] = (2 * mu[ik + iek0] + mu[i1 + iek0] + mu[i2 + iek0]) / 4.0
 
-    right = np.searchsorted(xp, x, side="right")
-    right = np.clip(right, 1, len(xp) - 1)
-    left = right - 1
+  order = 3
+  qmin, qmax  = spl_k[0], spl_k[nspl - 1]
+  knots = [spl_k[0] - 1.e-4 * (order - i) for i in range(order)]
 
-    weight = (x - xp[left]) / (xp[right] - xp[left])
+  for i in range(order, nspl):
+    knots.append((i - order) * (qmax - qmin)/(nspl - order + 1))
+  qlast = knots[-1]
+  for i in range(order + 1):
+    knots.append(qlast + 1.e-4 * (i + 1))
 
-    return (ys[:, left] * (1.0 - weight)[None, :]
-        + ys[:, right] * weight[None, :])
+  # coefs = [mu[index_nearest(energy, ek0 + q**2/ETOK)] for q in knots]
+  knots, coefs, order = splrep(spl_k, spl_y, k=order)
+  coefs[nspl:] = coefs[nspl-1]
 
-# https://github.com/xraypy/xraylarch/blob/dafed7db999523d366f482f6a260bc983c4defe4/larch/xafs/feffdat.py#L638
-KTOE = 1.e20*consts.hbar**2 / (2*consts.m_e * consts.e) # 3.8099819442818976
-ETOK = 1.0/KTOE
-def _calc_chi(k, feffk, reff, degen, pha, amp, rep, lam, sigma2, s02 = 1.0, e0 = 0.0, ei = 0.0):
-  en = k ** 2 - float(e0) * ETOK
+  # set fit parameters from initial coefficients
+  params = Parameters()
+  for i in range(len(coefs)):
+    params.add(name = FMT_COEF % i, value = coefs[i], vary = i < len(spl_y))
+
+  if chi_std is not None:
+    params.add(name='std_amp', value = 1.0, min =  0.05, max = 20.0, vary = True)
+    if std_de is not None:
+      params.add(name='std_de',  value = std_de, min = -30.0, max = 30.0, vary = False)
+    else:
+      params.add(name='std_de',  value = 0.0, min = -30.0, max = 30.0, vary = True)
+
+  # do fit
+  result = minimize(_resid_lmfit, params, method='leastsq',
+    gtol = 1.e-6, ftol = 1.e-6, xtol = 1.e-6, epsfcn = 1.e-6,
+    kws = dict(ncoefs = len(coefs), k_std = k_std, chi_std = chi_std,
+      knots = knots, order = order,
+      kraw = kraw[:iemax - iek0 + 1],
+      mu = mu[iek0:iemax + 1], irbkg = irbkg, kout = kout,
+      ftwin = ftwin, kweight = kweight,
+      nfft = nfft, nclamp = nclamp,
+      clamp_lo = clamp_lo, clamp_hi = clamp_hi))
+
+  # write final results
+  coefs = [result.params[FMT_COEF % i].value for i in range(len(coefs))]
+  bkg, chi = spline_eval(kraw[:iemax - iek0 + 1], mu[iek0:iemax + 1],
+    knots, coefs, order, kout)
+  return chi / edge_step
+
+def get_paths(sim_dir):
+  subdirs = sorted(
+    (s for s in os.listdir(sim_dir)
+      if os.path.isdir(os.path.join(sim_dir, s))),
+    key=int,
+  )
+  feffdat_files = [np.sort([s for s in os.listdir(
+    f'{sim_dir}/{sub_dir}') if s[:4]=='feff' and s[-4:]=='.dat']
+    ) for sub_dir in subdirs]
+  feffpaths = [[feffpath(f'{sim_dir}/{subdirs[i]}/{feffdat_files[i][j
+    ]}') for j in range(len(feffdat_files[i])
+    )] for i in range(len(feffdat_files))]
+  return feffpaths
+
+def _interp_paths(q, feffk, values):
+  """
+  Vectorized equivalent of: np.interp(q, feffk, values[i])
+  ----------
+  q : (n_k,) array
+  feffk : (n_feff_k,) array
+  values : (n_paths, n_feff_k) array
+  """
+  q_clipped = np.clip(q, feffk[0], feffk[-1])
+  inds = np.searchsorted(feffk, q_clipped, side='right')
+  inds = np.clip(inds, 1, len(feffk) - 1)
+  left = inds - 1
+  right = inds
+  weight = ((q_clipped - feffk[left]) / (feffk[right] - feffk[left]))
+  return values[:, left] * (1.0 - weight)[None, :] + values[:, right] * weight[None, :]
+
+
+def get_absorber_spectra(feffk, Reffs, degen, deltar, sigma2, third, 
+  fourth, pha, amp, rep, lam, e0, ei, s02, k):
+  """Calculate the summed chi(k) for all paths simultaneously."""
+  feffk = np.asarray(feffk)
+  reff = Reffs[:, None]
+  degen = degen[:, None]
+  deltar = deltar[:, None]
+  sigma2 = sigma2[:, None]
+  third = third[:, None]
+  fourth =  fourth[:, None]
+
+  # Create the E0-shifted energy and wavenumber.
+  en = k * k - e0 * ETOK
   q = np.sign(en) * np.sqrt(np.abs(en))
 
-  n_paths = len(reff)
+  # Look up FEFF values for every path and k value.
+  pha = _interp_paths(q, feffk, pha)
+  amp = _interp_paths(q, feffk, amp)
+  rep = _interp_paths(q, feffk, rep)
+  lam = _interp_paths(q, feffk, lam)
 
-  feff_tables = np.concatenate((pha, amp, rep, lam), axis = 0)
-  interpolated = batch_interp_rows(q, feffk, feff_tables)
-  pha, amp, rep, lam = np.split(interpolated, [n_paths, 2 * n_paths, 3 * n_paths], axis = 0)
-
-  reff = reff[:, None]
-  degen = degen[:, None]
-  sigma2 = sigma2[:, None]
-
-  pp = ((rep + 1j / lam) ** 2 + 1j * float(ei) * ETOK)
+  # Complex wavenumber.
+  pp = (rep + 1j / lam) ** 2 + 1j * ei * ETOK
   p = np.sqrt(pp)
 
-  cchi = np.exp(-2.0 * reff * p.imag - 2.0 * pp * sigma2
-    + 1j * (2.0 * q[None, :] * reff + pha - 4.0 * p * sigma2 / reff))
-  cchi *= (degen * float(s02) * amp / (q[None, :] * reff ** 2))
-  cchi[:, 0] = 2.0 * cchi[:, 1] - cchi[:, 2]
-  return cchi.imag
+  # XAFS equation. Arrays have shape (n_paths, n_k).
+  cchi = np.exp(-2 * reff * p.imag - 2 * pp * (
+    sigma2 - pp * fourth / 3) + 1j * (2 * 
+    q[None, :] * reff + pha + 2 * p * (deltar - 
+    2 * sigma2 / reff - 2 * pp * third / 3)))
 
-def get_absorber_spectra_debye(reffs, degens, 
-        phas, amps, lams, reps, sigma2s, e0, ei, s02, k, feffk):
-  return np.sum(_calc_chi(k, feffk, reffs, degens, 
-    phas, amps, reps, lams, sigma2s, s02 = s02, e0 = e0, ei = ei,
-    ), axis = 0)
+  cchi = (degen * s02 * amp * cchi /
+    (q[None, :] * (reff + deltar)**2))
+  cchi[:, 0] = 2 * cchi[:, 1] - cchi[:, 2]
 
-def get_structure_spectra_debye(reffs, degens, 
-        phas, amps, lams, reps, sigma2s, e0s, eis, s02s, k, feffk):
-  return np.mean(np.stack([get_absorber_spectra_debye(reffs[i], degens[i], 
-    phas[i], amps[i], lams[i], reps[i], sigma2s[i], 
-    e0s[i], eis[i], s02s[i], k, feffk) for i in range(len(reffs))]), axis = 0)
+  return np.sum(cchi.imag, axis=0)
 
-def get_aligned_sim(sim, s02s, exp_g, structure, kmin_fit = 4.0, kmax_fit = 15.0, 
-  kwfit = 3, vary_TD = True, TD_predictor_path = None, kwout = 3):
-  kmini = np.argmin(np.abs(exp_g.k - kmin_fit))
-  kmaxi = np.argmin(np.abs(exp_g.k - kmax_fit))
-  ks = exp_g.k[kmini:kmaxi]
-  exp_chi = exp_g.chi[kmini:kmaxi]
+def get_spectra(feffk, Reffs, degen, deltar, sigma2, third, 
+  fourth, pha, amp, rep, lam, e0, ei, s02, k):
+  return np.mean(np.stack([get_absorber_spectra(feffk, Reffs[i], 
+    degen[i], deltar[i], sigma2[i], third[i], fourth[i], 
+    pha[i], amp[i], rep[i], lam[i], e0, ei, s02, k) for i in range(
+    len(Reffs))]), axis = 0)
 
-  n = len(sim)
-  paths_info = get_paths_info(sim)
+def get_kstats_from_traj(traj, sim_data):
+  adaptor = AseAtomsAdaptor()
+  starting_struct = adaptor.get_structure(traj[0])
+  nabs = len(sim_data)
+  sc_sf = np.sum(traj[0].get_atomic_numbers() == 22) // nabs
+  nprim = len(traj[0]) // sc_sf
+  nsegsmax = np.max(np.concatenate([np.array([len(
+    sim_data[i][j]._feffdat.geom) - 1 for j in range(
+    len(sim_data[i]))]) for i in range(len(sim_data))]))
+  abs_inds = np.where(traj[0].get_atomic_numbers() == 22)[0][:nabs]
+  lattice = starting_struct.lattice.matrix
+  natoms = len(traj[0])
+  nframes = 10000
+  md_coords = np.zeros((nframes, natoms, 3))
+  for fi, atoms in enumerate(traj[401:]):
+    md_coords[fi] = atoms.positions
 
-  reffs = []
-  degens = []
-  phas = []
-  amps = []
-  lams = []
-  reps = []
-  sigma2_grids = []
-  for i in range(n):
-    reffs.append(np.concatenate((paths_info[i]['Reffs'], paths_info[i]['Reffs_MS'])))
-    degens.append(np.concatenate((paths_info[i]['degen'], paths_info[i]['degen_MS'])))
-    phas.append(np.concatenate((paths_info[i]['pha'], paths_info[i]['pha_MS'])))
-    amps.append(np.concatenate((paths_info[i]['amp'], paths_info[i]['amp_MS'])))
-    lams.append(np.concatenate((paths_info[i]['lam'], paths_info[i]['lam_MS'])))
-    reps.append(np.concatenate((paths_info[i]['rep'], paths_info[i]['rep_MS'])))
-    sigma2_grids.append(np.concatenate((paths_info[i]['sigma2_debye'], paths_info[i]['sigma2_debye_MS'])))
+  Reffs = []
+  kstats = []
+  for abs_i, abs_ind in enumerate(abs_inds):
+    path_inds_abs = np.ones((len(sim_data[abs_i]), sc_sf, 
+      nsegsmax + 2), dtype = np.int64)
+    for si in range(sc_sf):
+      path_inds_abs[:, si, :] *= abs_ind + si * nprim
 
-  def res_fun_lmfit(params):
-    sigma2s = []
-    for i in range(n):
-      sigma2s.append(batch_interp_rows(np.atleast_1d(params[f'θD']), 
-        np.arange(100, 2000, 10), sigma2_grids[i]).flatten())
-    dev = (ks ** kwfit *  exp_chi) - (
-      ks ** kwfit * get_structure_spectra_debye(reffs, degens, 
-        phas, amps, lams, reps, sigma2s, 
-        [params[f'ΔE0_{i}'] for i in range(n)],
-        [params[f'Ei_{i}'] for i in range(n)], s02s, ks, paths_info[0]['k_feff']))
-    return dev
+    path_ims_abs = np.zeros((len(sim_data[abs_i]), sc_sf, 
+      nsegsmax + 2, 3))
+    for fi, fp in enumerate(sim_data[abs_i]):
+      geom = fp._feffdat.geometry
+      for i in range(len(geom) - 1):
+        for si in range(sc_sf):
+          disp = np.asarray(geom[i][3:6], dtype=float)
+          center = starting_struct[abs_ind + si * nprim].coords
+          target = center + disp
+          matches = starting_struct.get_sites_in_sphere(target, 0.1)
 
-  if TD_predictor_path is None:
-    predicted_debye_t = 500.0
-    debye_lb = 100.0
-    debye_ub = 2000.0
-  else:
-    debye_predictor = get_debye_predictor(TD_predictor_path)
-    predicted_debye_t = debye_predictor(structure)
-    debye_lb = max(0, predicted_debye_t - 250)
-    debye_ub = predicted_debye_t + 250
+          if not matches:
+            all_neighbors = starting_struct.get_sites_in_sphere(target, 2.0)
+            nearest = all_neighbors[0] if all_neighbors else None
+            raise ASOSimulationException(
+              f"No FEFF geometry match:\n"
+              f"  abs_i       = {abs_i}\n"
+              f"  abs_ind     = {abs_ind}\n"
+              f"  replica     = {si}\n"
+              f"  path        = {fi}\n"
+              f"  leg         = {i}\n"
+              f"  absorber    = {center}\n"
+              f"  displacement= {disp}\n"
+              f"  target      = {target}\n"
+              f"  nearest     = {nearest}\n"
+            )
+          nb = matches[0]
+          path_inds_abs[fi, si, i + 1] = nb.index
+          path_ims_abs[fi, si, i + 1] = nb.image
+    path_shifts_abs = path_ims_abs @ lattice
+    path_shift_dists_abs = path_shifts_abs[..., 1:, :
+        ] - path_shifts_abs[..., :-1, :]
+
+    Reffs_abs = np.zeros(len(sim_data[abs_i]))
+    for fi, fp in enumerate(sim_data[abs_i]):
+        geom = fp._feffdat.geometry
+        Reffs_abs[fi] = np.linalg.norm(np.array(geom[0][3:6]))
+        for i in range(len(geom) - 1):
+            Reffs_abs[fi] += np.linalg.norm(np.array(
+                geom[i+1][3:6]) - np.array(geom[i][3:6]))
+        Reffs_abs[fi] /= 2
+    dR_abs = md_coords[:, path_inds_abs[..., 1:], :] - md_coords[
+        :, path_inds_abs[..., :-1], :] + path_shift_dists_abs[None]
+    path_lengths_abs = np.linalg.norm(dR_abs, axis = -1).sum(axis = -1) / 2
+    path_lengths_combined_abs = path_lengths_abs.transpose(0, 2, 1
+        ).reshape(-1, len(sim_data[abs_i]))
+
+    kstats_abs = np.array([kstat(path_lengths_combined_abs, 
+        axis = 0, n = kn) for kn in range(1, 5)])
+    kstats_abs[0, :] -= Reffs_abs
+    kstats.append(kstats_abs)
+    Reffs.append(Reffs_abs)
+
+  deltar = [kstats[i][0, :] for i in range(len(kstats))]
+  sigma2 = [kstats[i][1, :] for i in range(len(kstats))]
+  third  = [kstats[i][2, :] for i in range(len(kstats))]
+  fourth = [kstats[i][3, :] for i in range(len(kstats))]
+  return Reffs, deltar, sigma2, third, fourth
+
+def get_sim_spec(params, g, kstart, kstop, feffk, 
+  Reffs, degens, deltar, sigma2, third, fourth, 
+  pha, amp, rep, lam):
+  chi = get_spectra(feffk, Reffs, degens, deltar, sigma2, third, fourth, 
+    pha, amp, rep, lam, params['ΔE0'], 0.0, 1.0, g.k)
+  
+  scalar = np.linalg.norm(g.k[kstart:kstop] ** 3 * g.chi[kstart:kstop]
+    ) / np.linalg.norm(g.k[kstart:kstop] ** 3 * chi[kstart:kstop]) 
+  chi *= scalar
+
+  fitchi = autobk_lmfit(g.energy, g.mu, g.ek0, g.edge_step, 
+    std_de = None, k_std = g.k, chi_std = chi)
+  return chi - fitchi + g.chi
+
+def res_fun_lmfit(params, g, kstart, kstop, kw, feffk, Reffs, degens, 
+  deltar, sigma2, third, fourth, pha, amp, rep, lam):
+  chi = get_sim_spec(params, g, kstart, kstop, 
+      feffk, Reffs, degens, deltar, sigma2, third, fourth, 
+      pha, amp, rep, lam)
+  expnorm = g.k[kstart:kstop] ** kw * g.chi[kstart:kstop]
+  simnorm = g.k[kstart:kstop] ** kw * chi[kstart:kstop]
+  dev = simnorm - expnorm
+  return dev
+
+def get_aligned_sim(sim, exp_g, traj, structure, kmin_fit = 3.0, kmax_fit = 12.0, 
+  kwfit = 3, kwout = 3):
+  degens = [np.array([sim[i][j]._feffdat.degen for j in range(len(sim[i]))]
+    ) for i in range(len(sim))]
+  feffk = sim[0][0]._feffdat.k
+  Reffs, deltar, sigma2, third, fourth = get_kstats_from_traj(traj, sim)
+  amp = [np.array([path._feffdat.amp for path in abs_data]) for abs_data in sim]
+  pha = [np.array([path._feffdat.pha for path in abs_data]) for abs_data in sim]
+  lam = [np.array([path._feffdat.lam for path in abs_data]) for abs_data in sim]
+  rep = [np.array([path._feffdat.rep for path in abs_data]) for abs_data in sim]
+
+  kstart = index_of(exp_g.k, kmin_fit)
+  kstop = index_of(exp_g.k, kmax_fit)
 
   params = Parameters()
-  for i in range(len(sim)):
-      params.add(f'Ei_{i}', value = 0.0, min = -5.0, max = 5.0, vary = False)
-      params.add(f'ΔE0_{i}', value = 0.0, min = -30.0, max = 30.0)
-  params.add(f'θD', value = predicted_debye_t, min = debye_lb, 
-    max = debye_ub, vary = vary_TD)
+  params.add('ΔE0', value = 0.0, min = -30.0, max = 30.0, vary = True)
 
-  minner = Minimizer(res_fun_lmfit, params)
+  dE0_grid = np.arange(-30.0, 30.0, 0.5)
+  chi2_grid = np.empty_like(dE0_grid)
+
+  for i, dE0 in enumerate(dE0_grid):
+    p = params.copy()
+    p['ΔE0'].set(value=dE0)
+    residual = res_fun_lmfit(p, exp_g, kstart, kstop, kwfit,
+      feffk, Reffs, degens, deltar, sigma2, third, fourth, 
+      pha, amp, rep, lam)
+    chi2_grid[i] = np.dot(residual, residual)
+
+  params['ΔE0'].set(value = dE0_grid[np.argmin(chi2_grid)])
+  minner = Minimizer(res_fun_lmfit, params, fcn_args = [
+    exp_g, kstart, kstop, kwfit, feffk, Reffs, degens, 
+    deltar, sigma2, third, fourth, pha, amp, rep, lam])
   result = minner.minimize()
-  eis = [result.params[f'Ei_{i}'] for i in range(n)]
-  e0s = [result.params[f'ΔE0_{i}'] for i in range(n)]
-  sigma2s = []
-  for i in range(len(sigma2_grids)):
-    sigma2s.append(batch_interp_rows(np.atleast_1d(result.params[f'θD']), 
-      np.arange(100, 2000, 10), sigma2_grids[i]).flatten())
-  chi_spec = np.stack([get_absorber_spectra_debye(reffs[i], degens[i], 
-    phas[i], amps[i], lams[i], reps[i], sigma2s[i], 
-    e0s[i], eis[i], s02s[i], ks, paths_info[0]['k_feff']) for i in range(n)])
-  return ks ** kwout * chi_spec
+  
+  sim_chi = get_sim_spec(result.params, exp_g, kstart, kstop, 
+    feffk, Reffs, degens, deltar, sigma2, third, fourth, 
+    pha, amp, rep, lam)
+  return sim_chi[kstart:kstop] * exp_g.k[kstart:kstop] ** kwout
 
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
@@ -288,9 +393,10 @@ class EXAFS(BaseSimulation):
     fit_kmax = 12.0, time_limit = 240,
     additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1'},
     sh_template = None, 
-    sbatch_template = None, sbatch_group_template = None, sbatch_opt_template = None,
-    number_absorbers = None, save_sim = True, TD_predictor_path = None,
-    vary_TD = True, kwfit = 3,
+    sbatch_template = None, sbatch_group_template = None, 
+    sbatch_md_template = None, sbatch_md_group_template = None,
+    sbatch_opt_template = None,
+    number_absorbers = None, save_sim = True, kwfit = 3,
     **kwargs) -> None:
     self.exp_g = exp_g
     kmini = np.argmin(np.abs(exp_g.k - fit_kmin))
@@ -309,14 +415,14 @@ class EXAFS(BaseSimulation):
     self.N = len(self.mask)
     self.sbatch_template = sbatch_template
     self.sbatch_group_template = sbatch_group_template
+    self.sbatch_md_template = sbatch_md_template
+    self.sbatch_md_group_template = sbatch_md_group_template
     self.sbatch_opt_template = sbatch_opt_template
     self.sh_template = sh_template
     self.number_absorbers = number_absorbers
     self.save_sim = save_sim
     self.time_limit = time_limit
     self.structure = None
-    self.TD_predictor_path = TD_predictor_path
-    self.vary_TD = vary_TD
     self.kwfit = kwfit
 
   def setup_config(self, config):

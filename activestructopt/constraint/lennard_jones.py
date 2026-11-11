@@ -1,5 +1,5 @@
 from activestructopt.common.registry import registry
-from activestructopt.constraints
+from activestructopt.constraints.base import BaseConstraint
 from pymatgen.core.structure import IStructure
 import torch
 import periodictable
