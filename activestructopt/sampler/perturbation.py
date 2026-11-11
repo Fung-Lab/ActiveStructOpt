@@ -1,21 +1,22 @@
 from activestructopt.sampler.base import BaseSampler
+from activestructopt.constraint.base import BaseConstraint
 from activestructopt.common.registry import registry
-from activestructopt.common.constraints import lj_reject
 from pymatgen.core.structure import IStructure, Lattice
 import numpy as np
 
 @registry.register_sampler("Perturbation")
 class Perturbation(BaseSampler):
-  def __init__(self, initial_structure: IStructure, perturbrmin = 0.1, 
-    perturbrmax = 1.0, perturblσ = 0.0, perturbl = None, perturbθ = None, 
-    constraint_buffer = 0.85) -> None:
+  def __init__(self, initial_structure: IStructure, 
+    constraints: list[BaseConstraint], perturbrmin = 0.1, 
+    perturbrmax = 1.0, perturblσ = 0.0, perturbl = None, 
+    perturbθ = None) -> None:
     self.initial_structure = initial_structure
     self.perturbrmin = perturbrmin
     self.perturbrmax = perturbrmax
     self.perturblσ = perturblσ
     self.perturbl = perturbl
     self.perturbθ = perturbθ
-    self.constraint_buffer = constraint_buffer
+    self.constraints = constraints
 
   def sample(self) -> IStructure:
     rejected = True
@@ -51,7 +52,9 @@ class Perturbation(BaseSampler):
               -self.perturbθ, self.perturbθ))),
           )
         
-        rejected = lj_reject(new_structure, buffer = self.constraint_buffer)
+        rejected = False
+        for constraint in self.constraints:
+          rejected = rejected or constraint.hard_constraint(new_structure)
       except:
         rejected = True
     return new_structure

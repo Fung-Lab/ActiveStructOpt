@@ -1,10 +1,10 @@
 from activestructopt.common.dataloader import prepare_data_pmg, reprocess_data
-from activestructopt.common.constraints import lj_rmins, lj_repulsion
 from activestructopt.model.base import BaseModel
 from activestructopt.dataset.base import BaseDataset
 from activestructopt.objective.base import BaseObjective
 from activestructopt.optimizer.base import BaseOptimizer
 from activestructopt.sampler.base import BaseSampler
+from activestructopt.constraint.base import BaseConstraint
 from activestructopt.common.registry import registry
 from pymatgen.core.structure import IStructure
 from pymatgen.core import Lattice
@@ -21,8 +21,7 @@ class Torch(BaseOptimizer):
     starts = 128, iters_per_start = 100, optimizer = "Adam",
     optimizer_args = {}, optimize_atoms = True, 
     optimize_lattice = False, save_obj_values = False, 
-    constraint_scale = 1.0, pos_lr = 0.001, cell_lr = 0.001,
-    constraint_buffer = 0.85, random_starts = False, 
+    pos_lr = 0.001, cell_lr = 0.001, random_starts = False, 
     save_only_constrained_structures = False,
     **kwargs) -> IStructure:
     
@@ -37,7 +36,6 @@ class Torch(BaseOptimizer):
     device = model.device
     nstarts = len(starting_structures)
     natoms = len(starting_structures[0])
-    ljrmins = torch.tensor(lj_rmins, device = device) * constraint_buffer
     best_obj = torch.tensor([float('inf')], device = device)
     if optimize_atoms:
       best_x = torch.zeros(3 * natoms, device = device)
@@ -87,13 +85,13 @@ class Torch(BaseOptimizer):
             objs, obj_total = objective.get(predictions, target, 
               device = device, N = stopi - starti + 1)
 
-            lj_repulsions = torch.zeros(stopi - starti + 1, device = device)
+            constraint_vals = torch.zeros(stopi - starti + 1, device = device)
             for j in range(stopi - starti + 1):
-              lj_repuls = lj_repulsion(data[starti + j], ljrmins)
-              objs[j] += constraint_scale * lj_repuls
-              obj_total += constraint_scale * lj_repuls
+              for constraint in constraints:
+                constraint_vals[j] += constraint.soft_constraint(data[starti + j], data_style = 'mt')
+              objs[j] += constraint_vals[j]
+              obj_total += constraint_vals[j]
               objs[j] = objs[j].detach()
-              lj_repulsions[j] = lj_repuls
               if save_obj_values:
                 obj_values[i, starti + j] = objs[j].detach().cpu()
 
@@ -109,7 +107,7 @@ class Torch(BaseOptimizer):
               best_obj = min_obj_iter.detach()
               obj_arg = torch.argmin(objs_to_compare)
               if (not save_only_constrained_structures) or (
-                lj_repulsions[obj_arg.item()] <= torch.tensor(
+                constraint_vals[obj_arg.item()] <= torch.tensor(
                 [0.0], device = device)).item():
                 if optimize_atoms:
                   best_x = data[starti + obj_arg.item()].pos.clone().detach().flatten()
@@ -147,6 +145,5 @@ class Torch(BaseOptimizer):
           print(new_structure.lattice)
           print(new_x)
           raise e
-
     
     return new_structure, obj_values

@@ -1,11 +1,11 @@
 from activestructopt.common.dataloader import prepare_data_pmg, reprocess_data
-from activestructopt.common.constraints import lj_rmins, lj_repulsion, lj_reject
 from activestructopt.sampler.single_atom_perturbation import SingleAtomPerturbation
 from activestructopt.model.base import BaseModel
 from activestructopt.dataset.base import BaseDataset
 from activestructopt.objective.base import BaseObjective
 from activestructopt.optimizer.base import BaseOptimizer
 from activestructopt.sampler.base import BaseSampler
+from activestructopt.constraint.base import BaseConstraint
 from activestructopt.common.registry import registry
 from pymatgen.core.structure import IStructure
 from pymatgen.core import Lattice
@@ -19,10 +19,11 @@ class TorchBH(BaseOptimizer):
 
   def run(self, model: list[BaseModel], dataset: BaseDataset, 
     objective: BaseObjective, sampler: BaseSampler, 
+    constraints: list[BaseConstraint],
     hops = 128, iters_per_hops = 100, optimizer = "Adam",
     optimizer_args = {}, optimize_atoms = True, 
     optimize_lattice = False, save_obj_values = False, 
-    constraint_scale = 1.0, pos_lr = 0.001, cell_lr = 0.001,
+    pos_lr = 0.001, cell_lr = 0.001,
     σ = 0.0025, hop_sampler = 'SingleAtomPerturbation', 
     hop_sampler_args = {'perturbrmin': 0.2, 'perturbrmax': 0.2, 
       'perturblmax': 0, 'perturbθmax': 0, 'lattice_prob': 0},
@@ -31,7 +32,6 @@ class TorchBH(BaseOptimizer):
 
     accepted = 0
     device = model.device
-    ljrmins = torch.tensor(lj_rmins, device = device)
     
     structure = dataset.structures[0].copy()
     natoms = len(structure)
@@ -87,7 +87,8 @@ class TorchBH(BaseOptimizer):
           dataset.simfunc, 'mask') else None)
         _, obj_total = objective.get(predictions, target, device = device, 
           N = 1)
-        obj_total += constraint_scale * lj_repulsion(data, ljrmins)
+        for constraint in constraints:
+          obj_total += constraint.soft_constraint(data, data_style = 'mdl')
         obj_total = torch.nan_to_num(obj_total, nan = torch.inf)
         obj_vals[j, i] = obj_total.detach().cpu()
         if (obj_total < best_local_obj).item():
