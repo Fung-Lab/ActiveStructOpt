@@ -414,7 +414,7 @@ def get_aligned_sim(sim, exp_g, traj, structure, kmin_fit = 3.0, kmax_fit = 12.0
 
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
-  def __init__(self, initial_structure, exp_g, feff_location = "", 
+  def __init__(self, initial_structure, exp_g_filename, outdim, feff_location = "", 
     folder = "", md_folder = "", 
     absorber = 'Co', edge = 'K', radius = 10.0, fit_kmin = 3.0, 
     fit_kmax = 12.0, time_limit = 240,
@@ -425,12 +425,8 @@ class EXAFS(BaseSimulation):
     sbatch_opt_template = None,
     number_absorbers = None, save_sim = True, kwfit = 3,
     **kwargs) -> None:
-    self.exp_g = exp_g
-    kmini = np.argmin(np.abs(exp_g.k - fit_kmin))
-    kmaxi = np.argmin(np.abs(exp_g.k - fit_kmax))
-    self.outdim = int(kmaxi - kmini)
-    self.fit_kmin = fit_kmin
-    self.fit_kmax = fit_kmax
+    self.exp_g_filename = exp_g_filename
+    self.outdim = outdim
     self.feff_location = feff_location
     self.parent_folder = folder
     self.md_parent_folder = md_folder
@@ -614,9 +610,6 @@ class EXAFS(BaseSimulation):
     if not os.path.isdir(self.folder):
       raise ASOSimulationException(f"Folder {self.folder} was deleted")
 
-    if self.group:
-      return self.check_opt_done()
-
     for i in range(len(self.inds)):
       new_abs_folder = os.path.join(self.folder, str(i))
       if not os.path.isfile(os.path.join(new_abs_folder, "DONE")):
@@ -644,51 +637,39 @@ class EXAFS(BaseSimulation):
       from subprocess
     except ImportError as e:
       raise ImportError('Error loading subprocess') from e
-    if not self.group:
-      finished = False
-      for _ in range(2 * self.time_limit):
-        finished = self.check_done()
-        if finished:
-          break
-        time.sleep(30)
 
-      if not finished:
-        raise ASOSimulationException(f"Simulation not finished in time limit")
+    assert self.sbatch_opt_template is not None, "Need opt template for now"
 
-      assert self.sbatch_opt_template is not None, "Need opt template for now"
+    with open(self.sbatch_opt_template, 'r') as file:
+      sbatch_opt_data = file.read()
+    job_name = int(time.time()) % 604800
+    sbatch_opt_data = sbatch_opt_data.replace('##DIRECTORY##', self.folder)
+    sbatch_opt_data = sbatch_opt_data.replace('##MD_DIRECTORY##', self.md_folder)
+    sbatch_opt_data = sbatch_opt_data.replace('##JOB_NAME##', str(job_name))
+    sbatch_opt_data = sbatch_opt_data.replace('##GROUP_FILE##', self.exp_g_filename)
+    new_job_file = os.path.join(self.folder, 'opt_job.sbatch')
+    with open(new_job_file, 'w') as file:
+      file.write(sbatch_opt_data)
 
-      with open(self.sbatch_opt_template, 'r') as file:
-        sbatch_opt_data = file.read()
-      job_name = int(time.time()) % 604800
-      sbatch_opt_data = sbatch_opt_data.replace('##DIRECTORY##', self.folder)
-      sbatch_opt_data = sbatch_opt_data.replace('##JOB_NAME##', str(job_name))
-      new_job_file = os.path.join(self.folder, 'opt_job.sbatch')
-      with open(new_job_file, 'w') as file:
-        file.write(sbatch_opt_data)
+    try:
+      subprocess.check_output(["sbatch", f"{new_job_file}"])
+    except subprocess.CalledProcessError as e:
+      print(e.output)
 
-      try:
-        subprocess.check_output(["sbatch", f"{new_job_file}"])
-      except subprocess.CalledProcessError as e:
-        print(e.output)
+    print(f'Running optimization for {self.folder}')
 
-      print(f'Running optimization for {self.folder}')
+    finished = False
+    for _ in range(self.time_limit):
+      finished = self.check_opt_done()
+      if finished:
+        break
+      time.sleep(30)
 
-      finished = False
-      for _ in range(self.time_limit):
-        finished = self.check_opt_done()
-        if finished:
-          break
-        time.sleep(30)
+    if not finished:
+      raise ASOSimulationException(f"Optimization not finished in time limit")
 
-      if not finished:
-        raise ASOSimulationException(f"Optimization not finished in time limit")
-
-      if not os.path.isfile(os.path.join(self.folder, 'chi_k.dat')):
-        raise ASOSimulationException(f"Optimization failed")
-    else:
-      if not os.path.isfile(os.path.join(self.folder, 'chi_k.dat')):
-        raise ASOSimulationException(f"Optimization failed")
-
+    if not os.path.isfile(os.path.join(self.folder, 'chi_k.dat')):
+      raise ASOSimulationException(f"Optimization failed")
     for i, absorb_ind in enumerate(self.inds):
       if not self.save_sim:
         shutil.rmtree(os.path.join(self.folder, str(i)))
