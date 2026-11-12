@@ -1,24 +1,8 @@
 from activestructopt.simulation.base import BaseSimulation, ASOSimulationException
 from activestructopt.common.registry import registry
-from mattertune.backbones import ORBBackboneModule
-from mattertune.backbones.orb import ORBBackboneConfig
-from pymatgen.io import feff
-from pymatgen.io.feff.sets import MPEXAFSSet
-from pymatgen.io.feff.outputs import Xmu
-from larch.xafs import feffpath, sigma2_debye
-from larch.xafs import autobk
-from larch import Group
 import numpy as np
-import scipy.constants as consts
-import scipy as sp
-from lmfit import Minimizer, Parameters
-import os
 import time
-import subprocess
-import shutil
-import traceback
-import stat
-from pymatgen.io.ase import AseAtomsAdaptor
+import os
 
 def run_md(structure, trajectory_path, log_path, timestep = 1.25, 
   temp = 300, friction = 0.002, loginterval = 4, nsteps = 41600,
@@ -32,6 +16,7 @@ def run_md(structure, trajectory_path, log_path, timestep = 1.25,
     from ase.md.langevin import Langevin
     from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
     from fairchem.core import FAIRChemCalculator, pretrained_mlip
+    from pymatgen.io.ase import AseAtomsAdaptor
   except ImportError as e:
     raise ImportError('Error loading required packages for MD') from e
 
@@ -91,6 +76,22 @@ def autobk_lmfit(energy, mu, ek0, edge_step, std_de = None,
   Essentially https://github.com/xraypy/xraylarch/blob/170d8ee342ad809722c9e6e0cd361fea0579865c/larch/xafs/autobk.py#L330 
   but with wider range of dE0, and outputs chi directly
   """
+  try:
+    from larch.xafs.autobk import _resid_lmfit, spline_eval, FMT_COEF
+    from larch.xafs.xafsutils import ETOK
+    from larch.xafs.xafsft import ftwindow
+    from larch.math import index_of, index_nearest
+  except ImportError as e:
+    raise ImportError('Error loading xraylarch') from e
+  try:
+    from scipy.interpolate import splrep
+  except ImportError as e:
+    raise ImportError('Error loading scipy') from e
+  try:
+    from lmfit import Parameters, minimize
+  except ImportError as e:
+    raise ImportError('Error loading lmfit') from e
+  
   # get array indices for rkbg and ek0: irbkg, iek0
   iek0 = index_of(energy, ek0)
   rgrid = np.pi / (kstep * nfft)
@@ -165,13 +166,17 @@ def autobk_lmfit(energy, mu, ek0, edge_step, std_de = None,
   return chi / edge_step
 
 def get_paths(sim_dir):
+  try:
+    from larch.xafs import feffpath
+  except ImportError as e:
+    raise ImportError('Error loading xraylarch') from e
   subdirs = sorted(
     (s for s in os.listdir(sim_dir)
       if os.path.isdir(os.path.join(sim_dir, s))),
     key=int,
   )
   feffdat_files = [np.sort([s for s in os.listdir(
-    f'{sim_dir}/{sub_dir}') if s[:4]=='feff' and s[-4:]=='.dat']
+    f'{sim_dir}/{sub_dir}') if s[:4] == 'feff' and s[-4:] == '.dat']
     ) for sub_dir in subdirs]
   feffpaths = [[feffpath(f'{sim_dir}/{subdirs[i]}/{feffdat_files[i][j
     ]}') for j in range(len(feffdat_files[i])
@@ -198,6 +203,11 @@ def _interp_paths(q, feffk, values):
 def get_absorber_spectra(feffk, Reffs, degen, deltar, sigma2, third, 
   fourth, pha, amp, rep, lam, e0, ei, s02, k):
   """Calculate the summed chi(k) for all paths simultaneously."""
+  try:
+    from larch.xafs.xafsutils import ETOK
+  except ImportError as e:
+    raise ImportError('Error loading xraylarch') from e
+
   feffk = np.asarray(feffk)
   reff = Reffs[:, None]
   degen = degen[:, None]
@@ -240,6 +250,14 @@ def get_spectra(feffk, Reffs, degen, deltar, sigma2, third,
     len(Reffs))]), axis = 0)
 
 def get_kstats_from_traj(traj, sim_data):
+  try:
+    from scipy.stats import kstat
+  except ImportError as e:
+    raise ImportError('Error loading scipy') from e
+  try:
+    from pymatgen.io.ase import AseAtomsAdaptor
+  except ImportError as e:
+    raise ImportError('Error loading pymatgen') from e
   adaptor = AseAtomsAdaptor()
   starting_struct = adaptor.get_structure(traj[0])
   nabs = len(sim_data)
@@ -349,6 +367,14 @@ def res_fun_lmfit(params, g, kstart, kstop, kw, feffk, Reffs, degens,
 
 def get_aligned_sim(sim, exp_g, traj, structure, kmin_fit = 3.0, kmax_fit = 12.0, 
   kwfit = 3, kwout = 3):
+  try:
+    from larch.math import index_of
+  except ImportError as e:
+    raise ImportError('Error loading xraylarch') from e
+  try:
+    from lmfit import Parameters, Minimizer
+  except ImportError as e:
+    raise ImportError('Error loading lmfit') from e
   degens = [np.array([sim[i][j]._feffdat.degen for j in range(len(sim[i]))]
     ) for i in range(len(sim))]
   feffk = sim[0][0]._feffdat.k
@@ -440,6 +466,15 @@ class EXAFS(BaseSimulation):
     return config
 
   def get(self, struct, group = False, separator = ','):
+    try:
+      from pymatgen.io import feff
+      from pymatgen.io.feff.sets import MPEXAFSSet
+    except ImportError as e:
+      raise ImportError('Error loading pymatgen') from e
+    try:
+      from subprocess
+    except ImportError as e:
+      raise ImportError('Error loading subprocess') from e
     structure = struct.copy()
     self.structure = struct.copy()
 
@@ -532,6 +567,10 @@ class EXAFS(BaseSimulation):
         print(e.output)
 
     elif self.sh_template is not None:
+      try:
+        from stat
+      except ImportError as e:
+        raise ImportError('Error loading stat') from e
       with open(self.sh_template, 'r') as file:
         sh_data = file.read()
       index_str = str(0)
@@ -597,6 +636,14 @@ class EXAFS(BaseSimulation):
     return os.path.isfile(os.path.join(self.folder, "DONE"))
 
   def resolve(self):
+    try:
+      from shutil
+    except ImportError as e:
+      raise ImportError('Error loading shutil') from e
+    try:
+      from subprocess
+    except ImportError as e:
+      raise ImportError('Error loading subprocess') from e
     if not self.group:
       finished = False
       for _ in range(2 * self.time_limit):
@@ -650,6 +697,10 @@ class EXAFS(BaseSimulation):
     return chi_ks 
 
   def garbage_collect(self, is_better):
+    try:
+      from shutil
+    except ImportError as e:
+      raise ImportError('Error loading shutil') from e
     parent_folder = os.path.dirname(self.folder)
     if is_better:
       subfolders = [int(x) for x in os.listdir(parent_folder)]
