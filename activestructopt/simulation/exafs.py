@@ -4,6 +4,35 @@ import numpy as np
 import time
 import os
 
+def write_group(filename, g):
+  try:
+    import json
+  except ImportError as e:
+    raise ImportError('Error loading json') from e
+  items = g.items()
+  save_dict = {}
+  for key, value in items:
+    if type(value) in [float, int, str, tuple]:
+      save_dict[key] = value
+    elif type(value) is np.ndarray:
+      save_dict[key] = value.tolist()
+    else:
+      print(f'not saving {key} of type {type(value)}')
+  with open(filename, "w") as f:
+    json.dump(save_dict, f)
+
+def read_group(filename):
+  try:
+    import json
+  except ImportError as e:
+    raise ImportError('Error loading json') from e
+  with open(filename, 'r') as file:
+    data = json.load(file)
+  for key in data.keys():
+    if isinstance(data[key], list):
+      data[key] = np.array(data[key])
+  return Group(**data)
+
 def run_md(structure, trajectory_path, log_path, timestep = 1.25, 
   temp = 300, friction = 0.002, loginterval = 4, nsteps = 41600,
   burnin_steps = 1600, max_rms_burnin = 0.5)
