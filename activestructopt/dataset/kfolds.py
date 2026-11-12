@@ -21,6 +21,7 @@ class KFoldsDataset(BaseDataset):
     self.N = N
     self.k = k
     self.simfuncs = simulations
+    self.sim_time_limit = sim_time_limit
 
     if progress_dict is None:
       self.structures = [initial_structure.copy(
@@ -59,7 +60,7 @@ class KFoldsDataset(BaseDataset):
                           y_promises[j][k].garbage_collect(False)
                     else:
                       y_promises[j][i].garbage_collect(False)
-                  elif sim_timers[i] > sim_time_limit:
+                  elif sim_timers[i] > self.sim_time_limit:
                     raise ASOSimulationException('Simulation exceeded time limit')
             except ASOSimulationException as e:
               if sim_calls[i] < max_sim_calls:
@@ -106,20 +107,34 @@ class KFoldsDataset(BaseDataset):
   def update(self, new_structure: IStructure):
     new_ys = [None for _ in range(len(self.simfuncs))]
     new_mismatches = [None for _ in range(len(self.simfuncs))]
+
+    y_promises = []
     for j in range(len(self.simfuncs)):
       y_promise = copy.deepcopy(self.simfuncs[j])
       y_promise.get(new_structure)
-      try:
-        y = y_promise.resolve()
-      except ASOSimulationException:
-        y_promise.garbage_collect(False)
-        raise ASOSimulationException
-      
-      new_mismatch = self.simfuncs[j].get_mismatch(y, self.targets[j])
-      y_promise.garbage_collect(new_mismatch <= min(self.mismatches[j]))
+      y_promises.append(y_promise)
 
-      new_ys[j] = y
-      new_mismatches[j] = new_mismatch
+    sim_timer = 0
+    sims_done = [False for _ in range(len(self.simfuncs))]
+    for j in range(len(self.simfuncs)):
+      while not all(sims_done):
+        if y_promises[j].check_done():
+          try:
+            y = y_promises[j].resolve()
+          except ASOSimulationException:
+            for gc_j in range(len(self.simfuncs)):
+              y_promises[gc_j].garbage_collect(False)
+            raise ASOSimulationException
+          new_ys[j] = y
+          new_mismatch = self.simfuncs[j].get_mismatch(y, self.targets[j])
+          new_mismatches[j] = new_mismatch
+          y_promises[j].garbage_collect(new_mismatch <= min(self.mismatches[j]))
+          sims_done[j] = True
+        elif sim_timer > self.sim_time_limit:
+          raise ASOSimulationException('Simulation exceeded time limit')
+        else:
+          time.sleep(30)
+          sim_timer += 30
       
     for j in range(len(self.simfuncs)):  
       self.ys[j].append(new_ys[j])
