@@ -388,7 +388,8 @@ def get_aligned_sim(sim, exp_g, traj, structure, kmin_fit = 3.0, kmax_fit = 12.0
 
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
-  def __init__(self, initial_structure, exp_g, feff_location = "", folder = "", 
+  def __init__(self, initial_structure, exp_g, feff_location = "", 
+    folder = "", md_folder = "", 
     absorber = 'Co', edge = 'K', radius = 10.0, fit_kmin = 3.0, 
     fit_kmax = 12.0, time_limit = 240,
     additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1'},
@@ -406,6 +407,7 @@ class EXAFS(BaseSimulation):
     self.fit_kmax = fit_kmax
     self.feff_location = feff_location
     self.parent_folder = folder
+    self.md_parent_folder = md_folder
     self.absorber = absorber
     self.edge = edge
     self.radius = radius
@@ -462,12 +464,15 @@ class EXAFS(BaseSimulation):
       subfolders) + 1 if len(subfolders) > 0 else 0))
     os.mkdir(new_folder)
 
-    if self.TD_predictor_path is not None:
-      self.additional_settings.pop('DEBYE', None)
-      debye_predictor = get_debye_predictor(TD_predictor_path)
-      predicted_debye_t = debye_predictor(self.structure)
-      self.additional_settings['DEBYE'] = f'300 {predicted_debye_t} 0'
+    if self.md_parent_folder is not None:
+      md_subfolders = [int(x) for x in os.listdir(self.md_parent_folder)]
+      new_md_folder = os.path.join(self.md_parent_folder, str(np.max(
+        md_subfolders) + 1 if len(md_subfolders) > 0 else 0))
+      os.mkdir(new_md_folder)
+    else:
+      new_md_folder = None
     
+    # Setup FEFF files
     for i in range(len(absorber_indices)):
       new_abs_folder = os.path.join(new_folder, str(i))
       os.mkdir(new_abs_folder)
@@ -499,6 +504,11 @@ class EXAFS(BaseSimulation):
       os.remove(atoms_loc)
       os.remove(pot_loc)
       os.remove(params_loc)
+  
+    # Setup MD Files
+    if self.md_parent_folder is not None:
+      with open(os.path.join(new_md_folder, 'structure.json'), 'w') as md_struct_file:
+        json.dump(structure.as_dict(), md_struct_file)
 
     if (self.sbatch_template is not None) or (
       self.sbatch_group_template is not None):
@@ -511,7 +521,7 @@ class EXAFS(BaseSimulation):
       job_name = int(time.time()) % 604800
       sbatch_data = sbatch_data.replace('##ARRAY_INDS##', index_str)
       sbatch_data = sbatch_data.replace('##DIRECTORY##', new_folder)
-      sbatch_data = sbatch_data.replace('##JOB_NAME##', str(job_name))
+      sbatch_data = sbatch_data.replace('##JOB_NAME##', f'FEFF_{job_name}')
       new_job_file = os.path.join(new_folder, 'job.sbatch')
       with open(new_job_file, 'w') as file:
         file.write(sbatch_data)
@@ -541,8 +551,23 @@ class EXAFS(BaseSimulation):
       except subprocess.CalledProcessError as e:
         print(e.output)
 
+    if self.sbatch_md_template is not None:
+      with open(self.sbatch_md_template, 'r') as file:
+        sbatch_data = file.read()
+      job_name = int(time.time()) % 604800
+      sbatch_data = sbatch_data.replace('##DIRECTORY##', new_md_folder)
+      sbatch_data = sbatch_data.replace('##JOB_NAME##', f'MD_{job_name}'))
+      new_job_file = os.path.join(new_md_folder, 'job.sbatch')
+      with open(new_job_file, 'w') as file:
+        file.write(sbatch_data)
+      try:
+        subprocess.check_output(["sbatch", f"{new_job_file}"])
+      except subprocess.CalledProcessError as e:
+        print(e.output)
+
     self.group = group
     self.folder = new_folder
+    self.md_folder = new_md_folder
     self.params = params
     self.inds = absorber_indices 
 
@@ -558,6 +583,11 @@ class EXAFS(BaseSimulation):
       if not os.path.isfile(os.path.join(new_abs_folder, "DONE")):
         #print(f'waiting for {os.path.join(new_abs_folder, "DONE")}')
         return False
+
+    if self.md_folder is not None:
+      if not os.path.isfile(os.path.join(self.md_folder, "DONE")):
+        return False
+    
     return True
 
   def check_opt_done(self):
