@@ -206,9 +206,9 @@ def get_paths(sim_dir):
     raise ImportError('Error loading xraylarch') from e
   subdirs = sorted(
     (s for s in os.listdir(sim_dir)
-      if os.path.isdir(os.path.join(sim_dir, s))),
-    key=int,
-  )
+      if s.isdigit()
+      and os.path.isdir(os.path.join(sim_dir, s))),
+    key=int)
   feffdat_files = [np.sort([s for s in os.listdir(
     f'{sim_dir}/{sub_dir}') if s[:4] == 'feff' and s[-4:] == '.dat']
     ) for sub_dir in subdirs]
