@@ -36,7 +36,7 @@ def read_group(filename):
 def run_md(structure, trajectory_path = 'md.traj', 
   log_path = 'md.log', timestep = 1.25, temp = 300, 
   friction = 0.002, loginterval = 4, nsteps = 41600,
-  burnin_steps = 1600, max_rms_burnin = 0.5)
+  burnin_steps = 1600, max_rms_burnin = 0.5):
   try:
     from ase import units
     from ase.build.supercells import make_supercell
