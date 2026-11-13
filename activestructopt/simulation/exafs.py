@@ -394,7 +394,7 @@ def res_fun_lmfit(params, g, kstart, kstop, kw, feffk, Reffs, degens,
   dev = simnorm - expnorm
   return dev
 
-def get_aligned_sim(sim, exp_g, traj, structure, kmin_fit = 3.0, kmax_fit = 12.0, 
+def get_aligned_sim(sim, exp_g, traj, kmin_fit = 3.0, kmax_fit = 12.0, 
   kwfit = 3, kwout = 3):
   try:
     from larch.math import index_of
