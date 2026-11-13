@@ -272,11 +272,17 @@ def get_absorber_spectra(feffk, Reffs, degen, deltar, sigma2, third,
   return np.sum(cchi.imag, axis=0)
 
 def get_spectra(feffk, Reffs, degen, deltar, sigma2, third, 
-  fourth, pha, amp, rep, lam, e0, ei, s02, k):
-  return np.mean(np.stack([get_absorber_spectra(feffk, Reffs[i], 
-    degen[i], deltar[i], sigma2[i], third[i], fourth[i], 
-    pha[i], amp[i], rep[i], lam[i], e0, ei, s02, k) for i in range(
-    len(Reffs))]), axis = 0)
+  fourth, pha, amp, rep, lam, e0, ei, s02, k, avg_spec = True):
+  if avg_spec:
+    return np.mean(np.stack([get_absorber_spectra(feffk, Reffs[i], 
+      degen[i], deltar[i], sigma2[i], third[i], fourth[i], 
+      pha[i], amp[i], rep[i], lam[i], e0, ei, s02, k) for i in range(
+      len(Reffs))]), axis = 0)
+  else:
+    return np.stack([get_absorber_spectra(feffk, Reffs[i], 
+      degen[i], deltar[i], sigma2[i], third[i], fourth[i], 
+      pha[i], amp[i], rep[i], lam[i], e0, ei, s02, k) for i in range(
+      len(Reffs))])
 
 def get_kstats_from_traj(traj, sim_data, abs_Z):
   try:
@@ -372,7 +378,7 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
 
 def get_sim_spec(params, g, kstart, kstop, feffk, 
   Reffs, degens, deltar, sigma2, third, fourth, 
-  pha, amp, rep, lam):
+  pha, amp, rep, lam, avg_spec = True):
   chi = get_spectra(feffk, Reffs, degens, deltar, sigma2, third, fourth, 
     pha, amp, rep, lam, params['ΔE0'], 0.0, 1.0, g.k)
   
@@ -382,6 +388,12 @@ def get_sim_spec(params, g, kstart, kstop, feffk,
 
   fitchi = autobk_lmfit(g.energy, g.mu, g.ek0, g.edge_step, 
     std_de = None, k_std = g.k, chi_std = chi)
+
+  if not avg_spec:
+    chi = get_spectra(feffk, Reffs, degens, deltar, sigma2, third, fourth, 
+      pha, amp, rep, lam, params['ΔE0'], 0.0, 1.0, g.k, avg_spec = False)
+    chi *= scalar
+
   return chi - fitchi + g.chi
 
 def res_fun_lmfit(params, g, kstart, kstop, kw, feffk, Reffs, degens, 
@@ -438,7 +450,7 @@ def get_aligned_sim(sim, exp_g, traj, kmin_fit = 3.0, kmax_fit = 12.0,
   
   sim_chi = get_sim_spec(result.params, exp_g, kstart, kstop, 
     feffk, Reffs, degens, deltar, sigma2, third, fourth, 
-    pha, amp, rep, lam)
+    pha, amp, rep, lam, avg_spec = False)
   return sim_chi[kstart:kstop] * exp_g.k[kstart:kstop] ** kwout
 
 @registry.register_simulation("EXAFS")
@@ -451,8 +463,8 @@ class EXAFS(BaseSimulation):
     sh_template = None, 
     sbatch_template = None, sbatch_group_template = None, 
     sbatch_md_template = None, sbatch_md_group_template = None,
-    sbatch_opt_template = None,
-    number_absorbers = None, save_sim = True, kwfit = 3,
+    sbatch_opt_template = None, number_absorbers = None, 
+    save_sim = True, kwfit = 3, kwout = 3,
     **kwargs) -> None:
     self.exp_g_filename = exp_g_filename
     self.outdim = outdim
@@ -477,6 +489,7 @@ class EXAFS(BaseSimulation):
     self.time_limit = time_limit
     self.structure = None
     self.kwfit = kwfit
+    self.kwout = kwout
 
   def setup_config(self, config):
     config['dataset']['preprocess_params']['prediction_level'] = 'node'
