@@ -726,7 +726,10 @@ class EXAFS(BaseSimulation):
         shutil.rmtree(os.path.join(self.folder, str(i)))
     
     chi_ks = np.genfromtxt(os.path.join(self.folder, 'chi_k.dat'))
-    return chi_ks 
+    spectra = np.zeros((self.mask.size, chi_ks.shape[1]))
+    spectra[self.mask] = chi_ks
+
+    return spectra 
 
   def garbage_collect(self, is_better):
     try:
