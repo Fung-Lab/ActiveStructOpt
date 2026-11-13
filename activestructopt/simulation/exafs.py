@@ -33,8 +33,9 @@ def read_group(filename):
       data[key] = np.array(data[key])
   return Group(**data)
 
-def run_md(structure, trajectory_path, log_path, timestep = 1.25, 
-  temp = 300, friction = 0.002, loginterval = 4, nsteps = 41600,
+def run_md(structure, trajectory_path = 'md.traj', 
+  log_path = 'md.log', timestep = 1.25, temp = 300, 
+  friction = 0.002, loginterval = 4, nsteps = 41600,
   burnin_steps = 1600, max_rms_burnin = 0.5)
   try:
     from ase import units
@@ -456,7 +457,7 @@ def get_aligned_sim(sim, exp_g, traj, kmin_fit = 3.0, kmax_fit = 12.0,
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
   def __init__(self, initial_structure, exp_g_filename, outdim, feff_location = "", 
-    folder = "", md_folder = "", 
+    folder = "",  
     absorber = 'Co', edge = 'K', radius = 10.0, fit_kmin = 3.0, 
     fit_kmax = 12.0, time_limit = 240,
     additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1'},
@@ -470,7 +471,6 @@ class EXAFS(BaseSimulation):
     self.outdim = outdim
     self.feff_location = feff_location
     self.parent_folder = folder
-    self.md_parent_folder = md_folder
     self.absorber = absorber
     self.edge = edge
     self.radius = radius
@@ -536,14 +536,6 @@ class EXAFS(BaseSimulation):
     new_folder = os.path.join(self.parent_folder, str(np.max(
       subfolders) + 1 if len(subfolders) > 0 else 0))
     os.mkdir(new_folder)
-
-    if self.md_parent_folder is not None:
-      md_subfolders = [int(x) for x in os.listdir(self.md_parent_folder)]
-      new_md_folder = os.path.join(self.md_parent_folder, str(np.max(
-        md_subfolders) + 1 if len(md_subfolders) > 0 else 0))
-      os.mkdir(new_md_folder)
-    else:
-      new_md_folder = None
     
     # Setup FEFF files
     for i in range(len(absorber_indices)):
@@ -579,9 +571,9 @@ class EXAFS(BaseSimulation):
       os.remove(params_loc)
   
     # Setup MD Files
-    if self.md_parent_folder is not None:
-      with open(os.path.join(new_md_folder, 'structure.json'), 'w') as md_struct_file:
-        json.dump(structure.as_dict(), md_struct_file)
+    if self.sbatch_md_template is not None:
+      with open(os.path.join(new_folder, 'structure.json'), 'w') as md_struct_file:
+        json.dump(struct.as_dict(), md_struct_file)
 
     if (self.sbatch_template is not None) or (
       self.sbatch_group_template is not None):
@@ -595,7 +587,7 @@ class EXAFS(BaseSimulation):
       sbatch_data = sbatch_data.replace('##ARRAY_INDS##', index_str)
       sbatch_data = sbatch_data.replace('##DIRECTORY##', new_folder)
       sbatch_data = sbatch_data.replace('##JOB_NAME##', f'FEFF_{job_name}')
-      new_job_file = os.path.join(new_folder, 'job.sbatch')
+      new_job_file = os.path.join(new_folder, 'feff_job.sbatch')
       with open(new_job_file, 'w') as file:
         file.write(sbatch_data)
       
@@ -632,9 +624,9 @@ class EXAFS(BaseSimulation):
       with open(self.sbatch_md_template, 'r') as file:
         sbatch_data = file.read()
       job_name = int(time.time()) % 604800
-      sbatch_data = sbatch_data.replace('##DIRECTORY##', new_md_folder)
+      sbatch_data = sbatch_data.replace('##DIRECTORY##', new_folder)
       sbatch_data = sbatch_data.replace('##JOB_NAME##', f'MD_{job_name}'))
-      new_job_file = os.path.join(new_md_folder, 'job.sbatch')
+      new_job_file = os.path.join(new_folder, 'md_job.sbatch')
       with open(new_job_file, 'w') as file:
         file.write(sbatch_data)
       try:
@@ -644,7 +636,6 @@ class EXAFS(BaseSimulation):
 
     self.group = group
     self.folder = new_folder
-    self.md_folder = new_md_folder
     self.params = params
     self.inds = absorber_indices 
 
@@ -658,8 +649,8 @@ class EXAFS(BaseSimulation):
         #print(f'waiting for {os.path.join(new_abs_folder, "DONE")}')
         return False
 
-    if self.md_folder is not None:
-      if not os.path.isfile(os.path.join(self.md_folder, "DONE")):
+    if self.sbatch_md_template is not None:
+      if not os.path.isfile(os.path.join(self.new_folder, "MD_DONE")):
         return False
     
     return True
@@ -685,10 +676,15 @@ class EXAFS(BaseSimulation):
     with open(self.sbatch_opt_template, 'r') as file:
       sbatch_opt_data = file.read()
     job_name = int(time.time()) % 604800
+    sbatch_opt_data = sbatch_opt_data.replace('##JOB_INDEX##', self.folder)
     sbatch_opt_data = sbatch_opt_data.replace('##DIRECTORY##', self.folder)
-    sbatch_opt_data = sbatch_opt_data.replace('##MD_DIRECTORY##', self.md_folder)
-    sbatch_opt_data = sbatch_opt_data.replace('##JOB_NAME##', str(job_name))
     sbatch_opt_data = sbatch_opt_data.replace('##GROUP_FILE##', self.exp_g_filename)
+    sbatch_opt_data = sbatch_opt_data.replace('##MD_FILE##', 'md.traj')
+    sbatch_opt_data = sbatch_opt_data.replace('##KMIN_FIT##', self.kmin_fit)
+    sbatch_opt_data = sbatch_opt_data.replace('##KMAX_FIT##', self.kmax_fit)
+    sbatch_opt_data = sbatch_opt_data.replace('##KWFIT##', self.kwfit)
+    sbatch_opt_data = sbatch_opt_data.replace('##KWOUT##', self.kwout)
+    sbatch_opt_data = sbatch_opt_data.replace('##JOB_NAME##', str(job_name))
     new_job_file = os.path.join(self.folder, 'opt_job.sbatch')
     with open(new_job_file, 'w') as file:
       file.write(sbatch_opt_data)
