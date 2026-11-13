@@ -212,8 +212,8 @@ def get_paths(sim_dir):
   feffdat_files = [np.sort([s for s in os.listdir(
     f'{sim_dir}/{sub_dir}') if s[:4] == 'feff' and s[-4:] == '.dat']
     ) for sub_dir in subdirs]
-  feffpaths = [[feffpath(f'{sim_dir}/{subdirs[i]}/{feffdat_files[i][j
-    ]}') for j in range(len(feffdat_files[i])
+  feffpaths = [[feffpath(f'{sim_dir}/{subdirs[i]}/{feffdat_files[i][j]}'
+    ) for j in range(len(feffdat_files[i])
     )] for i in range(len(feffdat_files))]
   return feffpaths
 
