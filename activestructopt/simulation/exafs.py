@@ -572,7 +572,8 @@ class EXAFS(BaseSimulation):
   
     # Setup MD Files
     if self.sbatch_md_template is not None:
-      with open(os.path.join(new_folder, 'structure.json'), 'w') as md_struct_file:
+      with open(os.path.join(new_folder, 'structure.json'), 
+        'w', encoding = 'utf-8') as md_struct_file:
         json.dump(struct.as_dict(), md_struct_file)
 
     if (self.sbatch_template is not None) or (
