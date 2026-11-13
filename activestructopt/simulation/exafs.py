@@ -510,7 +510,7 @@ class EXAFS(BaseSimulation):
     except ImportError as e:
       raise ImportError('Error loading pymatgen') from e
     try:
-      from subprocess
+      import subprocess
     except ImportError as e:
       raise ImportError('Error loading subprocess') from e
     structure = struct.copy()
@@ -599,7 +599,7 @@ class EXAFS(BaseSimulation):
 
     elif self.sh_template is not None:
       try:
-        from stat
+        import stat
       except ImportError as e:
         raise ImportError('Error loading stat') from e
       with open(self.sh_template, 'r') as file:
@@ -665,11 +665,11 @@ class EXAFS(BaseSimulation):
 
   def resolve(self):
     try:
-      from shutil
+      import shutil
     except ImportError as e:
       raise ImportError('Error loading shutil') from e
     try:
-      from subprocess
+      import subprocess
     except ImportError as e:
       raise ImportError('Error loading subprocess') from e
 
@@ -719,7 +719,7 @@ class EXAFS(BaseSimulation):
 
   def garbage_collect(self, is_better):
     try:
-      from shutil
+      import shutil
     except ImportError as e:
       raise ImportError('Error loading shutil') from e
     parent_folder = os.path.dirname(self.folder)
