@@ -278,7 +278,7 @@ def get_spectra(feffk, Reffs, degen, deltar, sigma2, third,
     pha[i], amp[i], rep[i], lam[i], e0, ei, s02, k) for i in range(
     len(Reffs))]), axis = 0)
 
-def get_kstats_from_traj(traj, sim_data):
+def get_kstats_from_traj(traj, sim_data, abs_Z):
   try:
     from scipy.stats import kstat
   except ImportError as e:
@@ -290,12 +290,12 @@ def get_kstats_from_traj(traj, sim_data):
   adaptor = AseAtomsAdaptor()
   starting_struct = adaptor.get_structure(traj[0])
   nabs = len(sim_data)
-  sc_sf = np.sum(traj[0].get_atomic_numbers() == 22) // nabs
+  sc_sf = np.sum(traj[0].get_atomic_numbers() == abs_Z) // nabs
   nprim = len(traj[0]) // sc_sf
   nsegsmax = np.max(np.concatenate([np.array([len(
     sim_data[i][j]._feffdat.geom) - 1 for j in range(
     len(sim_data[i]))]) for i in range(len(sim_data))]))
-  abs_inds = np.where(traj[0].get_atomic_numbers() == 22)[0][:nabs]
+  abs_inds = np.where(traj[0].get_atomic_numbers() == abs_Z)[0][:nabs]
   lattice = starting_struct.lattice.matrix
   natoms = len(traj[0])
   nframes = 10000
