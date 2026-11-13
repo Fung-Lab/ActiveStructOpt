@@ -726,8 +726,8 @@ class EXAFS(BaseSimulation):
         shutil.rmtree(os.path.join(self.folder, str(i)))
     
     chi_ks = np.genfromtxt(os.path.join(self.folder, 'chi_k.dat'))
-    spectra = np.zeros((self.mask.size, chi_ks.shape[1]))
-    spectra[self.mask] = chi_ks
+    spectra = np.zeros((len(self.mask), chi_ks.shape[1]))
+    spectra[np.array(self.mask)] = chi_ks
 
     return spectra 
 
