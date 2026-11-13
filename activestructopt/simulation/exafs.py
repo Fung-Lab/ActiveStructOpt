@@ -493,6 +493,8 @@ class EXAFS(BaseSimulation):
     self.save_sim = save_sim
     self.time_limit = time_limit
     self.structure = None
+    self.fit_kmin = fit_kmin
+    self.fit_kmax = fit_kmax
     self.kwfit = kwfit
     self.kwout = kwout
 
