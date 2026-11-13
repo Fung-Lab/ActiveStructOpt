@@ -663,7 +663,7 @@ class EXAFS(BaseSimulation):
         return False
 
     if self.sbatch_md_template is not None:
-      if not os.path.isfile(os.path.join(self.new_folder, "MD_DONE")):
+      if not os.path.isfile(os.path.join(self.folder, "MD_DONE")):
         return False
     
     return True
@@ -693,10 +693,10 @@ class EXAFS(BaseSimulation):
     sbatch_opt_data = sbatch_opt_data.replace('##DIRECTORY##', self.folder)
     sbatch_opt_data = sbatch_opt_data.replace('##GROUP_FILE##', self.exp_g_filename)
     sbatch_opt_data = sbatch_opt_data.replace('##MD_FILE##', 'md.traj')
-    sbatch_opt_data = sbatch_opt_data.replace('##KMIN_FIT##', self.kmin_fit)
-    sbatch_opt_data = sbatch_opt_data.replace('##KMAX_FIT##', self.kmax_fit)
-    sbatch_opt_data = sbatch_opt_data.replace('##KWFIT##', self.kwfit)
-    sbatch_opt_data = sbatch_opt_data.replace('##KWOUT##', self.kwout)
+    sbatch_opt_data = sbatch_opt_data.replace('##KMIN_FIT##', str(self.kmin_fit))
+    sbatch_opt_data = sbatch_opt_data.replace('##KMAX_FIT##', str(self.kmax_fit))
+    sbatch_opt_data = sbatch_opt_data.replace('##KWFIT##', str(self.kwfit))
+    sbatch_opt_data = sbatch_opt_data.replace('##KWOUT##', str(self.kwout))
     sbatch_opt_data = sbatch_opt_data.replace('##JOB_NAME##', str(job_name))
     new_job_file = os.path.join(self.folder, 'opt_job.sbatch')
     with open(new_job_file, 'w') as file:
