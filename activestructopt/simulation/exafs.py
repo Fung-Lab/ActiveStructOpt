@@ -424,7 +424,8 @@ def get_aligned_sim(sim, exp_g, traj, kmin_fit = 3.0, kmax_fit = 12.0,
   degens = [np.array([sim[i][j]._feffdat.degen for j in range(len(sim[i]))]
     ) for i in range(len(sim))]
   feffk = sim[0][0]._feffdat.k
-  Reffs, deltar, sigma2, third, fourth = get_kstats_from_traj(traj, sim)
+  abs_Z = sim[0][0]._feffdat.geom[0][1]
+  Reffs, deltar, sigma2, third, fourth = get_kstats_from_traj(traj, sim, abs_Z)
   amp = [np.array([path._feffdat.amp for path in abs_data]) for abs_data in sim]
   pha = [np.array([path._feffdat.pha for path in abs_data]) for abs_data in sim]
   lam = [np.array([path._feffdat.lam for path in abs_data]) for abs_data in sim]
