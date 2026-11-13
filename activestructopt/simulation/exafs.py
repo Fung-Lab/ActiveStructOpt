@@ -635,7 +635,7 @@ class EXAFS(BaseSimulation):
       job_name = int(time.time()) % 604800
       sbatch_data = sbatch_data.replace('##DIRECTORY##', new_folder)
       sbatch_data = sbatch_data.replace('##STRUCTURE_FILE##', 'structure.json')
-      sbatch_data = sbatch_data.replace('##JOB_NAME##', f'MD_{job_name}'))
+      sbatch_data = sbatch_data.replace('##JOB_NAME##', f'MD_{job_name}')
       new_job_file = os.path.join(new_folder, 'md_job.sbatch')
       with open(new_job_file, 'w') as file:
         file.write(sbatch_data)
