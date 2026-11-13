@@ -26,6 +26,10 @@ def read_group(filename):
     import json
   except ImportError as e:
     raise ImportError('Error loading json') from e
+  try:
+    from larch import Group
+  except ImportError as e:
+    raise ImportError('Error loading xraylarch') from e
   with open(filename, 'r') as file:
     data = json.load(file)
   for key in data.keys():
