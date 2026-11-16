@@ -111,7 +111,7 @@ def autobk_lmfit(energy, mu, ek0, edge_step, std_de = None,
   but with wider range of dE0, and outputs chi directly
   """
   try:
-    from larch.xafs.autobk import _resid_lmfit, spline_eval, FMT_COEF
+    from larch.xafs.autobk import _lmfit_resid, spline_eval, FMT_COEF
     from larch.xafs.xafsutils import ETOK
     from larch.xafs.xafsft import ftwindow
     from larch.math import index_of, index_nearest
@@ -183,7 +183,7 @@ def autobk_lmfit(energy, mu, ek0, edge_step, std_de = None,
       params.add(name='std_de',  value = 0.0, min = -30.0, max = 30.0, vary = True)
 
   # do fit
-  result = minimize(_resid_lmfit, params, method='leastsq',
+  result = minimize(_lmfit_resid, params, method='leastsq',
     gtol = 1.e-6, ftol = 1.e-6, xtol = 1.e-6, epsfcn = 1.e-6,
     kws = dict(ncoefs = len(coefs), k_std = k_std, chi_std = chi_std,
       knots = knots, order = order,
