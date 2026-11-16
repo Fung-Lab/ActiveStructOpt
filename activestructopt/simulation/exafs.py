@@ -457,7 +457,7 @@ def get_aligned_sim(sim, exp_g, traj, kmin_fit = 3.0, kmax_fit = 12.0,
   sim_chi = get_sim_spec(result.params, exp_g, kstart, kstop, 
     feffk, Reffs, degens, deltar, sigma2, third, fourth, 
     pha, amp, rep, lam, avg_spec = False)
-  return sim_chi[kstart:kstop] * exp_g.k[kstart:kstop] ** kwout
+  return sim_chi[:, kstart:kstop] * exp_g.k[None, kstart:kstop] ** kwout
 
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
