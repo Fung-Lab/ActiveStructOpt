@@ -291,87 +291,183 @@ def get_spectra(feffk, Reffs, degen, deltar, sigma2, third,
 
 def get_kstats_from_traj(traj, sim_data, abs_Z):
   try:
-    from scipy.stats import kstat
-  except ImportError as e:
-    raise ImportError('Error loading scipy') from e
-  try:
     from pymatgen.io.ase import AseAtomsAdaptor
   except ImportError as e:
     raise ImportError('Error loading pymatgen') from e
+  try:
+    from itertools import product
+    from scipy.spatial import cKDTree
+  except ImportError as e:
+      raise ImportError('Error loading itertools and scipy') from e
   adaptor = AseAtomsAdaptor()
   starting_struct = adaptor.get_structure(traj[0])
   nabs = len(sim_data)
   sc_sf = np.sum(traj[0].get_atomic_numbers() == abs_Z) // nabs
   nprim = len(traj[0]) // sc_sf
-  nsegsmax = np.max(np.concatenate([np.array([len(
+  nsegs = [np.array([len(
     sim_data[i][j]._feffdat.geom) - 1 for j in range(
-    len(sim_data[i]))]) for i in range(len(sim_data))]))
+    len(sim_data[i]))]) for i in range(len(sim_data))]
+  nsegsmax = np.max(np.concatenate(nsegs))
   abs_inds = np.where(traj[0].get_atomic_numbers() == abs_Z)[0][:nabs]
   lattice = starting_struct.lattice.matrix
-  natoms = len(traj[0])
-  nframes = 10000
-  md_coords = np.zeros((nframes, natoms, 3))
-  for fi, atoms in enumerate(traj[401:]):
-    md_coords[fi] = atoms.positions
 
   Reffs = []
   kstats = []
+
+  site_coords = np.asarray(
+    starting_struct.cart_coords,
+    dtype=np.float64,
+  )
+
+  natoms = len(starting_struct)
+
+  image_shifts = np.asarray(
+    list(product((-1, 0, 1), repeat=3)),
+    dtype=np.int64,
+  ) @ lattice
+
+  periodic_coords = (
+    site_coords[None, :, :]
+    + image_shifts[:, None, :]
+  ).reshape(-1, 3)
+
+  periodic_site_indices = np.tile(
+    np.arange(natoms, dtype=np.int64),
+    len(image_shifts),
+  )
+
+  periodic_shifts = np.repeat(image_shifts, natoms, axis = 0)
+
+  periodic_tree = cKDTree(periodic_coords)
+  first_frame = 401
+  md_coords = np.stack([traj[i].positions for i in range(first_frame, len(traj))])
   for abs_i, abs_ind in enumerate(abs_inds):
-    path_inds_abs = np.ones((len(sim_data[abs_i]), sc_sf, 
-      nsegsmax + 2), dtype = np.int64)
-    for si in range(sc_sf):
-      path_inds_abs[:, si, :] *= abs_ind + si * nprim
+    path_inds_abs = []
+    path_shift_dists_abs = []
+    nseg_inds = [] 
+    for nseg in np.arange(1, nsegsmax + 1):
+      nsegs_is = np.where(nsegs[abs_i] == nseg)[0]
+      path_inds_abs_nseg = np.ones((len(nsegs_is), sc_sf, 
+        nseg + 2), dtype = np.int64)
+      for si in range(sc_sf):
+        path_inds_abs_nseg[:, si, :] *= abs_ind + si * nprim
 
-    path_ims_abs = np.zeros((len(sim_data[abs_i]), sc_sf, 
-      nsegsmax + 2, 3))
-    for fi, fp in enumerate(sim_data[abs_i]):
-      geom = fp._feffdat.geometry
-      for i in range(len(geom) - 1):
-        for si in range(sc_sf):
-          disp = np.asarray(geom[i][3:6], dtype=float)
-          center = starting_struct[abs_ind + si * nprim].coords
-          target = center + disp
-          matches = starting_struct.get_sites_in_sphere(target, 0.1)
+      path_shifts_abs_nseg = np.zeros((len(nsegs_is), sc_sf, 
+        nseg + 2, 3))
 
-          if not matches:
-            all_neighbors = starting_struct.get_sites_in_sphere(target, 2.0)
-            nearest = all_neighbors[0] if all_neighbors else None
-            raise ASOSimulationException(
-              f"No FEFF geometry match:\n"
-              f"  abs_i       = {abs_i}\n"
-              f"  abs_ind     = {abs_ind}\n"
-              f"  replica     = {si}\n"
-              f"  path        = {fi}\n"
-              f"  leg         = {i}\n"
-              f"  absorber    = {center}\n"
-              f"  displacement= {disp}\n"
-              f"  target      = {target}\n"
-              f"  nearest     = {nearest}\n"
-            )
-          nb = matches[0]
-          path_inds_abs[fi, si, i + 1] = nb.index
-          path_ims_abs[fi, si, i + 1] = nb.image
-    path_shifts_abs = path_ims_abs @ lattice
-    path_shift_dists_abs = path_shifts_abs[..., 1:, :
-        ] - path_shifts_abs[..., :-1, :]
+      targets = []
+      locations = []
 
+      for fi, fp in enumerate(nsegs_is):
+        geom = sim_data[abs_i][fp]._feffdat.geometry
+
+        for leg_i in range(nseg):
+          disp = np.asarray(geom[leg_i][3:6], dtype=np.float64)
+
+          for si in range(sc_sf):
+            center_index = abs_ind + si * nprim
+            target = site_coords[center_index] + disp
+
+            targets.append(target)
+            locations.append((fi, si, leg_i + 1))
+
+      targets = np.asarray(targets, dtype=np.float64)
+      locations = np.asarray(locations, dtype=np.int64)
+
+      distances, matches = periodic_tree.query(targets, k=1)
+
+      bad = np.flatnonzero(distances > 0.1)
+      if bad.size:
+        bad_i = bad[0]
+        fi, si, stored_leg_i = locations[bad_i]
+        match = matches[bad_i]
+
+        raise ASOSimulationException(
+          f"No FEFF geometry match:\n"
+          f"  abs_i         = {abs_i}\n"
+          f"  abs_ind       = {abs_ind}\n"
+          f"  replica       = {si}\n"
+          f"  path          = {fi}\n"
+          f"  leg           = {stored_leg_i - 1}\n"
+          f"  target        = {targets[bad_i]}\n"
+          f"  nearest site  = {periodic_site_indices[match]}\n"
+          f"  nearest shift = {periodic_shifts[match]}\n"
+          f"  distance      = {distances[bad_i]} Å"
+        )
+
+      path_i = locations[:, 0]
+      replica_i = locations[:, 1]
+      leg_i = locations[:, 2]
+
+      path_inds_abs_nseg[path_i, replica_i, leg_i] = (
+        periodic_site_indices[matches]
+      )
+
+      path_shifts_abs_nseg[path_i, replica_i, leg_i] = (
+        periodic_shifts[matches]
+      )
+
+      path_inds_abs.append(path_inds_abs_nseg)
+      path_shift_dists_abs.append(np.diff(path_shifts_abs_nseg, axis=-2))
+      nseg_inds.append(nsegs_is)
+    
     Reffs_abs = np.zeros(len(sim_data[abs_i]))
     for fi, fp in enumerate(sim_data[abs_i]):
-        geom = fp._feffdat.geometry
-        Reffs_abs[fi] = np.linalg.norm(np.array(geom[0][3:6]))
-        for i in range(len(geom) - 1):
-            Reffs_abs[fi] += np.linalg.norm(np.array(
-                geom[i+1][3:6]) - np.array(geom[i][3:6]))
-        Reffs_abs[fi] /= 2
-    dR_abs = md_coords[:, path_inds_abs[..., 1:], :] - md_coords[
-        :, path_inds_abs[..., :-1], :] + path_shift_dists_abs[None]
-    path_lengths_abs = np.linalg.norm(dR_abs, axis = -1).sum(axis = -1) / 2
-    path_lengths_combined_abs = path_lengths_abs.transpose(0, 2, 1
-        ).reshape(-1, len(sim_data[abs_i]))
+      geom = fp._feffdat.geometry
+      Reffs_abs[fi] = np.linalg.norm(np.array(geom[0][3:6]))
+      for i in range(len(geom) - 1):
+        Reffs_abs[fi] += np.linalg.norm(np.array(
+          geom[i+1][3:6]) - np.array(geom[i][3:6]))
+      Reffs_abs[fi] /= 2
 
-    kstats_abs = np.array([kstat(path_lengths_combined_abs, 
-        axis = 0, n = kn) for kn in range(1, 5)])
-    kstats_abs[0, :] -= Reffs_abs
+    npaths = len(sim_data[abs_i])
+    frame_batch_size = 250
+
+    count = 0
+    mean = np.zeros(npaths, dtype=np.float64)
+    M2 = np.zeros(npaths, dtype=np.float64)
+    M3 = np.zeros(npaths, dtype=np.float64)
+    M4 = np.zeros(npaths, dtype=np.float64)
+
+    path_lengths = np.zeros((frame_batch_size, npaths, sc_sf))
+
+    for frame_start in range(first_frame, len(traj), frame_batch_size):
+      frame_stop = min(frame_start + frame_batch_size, len(traj))
+      nframes_batch = frame_stop - frame_start
+
+      positions = md_coords[(frame_start - first_frame):(frame_stop - first_frame)]
+
+      for nseg in np.arange(1, nsegsmax + 1):
+        path_coords = positions[:, path_inds_abs[nseg - 1], :]
+        dR = np.diff(path_coords, axis=-2)
+        del path_coords
+        dR += path_shift_dists_abs[nseg - 1][None]
+
+        # Shape: (nframes_batch, npaths, sc_sf)
+        path_lengths[:nframes_batch, nseg_inds[nseg - 1], :] = (
+          np.sqrt(np.einsum("...i,...i->...", dR, dR))
+          .sum(axis=-1)
+          / 2
+        )
+
+      batch_stats = batch_moments(path_lengths[:nframes_batch, :, :])
+
+      count, mean, M2, M3, M4 = merge_moments(
+        count, mean, M2, M3, M4, 
+        *batch_stats)
+
+    kstats_abs = np.stack([
+        mean,
+        M2 / (count - 1),
+        count * M3 / ((count - 1) * (count - 2)),
+        (
+          count * (count + 1) * M4
+          - 3 * (count - 1) * M2**2
+        ) / (
+          (count - 1) * (count - 2) * (count - 3)
+        ),
+    ])
+    kstats_abs[0] -= Reffs_abs
     kstats.append(kstats_abs)
     Reffs.append(Reffs_abs)
 
