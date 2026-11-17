@@ -289,6 +289,100 @@ def get_spectra(feffk, Reffs, degen, deltar, sigma2, third,
       pha[i], amp[i], rep[i], lam[i], e0, ei, s02, k) for i in range(
       len(Reffs))])
 
+def merge_moments(n_a, mean_a, M2_a, M3_a, M4_a,
+                n_b, mean_b, M2_b, M3_b, M4_b):
+  """
+  Merge two sets of per-column central moments.
+
+  Mj is the sum of the jth central power, not its mean:
+      M2 = sum((x - mean)**2)
+      M3 = sum((x - mean)**3)
+      M4 = sum((x - mean)**4)
+  """
+  if n_a == 0:
+    return n_b, mean_b, M2_b, M3_b, M4_b
+
+  if n_b == 0:
+    return n_a, mean_a, M2_a, M3_a, M4_a
+
+  n = n_a + n_b
+  delta = mean_b - mean_a
+
+  n_a_f = float(n_a)
+  n_b_f = float(n_b)
+  n_f = float(n)
+
+  delta2 = delta * delta
+  delta3 = delta2 * delta
+  delta4 = delta2 * delta2
+
+  mean = mean_a + delta * (n_b_f / n_f)
+
+  M2 = (
+    M2_a
+    + M2_b
+    + delta2 * n_a_f * n_b_f / n_f
+  )
+
+  M3 = (
+    M3_a
+    + M3_b
+    + delta3
+    * n_a_f
+    * n_b_f
+    * (n_a_f - n_b_f)
+    / (n_f * n_f)
+    + 3.0
+    * delta
+    * (n_a_f * M2_b - n_b_f * M2_a)
+    / n_f
+  )
+
+  M4 = (
+    M4_a
+    + M4_b
+    + delta4
+    * n_a_f
+    * n_b_f
+    * (
+      n_a_f * n_a_f
+      - n_a_f * n_b_f
+      + n_b_f * n_b_f
+    )
+    / (n_f * n_f * n_f)
+    + 6.0
+    * delta2
+    * (
+      n_a_f * n_a_f * M2_b
+      + n_b_f * n_b_f * M2_a
+    )
+    / (n_f * n_f)
+    + 4.0
+    * delta
+    * (n_a_f * M3_b - n_b_f * M3_a)
+    / n_f
+  )
+
+  return n, mean, M2, M3, M4
+
+def batch_moments(path_lengths):
+  """
+  path_lengths shape:
+      (nframes_batch, npaths, nreplicas)
+  """
+  n = path_lengths.shape[0] * path_lengths.shape[2]
+
+  mean = path_lengths.mean(axis=(0, 2))
+
+  dx = path_lengths - mean[None, :, None]
+  dx2 = dx * dx
+
+  M2 = dx2.sum(axis=(0, 2))
+  M3 = (dx2 * dx).sum(axis=(0, 2))
+  M4 = (dx2 * dx2).sum(axis=(0, 2))
+
+  return n, mean, M2, M3, M4
+
 def get_kstats_from_traj(traj, sim_data, abs_Z):
   try:
     from pymatgen.io.ase import AseAtomsAdaptor
