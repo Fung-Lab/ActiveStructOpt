@@ -50,9 +50,20 @@ class ActiveLearning():
           progress_dict = json.load(f)
           self.configs = progress_dict['configs'] if not override_config else [
             simfunc.setup_config(config) for simfunc in simfuncs]
+
+          self.sampler_constraints = []
+          for constraint_config in self.configs[0]['aso_params']['sampler_constraints']:
+            constraint_cls = registry.get_constraint_class(constraint_config['name'])
+            self.sampler_constraints.append(constraint_cls(**(constraint_config['args']))
+
+          self.opt_constraints = []
+          for constraint_config in self.configs[0]['aso_params']['opt_constraints']:
+            constraint_cls = registry.get_constraint_class(constraint_config['name'])
+            self.opt_constraints.append(constraint_cls(**(constraint_config['args']))
+          
           sampler_cls = registry.get_sampler_class(
             self.configs[0]['aso_params']['sampler']['name'])
-          self.sampler = sampler_cls(initial_structure, 
+          self.sampler = sampler_cls(initial_structure, self.sampler_constraints,
             **(self.configs[0]['aso_params']['sampler']['args']))
           dataset_cls = registry.get_dataset_class(
             self.configs[0]['aso_params']['dataset']['name'])
@@ -163,7 +174,6 @@ class ActiveLearning():
                   retrain = False)
             else:
               raise ASOSimulationException("Max sim calls exceeded")
-
 
         #if new_structure_predict:
           #with torch.inference_mode():
@@ -282,7 +292,7 @@ class ActiveLearning():
       self.configs[0]['aso_params']['optimizer']['name'])
 
     new_structure, obj_values = optimizer_cls().run(self.models, 
-      self.dataset, objective, self.sampler, 
+      self.dataset, objective, self.sampler, self.opt_constraints, 
       **(self.configs[0]['aso_params']['optimizer']['args']), **(opt_profile))
     self.opt_obj_values.append(obj_values)
 
