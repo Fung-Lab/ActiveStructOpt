@@ -653,7 +653,7 @@ class EXAFS(BaseSimulation):
     sh_template = None, 
     sbatch_template = None, sbatch_group_template = None, 
     sbatch_md_template = None, sbatch_md_group_template = None,
-    sbatch_opt_template = None, number_absorbers = None, 
+    sbatch_opt_template = None,
     save_sim = True, kwfit = 3, kwout = 3,
     **kwargs) -> None:
     self.exp_g_filename = exp_g_filename
@@ -673,7 +673,6 @@ class EXAFS(BaseSimulation):
     self.sbatch_md_group_template = sbatch_md_group_template
     self.sbatch_opt_template = sbatch_opt_template
     self.sh_template = sh_template
-    self.number_absorbers = number_absorbers
     self.save_sim = save_sim
     self.time_limit = time_limit
     self.structure = None
@@ -701,12 +700,6 @@ class EXAFS(BaseSimulation):
     # get all indices of the absorber
     absorber_indices = 8 * np.argwhere(
       [x.symbol == self.absorber for x in structure.species]).flatten()
-
-    if self.number_absorbers is not None:
-      absorber_indices = np.sort(np.random.choice(absorber_indices, 
-        self.number_absorbers, replace = False))
-
-      self.mask = [((8 * x) in absorber_indices) for x in range(len(structure))]
 
     assert len(absorber_indices) > 0
 
