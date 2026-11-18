@@ -2,13 +2,16 @@ from activestructopt.common.registry import registry
 from activestructopt.constraints.base import BaseConstraint
 from pymatgen.core.structure import IStructure
 import torch
-import periodictable
 from pathlib import Path
 import numpy as np
 
 @registry.register_constraint("LennardJonesRepulsion")
 class LennardJonesRepulsion(BaseConstraint)
   def __init__(self, scale = 40, buffer = 0.85,)
+    try:
+      import periodictable
+    except ImportError as e:
+      raise ImportError('Error loading periodictable') from e
     self.lj_rmins = np.genfromtxt(str(Path(__file__
       ).parent / 'lj_rmins.csv'), delimiter = ',') * self.buffer
     self.lj_rmins_t = None

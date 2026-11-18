@@ -1,4 +1,3 @@
 pymatgen
 scipy
 numpy
-periodictable==1.6.1

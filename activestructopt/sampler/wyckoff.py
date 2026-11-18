@@ -7,7 +7,6 @@ from multiprocessing import Process, Manager
 from collections import Counter
 import numpy as np
 
-
 @registry.register_sampler("Wyckoff")
 class Wyckoff(BaseSampler):
   def __init__(self, initial_structure: IStructure, 
