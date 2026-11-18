@@ -19,7 +19,7 @@ class LennardJonesRepulsion(BaseConstraint):
     self.el_symbols = np.array([periodictable.elements[
       i].symbol for i in range(95)])
 
-  def get_z(site):
+  def get_z(self, site):
     return np.argmax(self.el_symbols == site.species.elements[0].symbol)
 
   def soft_constraint(self, data, data_style = ""):
@@ -54,20 +54,20 @@ class LennardJonesRepulsion(BaseConstraint):
         senders_z = data.atomic_numbers[senders[i]]
         receivers_z = data.atomic_numbers[receivers[i]]
 
-        rmins = sself.lj_rmins_t[(senders_z - 1), (receivers_z - 1)]
+        rmins = self.lj_rmins_t[(senders_z - 1), (receivers_z - 1)]
         repulsions = torch.where(rmins > edge_weights[i], 
           torch.pow(rmins / edge_weights[i], 12), 1.0)
         to_return[i] = ((torch.mean(repulsions) - 1) / self.scale).clone()
       return to_return
     elif data_style == 'pmg':
       repulsions = []
-      for i in range(len(structure)):
-        for j in range(i, len(structure)):
-          rmin = self.lj_rmins[self.get_z(structure.sites[i]) - 1, self.get_z(
-            structure.sites[j]) - 1]
-          r = np.min([structure.lattice.a, structure.lattice.b, 
-            structure.lattice.c]) if i == j else structure.sites[i].distance(
-            structure.sites[j])
+      for i in range(len(data)):
+        for j in range(i, len(data)):
+          rmin = self.lj_rmins[self.get_z(data.sites[i]) - 1, self.get_z(
+            data.sites[j]) - 1]
+          r = np.min([data.lattice.a, data.lattice.b, 
+            data.lattice.c]) if i == j else data.sites[i].distance(
+            data.sites[j])
           repulsions.append(max(0, (rmin / r) ** 12 - 1))
       return np.mean(repulsions) / self.scale
     else:
