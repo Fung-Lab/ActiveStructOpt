@@ -3,13 +3,10 @@ from activestructopt.common.registry import registry
 import numpy as np
 import subprocess
 import time
+import json
 import os
 
 def write_group(filename, g):
-  try:
-    import json
-  except ImportError as e:
-    raise ImportError('Error loading json') from e
   items = g.items()
   save_dict = {}
   for key, value in items:
@@ -23,10 +20,6 @@ def write_group(filename, g):
     json.dump(save_dict, f)
 
 def read_group(filename):
-  try:
-    import json
-  except ImportError as e:
-    raise ImportError('Error loading json') from e
   try:
     from larch import Group
   except ImportError as e:
@@ -766,10 +759,6 @@ class EXAFS(BaseSimulation):
   
     # Setup MD Files
     if self.sbatch_md_template is not None:
-      try:
-        import json
-      except ImportError as e:
-        raise ImportError('Error loading json') from e
       with open(os.path.join(new_folder, 'structure.json'), 
         'w', encoding = 'utf-8') as md_struct_file:
         json.dump(struct.as_dict(), md_struct_file)
