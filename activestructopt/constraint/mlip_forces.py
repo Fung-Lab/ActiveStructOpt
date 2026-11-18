@@ -25,7 +25,6 @@ class MLIPForces(BaseConstraint):
     self.adaptor = AseAtomsAdaptor()
     self.force_cutoff = force_cutoff
 
-  @abstractmethod
   def soft_constraint(self, data, data_type = "pmg", **kwargs):
     if data_type == "pmg":
       atoms = self.adaptor.get_atoms(data)
@@ -36,7 +35,6 @@ class MLIPForces(BaseConstraint):
     else:
       raise NotImplementedError("Data type {data_type} not implemented")
 
-  @abstractmethod
   def hard_constraint(self, structure: IStructure, **kwargs):
     atoms = self.adaptor.get_atoms(structure)
     atoms.calc = self.calculator
