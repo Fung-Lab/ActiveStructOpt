@@ -1,5 +1,5 @@
 from activestructopt.common.registry import registry
-from activestructopt.constraints.base import BaseConstraint
+from activestructopt.constraint.base import BaseConstraint
 from pymatgen.core.structure import IStructure
 from pymatgen.io.ase import AseAtomsAdaptor
 import numpy as np
