@@ -1,6 +1,5 @@
 from activestructopt.simulation.base import BaseSimulation
 from activestructopt.common.registry import registry
-from scipy.stats import norm
 import numpy as np
 from pymatgen.optimization.neighbors import find_points_in_spheres
 
@@ -8,6 +7,10 @@ from pymatgen.optimization.neighbors import find_points_in_spheres
 class RDF(BaseSimulation):
   def __init__(self, initial_structure, σ = 0.05, dr = 0.01, max_r = 12.0, 
     **kwargs) -> None:
+    try:
+      from scipy.stats import norm
+    except ImportError as e:
+      raise ImportError('Error loading scipy') from e
     self.σ = σ
     self.dr = dr
     self.max_r = max_r

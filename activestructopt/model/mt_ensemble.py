@@ -2,8 +2,6 @@ from activestructopt.model.base import BaseModel
 from activestructopt.dataset.kfolds import KFoldsDataset
 from activestructopt.common.registry import registry
 import numpy as np
-from scipy.stats import norm
-from scipy.optimize import minimize
 import torch
 from ase import Atoms
 from pymatgen.core import Structure
@@ -295,6 +293,11 @@ class MTEnsemble(BaseModel):
       raise NotImplementedError
 
   def set_scalar_calibration(self, dataset: KFoldsDataset):
+    try:
+      from scipy.stats import norm
+      from scipy.optimize import minimize
+    except ImportError as e:
+      raise ImportError('Error loading scipy') from e
     self.scalar = 1.0
     
     test_data = self.batch_structures(

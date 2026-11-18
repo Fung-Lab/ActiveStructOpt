@@ -1,6 +1,5 @@
 from activestructopt.simulation.base import BaseSimulation
 from activestructopt.common.registry import registry
-from scipy.stats import norm
 import numpy as np
 from pymatgen.optimization.neighbors import find_points_in_spheres
 from functools import reduce

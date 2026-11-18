@@ -1,3 +1,2 @@
 pymatgen
-scipy
 numpy
