@@ -54,12 +54,12 @@ class ActiveLearning():
           self.sampler_constraints = []
           for constraint_config in self.configs[0]['aso_params']['sampler_constraints']:
             constraint_cls = registry.get_constraint_class(constraint_config['name'])
-            self.sampler_constraints.append(constraint_cls(**(constraint_config['args']))
+            self.sampler_constraints.append(constraint_cls(**(constraint_config['args'])))
 
           self.opt_constraints = []
           for constraint_config in self.configs[0]['aso_params']['opt_constraints']:
             constraint_cls = registry.get_constraint_class(constraint_config['name'])
-            self.opt_constraints.append(constraint_cls(**(constraint_config['args']))
+            self.opt_constraints.append(constraint_cls(**(constraint_config['args'])))
           
           sampler_cls = registry.get_sampler_class(
             self.configs[0]['aso_params']['sampler']['name'])

@@ -9,7 +9,7 @@ def save_samples_to_file(config, initial_structure, N, filename):
   sampler_constraints = []
   for constraint_config in config['aso_params']['sampler_constraints']:
     constraint_cls = registry.get_constraint_class(constraint_config['name'])
-    sampler_constraints.append(constraint_cls(**(constraint_config['args']))
+    sampler_constraints.append(constraint_cls(**(constraint_config['args'])))
   
   sampler_cls = registry.get_sampler_class(
     config['aso_params']['sampler']['name'])
