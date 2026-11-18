@@ -2,4 +2,3 @@ pymatgen
 scipy
 numpy
 periodictable==1.6.1
-pyxtal==1.0.3

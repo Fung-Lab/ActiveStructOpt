@@ -6,7 +6,7 @@ from pymatgen.core.structure import IStructure, Structure
 from multiprocessing import Process, Manager
 from collections import Counter
 import numpy as np
-import pyxtal
+
 
 @registry.register_sampler("Wyckoff")
 class Wyckoff(BaseSampler):
@@ -14,7 +14,10 @@ class Wyckoff(BaseSampler):
     constraints: list[BaseConstraint], seed = 0, 
     perturb_lattice = True, max_retries = 3, max_time = 20, 
     use_random_state = True, sgs = None) -> None:
-
+    try:
+      import pyxtal
+    except ImportError as e:
+      raise ImportError('Error loading pyxtal') from e
     # Distribution from Materials Project
     sg_dist = [146, 2720, 14, 407, 178, 7, 145, 97, 351, 39, 768, 1688, 286, 
       5736, 2345, 1, 5, 66, 596, 89, 13, 2, 11, 0, 10, 64, 3, 9, 196, 11, 
@@ -51,6 +54,10 @@ class Wyckoff(BaseSampler):
     self.use_random_state = use_random_state
 
     def get_random_crystal(sg, d):
+      try:
+        import pyxtal
+      except ImportError as e:
+        raise ImportError('Error loading pyxtal') from e
       xtal = pyxtal.pyxtal()
       xtal.from_random(3, sg, self.zs, self.zcounts, 
         random_state = self.rng if self.use_random_state else None, 
