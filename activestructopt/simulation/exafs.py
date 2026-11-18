@@ -1,6 +1,7 @@
 from activestructopt.simulation.base import BaseSimulation, ASOSimulationException
 from activestructopt.common.registry import registry
 import numpy as np
+import subprocess
 import time
 import os
 
@@ -706,10 +707,6 @@ class EXAFS(BaseSimulation):
       from pymatgen.io.feff.sets import MPEXAFSSet
     except ImportError as e:
       raise ImportError('Error loading pymatgen') from e
-    try:
-      import subprocess
-    except ImportError as e:
-      raise ImportError('Error loading subprocess') from e
     structure = struct.copy()
     self.structure = struct.copy()
 
