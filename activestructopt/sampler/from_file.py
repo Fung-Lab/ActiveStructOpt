@@ -1,11 +1,13 @@
 from activestructopt.sampler.base import BaseSampler
 from activestructopt.constraint.base import BaseConstraint
-from activestructopt.common.registry import registry
+from activestructopt.common.registry import registry, setup_imports
 from pymatgen.core.structure import IStructure, Structure
 import numpy as np
 import json
 
 def save_samples_to_file(config, initial_structure, N, filename):
+  setup_imports()
+  
   sampler_constraints = []
   for constraint_config in config['aso_params']['sampler_constraints']:
     constraint_cls = registry.get_constraint_class(constraint_config['name'])
