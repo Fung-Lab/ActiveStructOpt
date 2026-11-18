@@ -21,7 +21,7 @@ class MLIPForces(BaseConstraint):
         task_name="omat")
 
     else:
-      raise NotImplementedError("MLIP {mlip} not implemented")
+      raise NotImplementedError(f'MLIP {mlip} not implemented')
     self.adaptor = AseAtomsAdaptor()
     self.force_cutoff = force_cutoff
 
@@ -31,9 +31,9 @@ class MLIPForces(BaseConstraint):
       atoms.calc = self.calculator
       forces = atoms.get_forces(apply_constraint = False)
       force_mags = np.linalg.norm(forces, axis = 1)
-      return np.mean(np.maximum(0, (force_mags - self.force_cutoff)) ** 2)
+      return np.max(np.maximum(0, (force_mags - self.force_cutoff)) ** 2)
     else:
-      raise NotImplementedError("Data type {data_type} not implemented")
+      raise NotImplementedError(f'Data type {data_type} not implemented')
 
   def hard_constraint(self, structure: IStructure, **kwargs):
     atoms = self.adaptor.get_atoms(structure)
