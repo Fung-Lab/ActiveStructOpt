@@ -9,18 +9,18 @@ from torch.func import stack_module_state, functional_call, vmap
 import copy
 
 def torch_cell_to_cellpar(cell):
-    cellpar = torch.zeros(6, dtype = cell.dtype, device = cell.device)
-    cellpar[:3] += torch.norm(cell, dim =  1)
-    for i in range(3):
-        j = i - 1
-        k = i - 2
-        ll = cellpar[j % 3] * cellpar[k % 3]
-        if ll > 1e-16:
-            x = torch.dot(cell[j % 3], cell[k % 3]) / ll
-            cellpar[3+i] = 180.0 / np.pi * torch.acos(x)
-        else:
-            cellpar[3+i] = 90.0
-    return cellpar
+  cellpar = torch.zeros(6, dtype = cell.dtype, device = cell.device)
+  cellpar[:3] += torch.norm(cell, dim =  1)
+  for i in range(3):
+    j = i - 1
+    k = i - 2
+    ll = cellpar[j % 3] * cellpar[k % 3]
+    if ll > 1e-16:
+      x = torch.dot(cell[j % 3], cell[k % 3]) / ll
+      cellpar[3+i] = 180.0 / np.pi * torch.acos(x)
+    else:
+      cellpar[3+i] = 90.0
+  return cellpar
 
 def hparams(data, num_epochs, out_dim, mask, natoms, start_lr = 0.001, 
   radius = 10.0, max_num_neighbors = 250, pretrained = True):
@@ -41,20 +41,20 @@ def hparams(data, num_epochs, out_dim, mask, natoms, start_lr = 0.001,
   hparams.model.freeze_backbone = not pretrained
 
   hparams.model.optimizer = MC.AdamWConfig(
-      lr = start_lr,
-      amsgrad = False,
-      betas = (0.9, 0.95),
-      eps = 1.0e-8,
-      weight_decay = 0.1,
-      per_parameter_hparams = None,
+    lr = start_lr,
+    amsgrad = False,
+    betas = (0.9, 0.95),
+    eps = 1.0e-8,
+    weight_decay = 0.1,
+    per_parameter_hparams = None,
   )
   hparams.model.lr_scheduler = MC.ReduceOnPlateauConfig(
-      mode = "min",
-      monitor = "val/total_loss",
-      factor = 0.5,
-      patience = 5,
-      min_lr = 0,
-      threshold = 1e-4,
+    mode = "min",
+    monitor = "val/total_loss",
+    factor = 0.5,
+    patience = 5,
+    min_lr = 0,
+    threshold = 1e-4,
   )
   hparams.model.reset_output_heads = True
   hparams.model.reset_backbone = False
@@ -81,16 +81,16 @@ def hparams(data, num_epochs, out_dim, mask, natoms, start_lr = 0.001,
   torch.set_float32_matmul_precision('high')
 
   hparams.trainer.early_stopping = MC.EarlyStoppingConfig(
-      monitor = 'val/total_loss',
-      patience = 15,
-      mode = "min",
-      min_delta = 1e-8,
+    monitor = 'val/total_loss',
+    patience = 15,
+    mode = "min",
+    min_delta = 1e-8,
   )
 
   hparams.trainer.additional_trainer_kwargs = {
-      "inference_mode": False,
-      "enable_checkpointing": False,
-      "logger": False,
+    "inference_mode": False,
+    "enable_checkpointing": False,
+    "logger": False,
   }
 
   hparams = hparams.finalize()
@@ -144,10 +144,10 @@ class MTEnsemble(BaseModel):
       atoms_dataset.extend(val_set)
 
       mt_dataset = mt.configs.AutoSplitDataModuleConfig(
-          dataset = mt.configs.AtomsListDatasetConfig(atoms_list = atoms_dataset),
-          train_split = train_split,
-          batch_size = batch_size,
-          shuffle = False,
+        dataset = mt.configs.AtomsListDatasetConfig(atoms_list = atoms_dataset),
+        train_split = train_split,
+        batch_size = batch_size,
+        shuffle = False,
       )
 
       natoms = len(dataset.structures[0])
@@ -201,55 +201,55 @@ class MTEnsemble(BaseModel):
 
     lattice = torch_cell_to_cellpar(cell)
     if wrap and (torch.any(cell != 0) and torch.any(pbc)):
-        positions = feat_util.map_to_pbc_cell(positions, cell)
+      positions = feat_util.map_to_pbc_cell(positions, cell)
 
     edge_index, edge_vectors, unit_shifts = feat_util.compute_pbc_radius_graph(
-        positions = positions,
-        cell = cell,
-        pbc = pbc,
-        radius = self.hp.model.system.radius,
-        max_number_neighbors = max_num_neighbors,
-        edge_method = edge_method,
-        half_supercell = half_supercell,
-        float_dtype = graph_construction_dtype,
-        device = self.device,
+      positions = positions,
+      cell = cell,
+      pbc = pbc,
+      radius = self.hp.model.system.radius,
+      max_number_neighbors = max_num_neighbors,
+      edge_method = edge_method,
+      half_supercell = half_supercell,
+      float_dtype = graph_construction_dtype,
+      device = self.device,
     )
     senders, receivers = edge_index[0], edge_index[1]
 
     node_feats = {
-        # NOTE: positions are stored as features on the AtomGraphs,
-        # but not actually used as input features to the model.
-        "positions": positions,
-        "atomic_numbers": atomic_numbers.to(torch.long),
-        "atomic_numbers_embedding": atomic_numbers_embedding,
-        "atom_identity": torch.arange(len(starting_struct)).to(torch.long),
+      # NOTE: positions are stored as features on the AtomGraphs,
+      # but not actually used as input features to the model.
+      "positions": positions,
+      "atomic_numbers": atomic_numbers.to(torch.long),
+      "atomic_numbers_embedding": atomic_numbers_embedding,
+      "atom_identity": torch.arange(len(starting_struct)).to(torch.long),
     }
     edge_feats = {
-        "vectors": edge_vectors,
-        "unit_shifts": unit_shifts,
+      "vectors": edge_vectors,
+      "unit_shifts": unit_shifts,
     }
     graph_feats = {
-        "cell": cell.unsqueeze(0), # Add a batch dimension to non-scalar graph features/targets
-        "pbc": pbc.unsqueeze(0),
-        "lattice": lattice.unsqueeze(0),
+      "cell": cell.unsqueeze(0), # Add a batch dimension to non-scalar graph features/targets
+      "pbc": pbc.unsqueeze(0),
+      "lattice": lattice.unsqueeze(0),
     }
 
     atom_graphs = AtomGraphs(
-        senders = senders,
-        receivers = receivers,
-        n_node = torch.tensor([len(positions)]),
-        n_edge = torch.tensor([len(senders)]),
-        node_features = node_feats,
-        edge_features = edge_feats,
-        system_features = graph_feats,
-        node_targets = {},
-        edge_targets = {},
-        system_targets = {},
-        fix_atoms = None,
-        tags = torch.zeros(len(starting_struct)),
-        radius = self.hp.model.system.radius,
-        max_num_neighbors = torch.tensor([max_num_neighbors]),
-        system_id = None,
+      senders = senders,
+      receivers = receivers,
+      n_node = torch.tensor([len(positions)]),
+      n_edge = torch.tensor([len(senders)]),
+      node_features = node_feats,
+      edge_features = edge_feats,
+      system_features = graph_feats,
+      node_targets = {},
+      edge_targets = {},
+      system_targets = {},
+      fix_atoms = None,
+      tags = torch.zeros(len(starting_struct)),
+      radius = self.hp.model.system.radius,
+      max_num_neighbors = torch.tensor([max_num_neighbors]),
+      system_id = None,
     ).to(device = self.device, dtype = output_dtype)
 
     atom_types_onehot = torch.nn.functional.one_hot(
