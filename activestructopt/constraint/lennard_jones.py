@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 
 @registry.register_constraint("LennardJonesRepulsion")
-class LennardJonesRepulsion(BaseConstraint)
-  def __init__(self, scale = 40, buffer = 0.85,)
+class LennardJonesRepulsion(BaseConstraint):
+  def __init__(self, scale = 40, buffer = 0.85,):
     try:
       import periodictable
     except ImportError as e:
@@ -73,7 +73,7 @@ class LennardJonesRepulsion(BaseConstraint)
     else:
       raise NotImplementedError(f'Data style {data_style} not implemented')
 
-  def hard_constraint(self, structure: IStructure)
+  def hard_constraint(self, structure: IStructure):
     for i in range(len(structure)):
       for j in range(i + 1, len(structure)):
         if structure.sites[i].distance(structure.sites[j]) < (self.lj_rmins[self.get_z(
