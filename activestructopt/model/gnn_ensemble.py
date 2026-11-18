@@ -3,10 +3,6 @@ from activestructopt.model.base import BaseModel, Runner, ConfigSetup
 from activestructopt.dataset.kfolds import KFoldsDataset
 from activestructopt.common.registry import registry
 import numpy as np
-from scipy.stats import norm
-from scipy.optimize import minimize
-import torch
-from torch.func import stack_module_state, functional_call, vmap
 import copy
 
 @registry.register_model("GNNEnsemble")
@@ -21,6 +17,11 @@ class GNNEnsemble(BaseModel):
   
   def train(self, dataset: KFoldsDataset, iterations = 500, lr = 0.001, 
     from_scratch = False, transfer = 1.0, prev_params = None, **kwargs):
+    try:
+      from torch.func import stack_module_state
+    except ImportError as e:
+      raise ImportError('Error loading torch') from e
+
     self.config['optim']['max_epochs'] = iterations
     self.config['optim']['lr'] = lr
     metrics = [{'epoch': [], 'lr': [], 'train_err': [], 'val_error': [], 
@@ -96,7 +97,16 @@ class GNNEnsemble(BaseModel):
       ) for i in range(self.k)]
 
   def predict(self, structure, prepared = False, mask = None, **kwargs):
-    from torch_geometric.loader import DataLoader
+    try:
+      import torch
+      from torch.func import functional_call, vmap
+    except ImportError as e:
+      raise ImportError('Error loading torch') from e
+    try:
+      from torch_geometric.loader import DataLoader
+    except ImportError as e:
+      raise ImportError('Error loading torch_geometric') from e
+    
     def fmodel(params, buffers, x):
       return functional_call(self.base_model, (params, buffers), (x,))['output']
     data = structure if prepared else [prepare_data_pmg(
@@ -117,6 +127,15 @@ class GNNEnsemble(BaseModel):
     return torch.stack((mean, std))
 
   def set_scalar_calibration(self, dataset: KFoldsDataset):
+    try:
+      import torch
+    except ImportError as e:
+      raise ImportError('Error loading torch') from e
+    try:
+      from scipy.stats import norm
+      from scipy.optimize import minimize
+    except ImportError as e:
+      raise ImportError('Error loading scipy') from e
     self.scalar = 1.0
     
     test_data = [prepare_data_pmg(dataset.structures[i], dataset.config, 
@@ -145,6 +164,10 @@ class GNNEnsemble(BaseModel):
       self.scalar), np.cumsum(np.ones(len(zscores))) / len(zscores)
 
   def load(self, dataset: KFoldsDataset, params, scalar, **kwargs):
+    try:
+      from torch.func import stack_module_state
+    except ImportError as e:
+      raise ImportError('Error loading torch') from e
     for i in range(self.k):
       # Create new runner, with config and datasets
       new_runner = Runner()

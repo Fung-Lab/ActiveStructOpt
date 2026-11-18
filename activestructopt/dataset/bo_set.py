@@ -4,7 +4,6 @@ from activestructopt.sampler.base import BaseSampler
 from pymatgen.core.structure import IStructure
 from activestructopt.common.registry import registry
 import numpy as np
-import torch
 import copy
 
 @registry.register_dataset("BOSet")
@@ -12,6 +11,10 @@ class BOSet(BaseDataset):
   def __init__(self, simulation: list[BaseSimulation], sampler: BaseSampler, 
     initial_structure: IStructure, target, config, seed = 0, N = 30, 
     **kwargs) -> None:
+    try:
+      import torch
+    except ImportError as e:
+      raise ImportError('Error loading torch') from e
     np.random.seed(seed)
     self.simfunc = simulation
     self.N = N
@@ -35,6 +38,10 @@ class BOSet(BaseDataset):
     self.Y = -torch.unsqueeze(Y, 1)
 
   def update(self, new_structure: IStructure):
+    try:
+      import torch
+    except ImportError as e:
+      raise ImportError('Error loading torch') from e
     self.structures.append(new_structure)
     self.N += 1
     y_promise = copy.deepcopy(self.simfunc)

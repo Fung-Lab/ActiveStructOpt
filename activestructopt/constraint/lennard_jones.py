@@ -1,7 +1,6 @@
 from activestructopt.common.registry import registry
 from activestructopt.constraints.base import BaseConstraint
 from pymatgen.core.structure import IStructure
-import torch
 from pathlib import Path
 import numpy as np
 
@@ -25,6 +24,10 @@ class LennardJonesRepulsion(BaseConstraint)
 
   def soft_constraint(self, data, data_style = ""):
     if data_style == 'mdl':
+      try:
+        import torch
+      except ImportError as e:
+        raise ImportError('Error loading torch') from e
       if self.lj_rmins_t is None:
         self.lj_rmins_t = torch.tensor(self.lj_rmins, device = data.device)
       rmins = self.lj_rmins_t[(data.z[data.edge_index[0]] - 1), 
@@ -33,6 +36,10 @@ class LennardJonesRepulsion(BaseConstraint)
         torch.pow(rmins / data.edge_weight, 12), 1.0)
       return (torch.mean(repulsions) - 1) / self.scale
     elif data_style == 'mt':
+      try:
+        import torch
+      except ImportError as e:
+        raise ImportError('Error loading torch') from e
       if self.lj_rmins_t is None:
         self.lj_rmins_t = torch.tensor(self.lj_rmins, device = data.device)
       edge_splitter = data.n_edge.to('cpu').detach().tolist()

@@ -1,7 +1,6 @@
 from activestructopt.model.base import BaseModel
 from activestructopt.common.registry import registry
 from activestructopt.dataset.base import BaseDataset
-import torch
 
 @registry.register_model("GaussianProcess")
 class GaussianProcess(BaseModel):
@@ -9,11 +8,18 @@ class GaussianProcess(BaseModel):
     pass
 
   def train(self, dataset: BaseDataset, **kwargs):
-    from botorch.models import SingleTaskGP
-    from botorch.models.transforms import Normalize, Standardize
-    from botorch.acquisition import LogExpectedImprovement
-    from botorch.fit import fit_gpytorch_mll
-    from gpytorch.mlls import ExactMarginalLogLikelihood
+    try:
+      from botorch.models import SingleTaskGP
+      from botorch.models.transforms import Normalize, Standardize
+      from botorch.acquisition import LogExpectedImprovement
+      from botorch.fit import fit_gpytorch_mll
+      from gpytorch.mlls import ExactMarginalLogLikelihood
+    except ImportError as e:
+      raise ImportError('Error loading botorch') from e
+    try:
+      import torch
+    except ImportError as e:
+      raise ImportError('Error loading torch') from e
     
     gp = SingleTaskGP(
       train_X = dataset.X,
@@ -29,4 +35,8 @@ class GaussianProcess(BaseModel):
     return None, None, torch.empty(0)
 
   def predict(self, structure, **kwargs):
+    try:
+      import torch
+    except ImportError as e:
+      raise ImportError('Error loading torch') from e
     return torch.empty(0)

@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from activestructopt.dataset.base import BaseDataset
-import torch
 import os
 import logging
 from io import StringIO
@@ -29,9 +28,17 @@ class Runner:
     root_logger.addHandler(sh)
 
   def __call__(self, config, args, train_data, val_data):
-    from matdeeplearn.common.trainer_context import new_trainer_context
-    from matdeeplearn.trainers.base_trainer import BaseTrainer
-    from torch import distributed as dist
+    try:
+      import torch
+      from torch import distributed as dist
+    except ImportError as e:
+      raise ImportError('Error loading torch') from e
+    
+    try:
+      from matdeeplearn.common.trainer_context import new_trainer_context
+      from matdeeplearn.trainers.base_trainer import BaseTrainer
+    except ImportError as e:
+      raise ImportError('Error loading matdeeplearn') from e
 
     with new_trainer_context(args = args, config = config) as ctx:
       if config["task"]["parallel"] == True:
