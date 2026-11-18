@@ -13,20 +13,16 @@ class MLIPForces(BaseConstraint):
       except ImportError as e:
         raise ImportError("Error loading fairchem.core") from e
       predictor = pretrained_mlip.get_predict_unit(
-        "uma-s-1p2p1",
-        device="cuda",
-        inference_settings="nitro",
-      )
-      self.calculator = FAIRChemCalculator(predictor, 
-        task_name="omat")
+        'uma-s-1p2p1', device = 'cuda', inference_settings = 'nitro')
+      self.calculator = FAIRChemCalculator(predictor, task_name = 'omat')
 
     else:
       raise NotImplementedError(f'MLIP {mlip} not implemented')
     self.adaptor = AseAtomsAdaptor()
     self.force_cutoff = force_cutoff
 
-  def soft_constraint(self, data, data_type = "pmg", **kwargs):
-    if data_type == "pmg":
+  def soft_constraint(self, data, data_type = 'pmg', **kwargs):
+    if data_type == 'pmg':
       atoms = self.adaptor.get_atoms(data)
       atoms.calc = self.calculator
       forces = atoms.get_forces(apply_constraint = False)
