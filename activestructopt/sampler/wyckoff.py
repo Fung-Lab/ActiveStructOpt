@@ -47,9 +47,9 @@ class Wyckoff(BaseSampler):
     self.constraints = constraints
     self.tm = None
     for constraint in self.constraints:
-      if isinstance(constraint, LennardJonesRepulsion)
-      self.tm = pyxtal.tolerance.Tol_matrix.from_matrix(
-        constraint.lj_rmins)
+      if isinstance(constraint, LennardJonesRepulsion):
+        self.tm = pyxtal.tolerance.Tol_matrix.from_matrix(
+          constraint.lj_rmins)
     self.use_random_state = use_random_state
 
     def get_random_crystal(sg, d):
