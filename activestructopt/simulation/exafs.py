@@ -1,7 +1,13 @@
 from activestructopt.simulation.base import BaseSimulation, ASOSimulationException
 from activestructopt.common.registry import registry
+from pymatgen.io.ase import AseAtomsAdaptor
+from pymatgen.io import feff
+from pymatgen.io.feff.sets import MPEXAFSSet
+from itertools import product
 import numpy as np
 import subprocess
+import shutil
+import stat
 import time
 import json
 import os
@@ -44,7 +50,6 @@ def run_md(structure, trajectory_path = 'md.traj',
     from ase.md.langevin import Langevin
     from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
     from fairchem.core import FAIRChemCalculator, pretrained_mlip
-    from pymatgen.io.ase import AseAtomsAdaptor
   except ImportError as e:
     raise ImportError('Error loading required packages for MD') from e
 
@@ -379,14 +384,9 @@ def batch_moments(path_lengths):
 
 def get_kstats_from_traj(traj, sim_data, abs_Z):
   try:
-    from pymatgen.io.ase import AseAtomsAdaptor
-  except ImportError as e:
-    raise ImportError('Error loading pymatgen') from e
-  try:
-    from itertools import product
     from scipy.spatial import cKDTree
   except ImportError as e:
-      raise ImportError('Error loading itertools and scipy') from e
+      raise ImportError('Error loading scipy') from e
   adaptor = AseAtomsAdaptor()
   starting_struct = adaptor.get_structure(traj[0])
   nabs = len(sim_data)
@@ -695,11 +695,6 @@ class EXAFS(BaseSimulation):
     return config
 
   def get(self, struct, group = False, separator = ','):
-    try:
-      from pymatgen.io import feff
-      from pymatgen.io.feff.sets import MPEXAFSSet
-    except ImportError as e:
-      raise ImportError('Error loading pymatgen') from e
     structure = struct.copy()
     self.structure = struct.copy()
 
@@ -785,10 +780,6 @@ class EXAFS(BaseSimulation):
         print(e.output)
 
     elif self.sh_template is not None:
-      try:
-        import stat
-      except ImportError as e:
-        raise ImportError('Error loading stat') from e
       with open(self.sh_template, 'r') as file:
         sh_data = file.read()
       index_str = str(0)
@@ -851,15 +842,6 @@ class EXAFS(BaseSimulation):
     return os.path.isfile(os.path.join(self.folder, "DONE"))
 
   def resolve(self):
-    try:
-      import shutil
-    except ImportError as e:
-      raise ImportError('Error loading shutil') from e
-    try:
-      import subprocess
-    except ImportError as e:
-      raise ImportError('Error loading subprocess') from e
-
     assert self.sbatch_opt_template is not None, "Need opt template for now"
 
     with open(self.sbatch_opt_template, 'r') as file:
@@ -908,10 +890,6 @@ class EXAFS(BaseSimulation):
     return spectra 
 
   def garbage_collect(self, is_better):
-    try:
-      import shutil
-    except ImportError as e:
-      raise ImportError('Error loading shutil') from e
     parent_folder = os.path.dirname(self.folder)
     if is_better:
       subfolders = [int(x) for x in os.listdir(parent_folder)]
