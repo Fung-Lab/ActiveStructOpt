@@ -11,13 +11,13 @@ class LennardJonesRepulsion(BaseConstraint):
       import periodictable
     except ImportError as e:
       raise ImportError('Error loading periodictable') from e
+    self.scale = scale
+    self.buffer = buffer
     self.lj_rmins = np.genfromtxt(str(Path(__file__
       ).parent / 'lj_rmins.csv'), delimiter = ',') * self.buffer
     self.lj_rmins_t = None
     self.el_symbols = np.array([periodictable.elements[
       i].symbol for i in range(95)])
-    self.scale = scale
-    self.buffer = buffer
 
   def get_z(site):
     return np.argmax(self.el_symbols == site.species.elements[0].symbol)
