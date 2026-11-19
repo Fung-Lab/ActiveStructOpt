@@ -57,8 +57,9 @@ class LennardJonesRepulsion(BaseConstraint):
         rmins = self.lj_rmins_t[(senders_z - 1), (receivers_z - 1)]
         repulsions = torch.where(rmins > edge_weights[i], 
           torch.pow(rmins / edge_weights[i], 12), 1.0)
-        to_return[i] = ((torch.mean(repulsions) - 1) / self.scale).clone()
-      return to_return
+        to_return[i] = (torch.mean(repulsions) - 1) / self.scale
+      # A tensor, not a list, so adding it to another tensor keeps the gradient
+      return torch.stack(to_return)
     elif data_style == 'pmg':
       repulsions = []
       for i in range(len(data)):
