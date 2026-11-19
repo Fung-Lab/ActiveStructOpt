@@ -141,16 +141,22 @@ def torch_cell_to_cellpar(cell):
 def hparams(data, num_epochs, out_dim, mask, start_lr = 0.001,
   radius = 10.0, max_num_neighbors = 250, pretrained = True):
 
-  import mattertune.configs as MC
-  import mattertune as mt
+  # mattertune.configs is avoided because mattertune silently skips it when any
+  # of its many imports fails, so each config is imported from its own module
+  from mattertune.backbones.orb.model import ORBSystemConfig
+  from mattertune.finetune.loss import MAELossConfig
+  from mattertune.finetune.lr_scheduler import ReduceOnPlateauConfig
+  from mattertune.finetune.optimizer import AdamWConfig
+  from mattertune.main import (EarlyStoppingConfig, MatterTunerConfig,
+    TrainerConfig)
 
   extensions = _mt_extensions()
 
-  hparams = MC.MatterTunerConfig.draft()
+  hparams = MatterTunerConfig.draft()
 
   # Model hparams
   hparams.model = extensions.ORBNodeVectorBackboneConfig.draft()
-  hparams.model.system = mt.backbones.orb.model.ORBSystemConfig(
+  hparams.model.system = ORBSystemConfig(
     radius = radius, max_num_neighbors = max_num_neighbors)
   hparams.model.pretrained_model = "orb-v3-direct-inf-omat"
   #hparams.model.pretrained_model = "orb-v3-conservative-inf-omat"
@@ -158,7 +164,7 @@ def hparams(data, num_epochs, out_dim, mask, start_lr = 0.001,
   hparams.model.ignore_gpu_batch_transform_error = True
   hparams.model.freeze_backbone = not pretrained
 
-  hparams.model.optimizer = MC.AdamWConfig(
+  hparams.model.optimizer = AdamWConfig(
     lr = start_lr,
     amsgrad = False,
     betas = (0.9, 0.95),
@@ -166,7 +172,7 @@ def hparams(data, num_epochs, out_dim, mask, start_lr = 0.001,
     weight_decay = 0.1,
     per_parameter_hparams = None,
   )
-  hparams.model.lr_scheduler = MC.ReduceOnPlateauConfig(
+  hparams.model.lr_scheduler = ReduceOnPlateauConfig(
     mode = "min",
     monitor = "val/total_loss",
     factor = 0.5,
@@ -179,7 +185,7 @@ def hparams(data, num_epochs, out_dim, mask, start_lr = 0.001,
 
   hparams.model.properties = []
   spectra = extensions.NodeVectorPropertyConfig(name = 'spectra',
-    dtype = 'float', size = out_dim, loss = MC.MAELossConfig(),
+    dtype = 'float', size = out_dim, loss = MAELossConfig(),
     mask = [bool(m) for m in mask], num_layers = 1, hidden_channels = 256)
   hparams.model.properties.append(spectra)
 
@@ -187,7 +193,7 @@ def hparams(data, num_epochs, out_dim, mask, start_lr = 0.001,
   hparams.data = data
   hparams.data.num_workers = 0
 
-  hparams.trainer = MC.TrainerConfig.draft()
+  hparams.trainer = TrainerConfig.draft()
   hparams.trainer.max_epochs = num_epochs
   hparams.trainer.accelerator = "gpu"
   hparams.trainer.check_val_every_n_epoch = 1
@@ -197,7 +203,7 @@ def hparams(data, num_epochs, out_dim, mask, start_lr = 0.001,
   hparams.trainer.precision = "32"
   torch.set_float32_matmul_precision('high')
 
-  hparams.trainer.early_stopping = MC.EarlyStoppingConfig(
+  hparams.trainer.early_stopping = EarlyStoppingConfig(
     monitor = 'val/total_loss',
     patience = 15,
     mode = "min",
@@ -227,8 +233,9 @@ class MTEnsemble(BaseModel):
   def train(self, dataset: KFoldsDataset, sim_index, iterations = 250, lr = 0.001, 
     from_scratch = False, transfer = 1.0, prev_params = None, radius = 10.0, 
     max_num_neighbors = 250, batch_size = 64, pretrained = True, **kwargs):
-    import mattertune as mt
     from mattertune import MatterTuner
+    from mattertune.data.atoms_list import AtomsListDatasetConfig
+    from mattertune.data.datamodule import ManualSplitDataModuleConfig
 
     self.sim_index = sim_index
 
@@ -258,9 +265,9 @@ class MTEnsemble(BaseModel):
       ) for j in dataset.kfolds[i]]
 
       # AtomsListDataset shuffles its atoms, so the folds are passed separately
-      mt_dataset = mt.configs.ManualSplitDataModuleConfig(
-        train = mt.configs.AtomsListDatasetConfig(atoms_list = train_set),
-        validation = mt.configs.AtomsListDatasetConfig(atoms_list = val_set),
+      mt_dataset = ManualSplitDataModuleConfig(
+        train = AtomsListDatasetConfig(atoms_list = train_set),
+        validation = AtomsListDatasetConfig(atoms_list = val_set),
         batch_size = batch_size,
       )
 
