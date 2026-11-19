@@ -6,7 +6,123 @@ import torch
 from ase import Atoms
 from pymatgen.core import Structure
 from torch.func import stack_module_state, functional_call, vmap
+from collections.abc import Sequence
+from functools import cache
+from types import SimpleNamespace
+from typing import Literal
 import copy
+
+@cache
+def _mt_extensions():
+  """Adds node-level vector outputs to an unmodified MatterTune ORB backbone.
+
+  MatterTune and orb_models are optional dependencies, and every file in this
+  directory is imported by setup_imports, so these definitions must stay lazy.
+  The result is cached because backbone_registry rejects duplicate names.
+  """
+  import nshconfig as C
+  import mattertune as mt
+  from mattertune.backbones.orb.model import (ORBBackboneConfig,
+    ORBBackboneModule)
+  from mattertune.finetune.properties import PropertyConfigBase
+  from orb_models.forcefield import featurization_utilities as feat_util
+  from orb_models.forcefield import segment_ops
+  from orb_models.forcefield.nn_util import build_mlp
+
+  # The in-place scatter_add_ in orb_models fails under vmap because it writes
+  # batched values into an unbatched tensor of zeros.
+  def scatter_sum(src, index, dim = -1, out = None, dim_size = None,
+    reduce = "sum"):
+    assert reduce == "sum"
+    index = segment_ops._broadcast(index, src, dim)
+    if out is None:
+      size = list(src.size())
+      if dim_size is not None:
+        size[dim] = dim_size
+      elif index.numel() == 0:
+        size[dim] = 0
+      else:
+        size[dim] = int(index.max()) + 1
+      out = torch.zeros(size, dtype = src.dtype, device = src.device)
+    return out.scatter_add(dim, index, src)
+
+  segment_ops.scatter_sum = scatter_sum
+
+  # orb_models raises an error for cutoffs above 6 unless N is larger than 4.
+  find_translations = feat_util.find_minimal_supercell_translations
+
+  def find_minimal_supercell_translations(cell, cutoff, N = None):
+    if N is None:
+      N = 4 if cutoff <= 6.0 else 5
+    return find_translations(cell, cutoff, N = N)
+
+  feat_util.find_minimal_supercell_translations = (
+    find_minimal_supercell_translations)
+
+  class NodeVectorPropertyConfig(PropertyConfigBase):
+    type: Literal["node_vector"] = "node_vector"
+    size: C.PositiveInt
+    mask: list[bool]
+    num_layers: int = 1
+    hidden_channels: int = 256
+
+    def from_ase_atoms(self, atoms):
+      return atoms.info[self.name]
+
+    def ase_calculator_property_name(self):
+      return None
+
+    def property_type(self):
+      return "atom"
+
+  class NodeVectorHead(torch.nn.Module):
+    def __init__(self, size, num_layers, hidden_channels):
+      super().__init__()
+      self.mlp = build_mlp(
+        input_size = 256,
+        hidden_layer_sizes = [hidden_channels] * num_layers,
+        output_size = size,
+        activation = 'silu',
+        dropout = None,
+        checkpoint = None,
+      )
+
+    def forward(self, node_features, batch):
+      return self.mlp(node_features)
+
+  class ORBNodeVectorBackboneModule(ORBBackboneModule):
+    @classmethod
+    def hparams_cls(cls):
+      return ORBNodeVectorBackboneConfig
+
+    def _create_output_head(self, prop, pretrained_model):
+      return NodeVectorHead(prop.size, prop.num_layers, prop.hidden_channels)
+
+    def _compute_loss(self, predictions, labels, log = True, log_prefix = ""):
+      masked_predictions = {}
+      masked_labels = {}
+      for prop in self.hparams.properties:
+        prediction = predictions[prop.name]
+        mask = torch.tensor(prop.mask, dtype = torch.bool,
+          device = prediction.device).repeat(
+          prediction.shape[0] // len(prop.mask))
+        masked_predictions[prop.name] = prediction[mask]
+        masked_labels[prop.name] = labels[prop.name][mask]
+      return super()._compute_loss(masked_predictions, masked_labels,
+        log = log, log_prefix = log_prefix)
+
+  @mt.backbone_registry.register
+  class ORBNodeVectorBackboneConfig(ORBBackboneConfig):
+    name: Literal["orb_node_vector"] = "orb_node_vector"
+    properties: Sequence[NodeVectorPropertyConfig]
+
+    def create_model(self):
+      return ORBNodeVectorBackboneModule(self)
+
+  return SimpleNamespace(
+    NodeVectorPropertyConfig = NodeVectorPropertyConfig,
+    ORBNodeVectorBackboneConfig = ORBNodeVectorBackboneConfig,
+  )
 
 def torch_cell_to_cellpar(cell):
   cellpar = torch.zeros(6, dtype = cell.dtype, device = cell.device)
@@ -22,16 +138,18 @@ def torch_cell_to_cellpar(cell):
       cellpar[3+i] = 90.0
   return cellpar
 
-def hparams(data, num_epochs, out_dim, mask, natoms, start_lr = 0.001, 
+def hparams(data, num_epochs, out_dim, mask, start_lr = 0.001,
   radius = 10.0, max_num_neighbors = 250, pretrained = True):
 
   import mattertune.configs as MC
   import mattertune as mt
 
+  extensions = _mt_extensions()
+
   hparams = MC.MatterTunerConfig.draft()
 
   # Model hparams
-  hparams.model = MC.ORBBackboneConfig.draft()
+  hparams.model = extensions.ORBNodeVectorBackboneConfig.draft()
   hparams.model.system = mt.backbones.orb.model.ORBSystemConfig(
     radius = radius, max_num_neighbors = max_num_neighbors)
   hparams.model.pretrained_model = "orb-v3-direct-inf-omat"
@@ -60,10 +178,9 @@ def hparams(data, num_epochs, out_dim, mask, natoms, start_lr = 0.001,
   hparams.model.reset_backbone = False
 
   hparams.model.properties = []
-  spectra = MC.AtomInvariantVectorPropertyConfig(name = 'spectra', 
-    dtype = 'float', size = out_dim, loss = MC.MAEMaskedLossConfig(
-      mask = torch.tensor(mask, dtype = torch.bool), natoms = natoms),
-    additional_head_settings = {'num_layers': 1, 'hidden_channels': 256})
+  spectra = extensions.NodeVectorPropertyConfig(name = 'spectra',
+    dtype = 'float', size = out_dim, loss = MC.MAELossConfig(),
+    mask = [bool(m) for m in mask], num_layers = 1, hidden_channels = 256)
   hparams.model.properties.append(spectra)
 
   # Data hparams
@@ -122,7 +239,7 @@ class MTEnsemble(BaseModel):
     output_heads = [None for _ in range(self.k)]
 
     for i in range(self.k):
-      atoms_dataset = [Atoms(
+      train_set = [Atoms(
           numbers = np.array([s.specie.Z for s in dataset.structures[j].sites]),
           positions = np.array([s.coords.tolist(
             ) for s in dataset.structures[j].sites]),
@@ -140,24 +257,24 @@ class MTEnsemble(BaseModel):
           info = {'spectra': dataset.ys[sim_index][j]},
       ) for j in dataset.kfolds[i]]
 
-      train_split = len(atoms_dataset) / (len(atoms_dataset) + len(val_set))
-      atoms_dataset.extend(val_set)
-
-      mt_dataset = mt.configs.AutoSplitDataModuleConfig(
-        dataset = mt.configs.AtomsListDatasetConfig(atoms_list = atoms_dataset),
-        train_split = train_split,
+      # AtomsListDataset shuffles its atoms, so the folds are passed separately
+      mt_dataset = mt.configs.ManualSplitDataModuleConfig(
+        train = mt.configs.AtomsListDatasetConfig(atoms_list = train_set),
+        validation = mt.configs.AtomsListDatasetConfig(atoms_list = val_set),
         batch_size = batch_size,
-        shuffle = False,
       )
 
-      natoms = len(dataset.structures[0])
-
-      self.hp = hparams(mt_dataset, iterations, 
-        self.config['dataset']['preprocess_params']['output_dim'], 
-        dataset.simfuncs[sim_index].mask, natoms, lr, 
+      self.hp = hparams(mt_dataset, iterations,
+        self.config['dataset']['preprocess_params']['output_dim'],
+        dataset.simfuncs[sim_index].mask, lr,
         radius = radius, max_num_neighbors = max_num_neighbors,
         pretrained = pretrained)
+
+      # That shuffle uses the global NumPy RNG, which the samplers also use
+      rng_state = np.random.get_state()
       tune_output = MatterTuner(self.hp).tune()
+      np.random.set_state(rng_state)
+
       model = tune_output.model.to('cuda')
       self.device = model.device
       backbones[i] = model.backbone
