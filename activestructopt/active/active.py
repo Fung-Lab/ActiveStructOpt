@@ -3,7 +3,6 @@ from activestructopt.simulation.base import ASOSimulationException
 from pymatgen.core.structure import Structure
 from collections import OrderedDict
 from traceback import format_exc
-from pickle import dump, load
 import numpy as np
 import subprocess
 import torch
@@ -38,14 +37,7 @@ class ActiveLearning():
       self.target_predictions = []
 
     if progress_file is not None:
-      if progress_file.split(".")[-1] == 'pkl':
-        with open(progress_file, 'rb') as f:
-          progress = load(f)
-        self.configs = progress['configs']
-        self.dataset = progress['dataset']
-        self.model_params = progress['model_params']
-        self.iteration = progress['dataset'].N - progress['dataset'].start_N - 1
-      elif progress_file.split(".")[-1] == 'json':
+      if progress_file.split(".")[-1] == 'json':
         with open(progress_file, 'rb') as f:
           progress_dict = json.load(f)
           self.configs = progress_dict['configs'] if not override_config else [
@@ -379,19 +371,3 @@ class ActiveLearning():
             'traceback': self.traceback}
       with open(filename, "w") as file:
         json.dump(res, file)
-    elif self.verbosity == 2:
-      res = {'index': self.index,
-            'dataset': self.dataset,
-            'model_errs': self.model_errs,
-            'model_metrics': self.model_metrics,
-            'model_params': self.model_params,
-            'opt_obj_values': self.opt_obj_values,
-            'new_structure_predictions': self.new_structure_predictions,
-            'error': self.error,
-            'traceback': self.traceback}
-      if not (self.target_structure is None):
-        res['target_predictions'] = self.target_predictions
-      for k, v in additional_data.items():
-        res[k] = v
-      with open(filename, "wb") as file:
-        dump(res, file)
