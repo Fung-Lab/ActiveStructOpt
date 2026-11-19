@@ -818,14 +818,17 @@ class EXAFS(BaseSimulation):
 
     for i in range(len(self.inds)):
       new_abs_folder = os.path.join(self.folder, str(i))
+      if os.path.isfile(os.path.join(new_abs_folder, "FEFF_FAILED")):
+        raise ASOSimulationException(f"FEFF failed in {new_abs_folder}")
       if not os.path.isfile(os.path.join(new_abs_folder, "DONE")):
-        #print(f'waiting for {os.path.join(new_abs_folder, "DONE")}')
         return False
 
     if self.sbatch_md_template is not None:
+      if os.path.isfile(os.path.join(self.folder, "MD_FAILED")):
+        raise ASOSimulationException(f"MD failed in {self.folder}")
       if not os.path.isfile(os.path.join(self.folder, "MD_DONE")):
         return False
-    
+
     return True
 
   def check_opt_done(self):
