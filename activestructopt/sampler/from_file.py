@@ -27,14 +27,32 @@ def save_samples_to_file(config, initial_structure, N, filename):
     json.dump(out_dict, file)
   
 
+def reorder_like(structure: IStructure, reference: IStructure) -> Structure:
+  """Returns structure with its sites reordered so that each site has the same
+  element as the corresponding site in reference. Sites of the same element
+  keep their relative order."""
+  symbols = [site.specie.symbol for site in structure.sites]
+  reference_symbols = [site.specie.symbol for site in reference.sites]
+  if sorted(symbols) != sorted(reference_symbols):
+    raise ValueError(f'Structure composition {structure.composition} does ' +
+      f'not match the initial structure composition {reference.composition}')
+
+  remaining = {}
+  for i, symbol in enumerate(symbols):
+    remaining.setdefault(symbol, []).append(i)
+  order = [remaining[symbol].pop(0) for symbol in reference_symbols]
+  return Structure.from_sites([structure.sites[i] for i in order])
+
 @registry.register_sampler("FromFile")
 class FromFile(BaseSampler):
-  def __init__(self, initial_structure: IStructure, 
-    constraints: list[BaseConstraint], filename = None, 
+  def __init__(self, initial_structure: IStructure,
+    constraints: list[BaseConstraint], filename = None,
     **kwargs) -> None:
     assert filename is not None
-    data = json.load(open(filename))['structures']
-    self.structures = [Structure.from_dict(d) for d in data]
+    with open(filename) as file:
+      data = json.load(file)['structures']
+    self.structures = [reorder_like(Structure.from_dict(d), initial_structure
+      ) for d in data]
     self.curr_index = 0
     self.max_index = len(self.structures)
 
