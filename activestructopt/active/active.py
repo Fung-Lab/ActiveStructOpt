@@ -352,17 +352,6 @@ class ActiveLearning():
         except:
           print(res)
           raise NotImplementedError
-    if self.verbosity == 0.5:
-      res = {'index': self.index,
-            'ys': [y.tolist() for y in self.dataset.ys],
-            'target': self.dataset.target.tolist(),
-            'mismatches': self.dataset.mismatches,
-            'structures': [s.as_dict() for s in self.dataset.structures],
-            'obj_values': [x.tolist() for x in self.opt_obj_values],
-            'configs': self.configs,
-      }
-      with open(filename, "w") as file: 
-        json.dump(res, file)
     elif self.verbosity == 1:
       res = {'index': self.index,
             'dataset': self.dataset.toJSONDict(),
