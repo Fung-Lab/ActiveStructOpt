@@ -94,9 +94,20 @@ class ActiveLearning():
       self.iteration = 0
       self.configs = [simfunc.setup_config(copy.deepcopy(config)
         ) for simfunc in simfuncs]
+
+      self.sampler_constraints = []
+      for constraint_config in self.configs[0]['aso_params']['sampler_constraints']:
+        constraint_cls = registry.get_constraint_class(constraint_config['name'])
+        self.sampler_constraints.append(constraint_cls(**(constraint_config['args'])))
+
+      self.opt_constraints = []
+      for constraint_config in self.configs[0]['aso_params']['opt_constraints']:
+        constraint_cls = registry.get_constraint_class(constraint_config['name'])
+        self.opt_constraints.append(constraint_cls(**(constraint_config['args'])))
+
       sampler_cls = registry.get_sampler_class(
         self.configs[0]['aso_params']['sampler']['name'])
-      self.sampler = sampler_cls(initial_structure, 
+      self.sampler = sampler_cls(initial_structure, self.sampler_constraints,
         **(self.configs[0]['aso_params']['sampler']['args']))
       dataset_cls = registry.get_dataset_class(
         self.configs[0]['aso_params']['dataset']['name'])
