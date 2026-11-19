@@ -173,8 +173,7 @@ class ActiveLearning():
                 new_structure = self.opt_step(predict_target = predict_target, 
                   save_file = None, retrain = False)
               else:
-                new_structure = self.opt_step_sbatch(sbatch_template, i, 
-                  retrain = False)
+                new_structure = self.opt_step_sbatch(sbatch_template, i)
             else:
               raise ASOSimulationException("Max sim calls exceeded")
 
@@ -219,16 +218,15 @@ class ActiveLearning():
     self.model_params_file = file
     self.dataset.update(new_structure)
 
-  def opt_step_sbatch(self, sbatch_template, stepi, retrain = True):
-    #if self.model_params_file == f"gpu_job_{self.index}_{stepi}.json":
-    #  retrain = False
+  def opt_step_sbatch(self, sbatch_template, stepi):
+    # The GPU job always retrains because it starts without trained models
     with open(sbatch_template, 'r') as file:
       sbatch_data = file.read()
     job_name = int(time.time()) % 604800
+    sbatch_data = sbatch_data.replace('##INDEX##', str(self.index))
     sbatch_data = sbatch_data.replace('##PROG_FILE##', self.last_prog_file)
-    sbatch_data = sbatch_data.replace('##MODEL_PARAMS_FILE##', 
+    sbatch_data = sbatch_data.replace('##MODEL_PARAMS_FILE##',
       self.model_params_file)
-    sbatch_data = sbatch_data.replace('##RETRAIN##', str(retrain))
     sbatch_data = sbatch_data.replace('##JOB_NAME##', str(job_name))
     new_job_file = f'gpu_job_{self.index}.sbatch'
     with open(new_job_file, 'w') as file:
@@ -239,12 +237,13 @@ class ActiveLearning():
     except subprocess.CalledProcessError as e:
       print(e.output)
     
+    done_file = f"DONE_{self.index}"
     finished = False
     while not finished:
       time.sleep(30)
-      if os.path.isfile("DONE"):
+      if os.path.isfile(done_file):
         finished = True
-        os.remove("DONE")
+        os.remove(done_file)
 
     gpu_job_file = f"gpu_job_{self.index}_{stepi}.json"
     with open(gpu_job_file, 'rb') as f:
