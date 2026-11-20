@@ -4,23 +4,62 @@ from activestructopt.common.registry import registry, setup_imports
 from pymatgen.core.structure import IStructure, Structure
 import numpy as np
 import json
+import time
+
+def _count_hard_constraint_calls(constraint, counts):
+  """Wraps constraint.hard_constraint on the instance, so the constraint keeps
+  its class, to count how many structures it checks and rejects."""
+  hard_constraint = constraint.hard_constraint
+
+  def counted_hard_constraint(structure, **kwargs):
+    counts['checked'] += 1
+    rejected = hard_constraint(structure, **kwargs)
+    if rejected:
+      counts['rejected'] += 1
+    return rejected
+
+  constraint.hard_constraint = counted_hard_constraint
+
+def _print_progress(n_accepted, N, constraint_names, constraint_counts,
+  start_time):
+  message = f'{n_accepted}/{N} accepted ({time.time() - start_time:.0f} s)'
+  if len(constraint_counts) > 0:
+    # Constraints short circuit, so the first one sees every attempt
+    attempts = constraint_counts[0]['checked']
+    rejected = attempts - n_accepted
+    message += (f', {attempts} attempted, {rejected} rejected ' +
+      f'({rejected / max(attempts, 1):.1%})')
+    message += ''.join(f'\n  {name}: rejected {counts["rejected"]} of ' +
+      f'{counts["checked"]} checked' for name, counts in zip(
+      constraint_names, constraint_counts))
+  print(message, flush = True)
 
 def save_samples_to_file(config, initial_structure, N, filename):
   setup_imports()
-  
+
   sampler_constraints = []
+  constraint_names = []
+  constraint_counts = []
   for constraint_config in config['aso_params']['sampler_constraints']:
     constraint_cls = registry.get_constraint_class(constraint_config['name'])
-    sampler_constraints.append(constraint_cls(**(constraint_config['args'])))
-  
+    constraint = constraint_cls(**(constraint_config['args']))
+    counts = {'checked': 0, 'rejected': 0}
+    _count_hard_constraint_calls(constraint, counts)
+    sampler_constraints.append(constraint)
+    constraint_names.append(constraint_config['name'])
+    constraint_counts.append(counts)
+
   sampler_cls = registry.get_sampler_class(
     config['aso_params']['sampler']['name'])
   sampler = sampler_cls(initial_structure, sampler_constraints,
     **(config['aso_params']['sampler']['args']))
 
+  start_time = time.time()
   structures = []
   for _ in range(N):
     structures.append(sampler.sample())
+    _print_progress(len(structures), N, constraint_names, constraint_counts,
+      start_time)
 
   out_dict = {'structures': [s.as_dict() for s in structures]}
   with open(filename, "w") as file: 
