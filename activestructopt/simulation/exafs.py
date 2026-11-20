@@ -816,18 +816,24 @@ class EXAFS(BaseSimulation):
     if not os.path.isdir(self.folder):
       raise ASOSimulationException(f"Folder {self.folder} was deleted")
 
-    for i in range(len(self.inds)):
-      new_abs_folder = os.path.join(self.folder, str(i))
-      if os.path.isfile(os.path.join(new_abs_folder, "FEFF_FAILED")):
-        raise ASOSimulationException(f"FEFF failed in {new_abs_folder}")
-      if not os.path.isfile(os.path.join(new_abs_folder, "DONE")):
-        return False
+    abs_folders = [os.path.join(self.folder, str(i))
+      for i in range(len(self.inds))]
 
-    if self.sbatch_md_template is not None:
-      if os.path.isfile(os.path.join(self.folder, "MD_FAILED")):
-        raise ASOSimulationException(f"MD failed in {self.folder}")
-      if not os.path.isfile(os.path.join(self.folder, "MD_DONE")):
-        return False
+    # Check every failure marker first, so a failure is reported even while
+    # other jobs for this structure are still running
+    if self.sbatch_md_template is not None and os.path.isfile(
+      os.path.join(self.folder, "MD_FAILED")):
+      raise ASOSimulationException(f"MD failed in {self.folder}")
+    for abs_folder in abs_folders:
+      if os.path.isfile(os.path.join(abs_folder, "FEFF_FAILED")):
+        raise ASOSimulationException(f"FEFF failed in {abs_folder}")
+
+    if not all(os.path.isfile(os.path.join(abs_folder, "DONE"))
+      for abs_folder in abs_folders):
+      return False
+    if self.sbatch_md_template is not None and not os.path.isfile(
+      os.path.join(self.folder, "MD_DONE")):
+      return False
 
     return True
 
