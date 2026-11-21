@@ -75,11 +75,12 @@ def save_samples_to_file(config, initial_structure, N, filename):
     last_print[0] = time.time()
     _print_progress(len(structures), N, constraint_names, constraint_counts,
       start_time)
+    # Saved after every acceptance, so a job that hits its time limit keeps
+    # the structures accepted so far
+    out_dict = {'structures': [s.as_dict() for s in structures]}
+    with open(filename, "w") as file:
+      json.dump(out_dict, file)
 
-  out_dict = {'structures': [s.as_dict() for s in structures]}
-  with open(filename, "w") as file: 
-    json.dump(out_dict, file)
-  
 
 def reorder_like(structure: IStructure, reference: IStructure) -> Structure:
   """Returns structure with its sites reordered so that each site has the same
