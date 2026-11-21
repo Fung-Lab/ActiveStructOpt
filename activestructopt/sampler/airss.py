@@ -17,7 +17,7 @@ class AIRSS(BaseSampler):
     constraints: list[BaseConstraint], sampling_dir = None,
     airss_bin = None,
     perturb_lattice = True, relax_fmax = 0.1, relax_steps = 500,
-    relax_cell = True) -> None:
+    relax_cell = True, volume_range = 0.2) -> None:
     if not perturb_lattice:
       raise NotImplementedError
     self.airss_bin = airss_bin
@@ -45,6 +45,20 @@ class AIRSS(BaseSampler):
         raise ValueError(f"Non-integer amount for {key}: {value}")
       build_cell_data += f'{key}  0.0  0.0  0.0  # {key} % NUM={int(count)}\n'
     build_cell_data += '%ENDBLOCK POSITIONS_FRAC\n\n'
+
+    # Target the starting structure's density, allowing +/- volume_range of it.
+    # buildcell's volume is per row of the POSITIONS block, before the rows are
+    # expanded by NUM, so the per-atom volume is multiplied by the number of
+    # rows (one per species here). See
+    # https://zhubonan.com/blog/2026/setting-volume-in-airss-buildcell/
+    targvol = initial_structure.volume / len(initial_structure) * len(
+      comp_dict)
+    if volume_range > 0:
+      build_cell_data += (
+        f'#TARGVOL={targvol * (1 - volume_range):.4f}' +
+        f'-{targvol * (1 + volume_range):.4f}\n')
+    else:
+      build_cell_data += f'#TARGVOL={targvol:.4f}\n'
 
     for constraint in constraints:
       if isinstance(constraint, LennardJonesRepulsion):
