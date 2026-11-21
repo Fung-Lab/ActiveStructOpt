@@ -6,9 +6,10 @@ import numpy as np
 import json
 import time
 
-def _count_hard_constraint_calls(constraint, counts):
+def _count_hard_constraint_calls(constraint, counts, on_check = None):
   """Wraps constraint.hard_constraint on the instance, so the constraint keeps
-  its class, to count how many structures it checks and rejects."""
+  its class, to count how many structures it checks and rejects. on_check, if
+  given, is called after each check."""
   hard_constraint = constraint.hard_constraint
 
   def counted_hard_constraint(structure, **kwargs):
@@ -16,6 +17,8 @@ def _count_hard_constraint_calls(constraint, counts):
     rejected = hard_constraint(structure, **kwargs)
     if rejected:
       counts['rejected'] += 1
+    if on_check is not None:
+      on_check()
     return rejected
 
   constraint.hard_constraint = counted_hard_constraint
@@ -40,11 +43,24 @@ def save_samples_to_file(config, initial_structure, N, filename):
   sampler_constraints = []
   constraint_names = []
   constraint_counts = []
+  structures = []
+  start_time = time.time()
+  # Progress is also printed while structures are being rejected, at most once
+  # per progress_interval seconds, so a run that accepts nothing shows why
+  progress_interval = 60
+  last_print = [start_time]
+
+  def maybe_print_progress():
+    if time.time() - last_print[0] >= progress_interval:
+      last_print[0] = time.time()
+      _print_progress(len(structures), N, constraint_names, constraint_counts,
+        start_time)
+
   for constraint_config in config['aso_params']['sampler_constraints']:
     constraint_cls = registry.get_constraint_class(constraint_config['name'])
     constraint = constraint_cls(**(constraint_config['args']))
     counts = {'checked': 0, 'rejected': 0}
-    _count_hard_constraint_calls(constraint, counts)
+    _count_hard_constraint_calls(constraint, counts, maybe_print_progress)
     sampler_constraints.append(constraint)
     constraint_names.append(constraint_config['name'])
     constraint_counts.append(counts)
@@ -54,10 +70,9 @@ def save_samples_to_file(config, initial_structure, N, filename):
   sampler = sampler_cls(initial_structure, sampler_constraints,
     **(config['aso_params']['sampler']['args']))
 
-  start_time = time.time()
-  structures = []
   for _ in range(N):
     structures.append(sampler.sample())
+    last_print[0] = time.time()
     _print_progress(len(structures), N, constraint_names, constraint_counts,
       start_time)
 
