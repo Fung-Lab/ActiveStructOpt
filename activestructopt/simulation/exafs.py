@@ -582,8 +582,16 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
       for si in range(sc_sf):
         path_inds_abs_nseg[:, si, :] *= abs_ind + si * nprim
 
-      path_shifts_abs_nseg = np.zeros((len(nsegs_is), sc_sf, 
+      path_shifts_abs_nseg = np.zeros((len(nsegs_is), sc_sf,
         nseg + 2, 3))
+
+      # This absorber may have no paths with this number of legs (nsegsmax
+      # is taken over all absorbers), so keep placeholders to stay aligned
+      if len(nsegs_is) == 0:
+        path_inds_abs.append(path_inds_abs_nseg)
+        path_shift_dists_abs.append(np.diff(path_shifts_abs_nseg, axis=-2))
+        nseg_inds.append(nsegs_is)
+        continue
 
       targets = []
       locations = []
@@ -667,6 +675,8 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
       positions = md_coords[(frame_start - first_frame):(frame_stop - first_frame)]
 
       for nseg in np.arange(1, nsegsmax + 1):
+        if len(nseg_inds[nseg - 1]) == 0:
+          continue
         path_coords = positions[:, path_inds_abs[nseg - 1], :]
         dR = np.diff(path_coords, axis=-2)
         del path_coords
