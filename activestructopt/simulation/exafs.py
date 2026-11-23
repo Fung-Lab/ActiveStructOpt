@@ -198,23 +198,167 @@ def autobk_lmfit(energy, mu, ek0, edge_step, std_de = None,
     knots, coefs, order, kout)
   return chi / edge_step
 
+BOHR = 0.529177249  # Angstrom, as in FEFF's rdfbin.f90
+
+class FeffPath:
+  """
+  The subset of a FEFF path (as in feffNNNN.dat) used in this module,
+  with all quantities in Angstrom units.
+
+  positions: (nleg, 3) atom positions along the path, absorber at the origin.
+    Rows 0..nleg-2 are the scatterers in order, and the last row is the
+    absorber (same ordering as larch's FeffDatFile.geometry).
+  k, amp, pha, lam, rep: same as larch's FeffDatFile attributes.
+  """
+  def __init__(self, index, nleg, degen, reff, abs_Z, positions,
+    k, amp, pha, lam, rep):
+    self.index = index
+    self.nleg = nleg
+    self.degen = degen
+    self.reff = reff
+    self.abs_Z = abs_Z
+    self.positions = positions
+    self.k = k
+    self.amp = amp
+    self.pha = pha
+    self.lam = lam
+    self.rep = rep
+
+def _unpad(s, npack):
+  """
+  Decode a string of concatenated Packed Ascii Data (PAD) numbers, each
+  npack characters long. Vectorized port of unpad from feff10's padlib.f90.
+  """
+  c = np.frombuffer(s.encode('ascii'), dtype = np.uint8).reshape(
+    -1, npack).astype(np.int64) - 37
+  iexp = c[:, 0] - 45
+  isgn = (c[:, 1] % 2) * 2 - 1
+  total = (c[:, 1] // 2) / 90.0 ** 2
+  for i in range(npack - 1, 1, -1):
+    total += c[:, i] / 90.0 ** (i + 1)
+  return 2 * isgn * 90 * total * 10.0 ** iexp
+
+class _FeffBinReader:
+  def __init__(self, filename):
+    with open(filename, 'r') as f:
+      self.lines = [line.strip() for line in f]
+    self.i = 0
+
+  def next_line(self):
+    line = self.lines[self.i]
+    self.i += 1
+    return line
+
+  def done(self):
+    while self.i < len(self.lines) and self.lines[self.i] == '':
+      self.i += 1
+    return self.i >= len(self.lines)
+
+  def read_pad(self, npack, npts, is_complex = False):
+    """Port of rdpadr/rdpadc from feff10's padlib.f90"""
+    marker = '$' if is_complex else '!'
+    width = 2 * npack if is_complex else npack
+    chunks = []
+    nread = 0
+    while nread < npts:
+      line = self.next_line()
+      nline = (len(line) - 1) // width
+      if line[:1] != marker or nline <= 0:
+        raise ASOSimulationException(f'Bad PAD data in feff.bin: {line}')
+      chunks.append(line[1:1 + nline * width])
+      nread += nline
+    values = _unpad(''.join(chunks), npack)
+    if is_complex:
+      values = values[0::2] + 1j * values[1::2]
+    return values[:npts]
+
+def _get_ne1(abs_dir, xk):
+  """
+  Number of energy points on the main (real) axis, which is what FEFF
+  writes to feffNNNN.dat. Read from phase.bin if present; otherwise, use
+  the points before xk stops increasing (where the other contours start).
+  """
+  phase_bin = os.path.join(abs_dir, 'phase.bin')
+  if os.path.isfile(phase_bin):
+    with open(phase_bin, 'r') as f:
+      return int(f.readline().split()[2])
+  nonincreasing = np.flatnonzero(np.diff(xk) <= 0)
+  return len(xk) if len(nonincreasing) == 0 else nonincreasing[0] + 1
+
+def read_feff_bin(abs_dir, filename = 'feff.bin'):
+  """
+  Read the paths in feff.bin, following rdfbin.f90 from feff10, and
+  convert them to the quantities feffdt.f90 writes to feffNNNN.dat.
+  """
+  reader = _FeffBinReader(os.path.join(abs_dir, filename))
+
+  line = reader.next_line()
+  if not line.startswith('#_feff.bin v03'):
+    raise ASOSimulationException(f'Unsupported feff.bin version: {line}')
+  npot, ne, npack = [int(x) for x in reader.next_line()[2:].split()[:3]]
+  reader.next_line() # '#=' ihole, iorder, ilinit, rnrmav, xmu, edge
+  words = reader.next_line()[2:].split()
+  iz = [int(x) for x in words[npot + 1:2 * npot + 2]]
+
+  reader.read_pad(npack, ne, is_complex = True) # central atom phase shifts
+  ck = reader.read_pad(npack, ne, is_complex = True)
+  xk = reader.read_pad(npack, ne)
+
+  ne1 = _get_ne1(abs_dir, xk)
+  ck = ck[:ne1]
+  xk = xk[:ne1]
+
+  # Quantities shared by all paths, as in feffdt.f90
+  k = xk / BOHR
+  rep = ck.real / BOHR
+  xlam = np.full(ne1, 1.0e10)
+  absorbing = np.abs(ck.imag) > 1.0e-16
+  xlam[absorbing] = 1 / ck.imag[absorbing]
+  lam = xlam * BOHR
+
+  paths = []
+  while not reader.done():
+    line = reader.next_line()
+    if not line.startswith('##'):
+      raise ASOSimulationException(f'Bad path header in feff.bin: {line}')
+    words = line[2:].split()
+    index = int(words[0])
+    nleg = int(words[1])
+    degen = float(words[2])
+    reff = float(words[3]) # Angstrom
+    ipot = [int(x) for x in words[5:5 + nleg]]
+
+    rat = reader.read_pad(npack, 3 * nleg).reshape(nleg, 3) * BOHR
+    reader.read_pad(npack, nleg) # beta
+    reader.read_pad(npack, nleg) # eta
+    reader.read_pad(npack, nleg) # ri
+    achi = reader.read_pad(npack, ne)[:ne1]
+    phchi = reader.read_pad(npack, ne)[:ne1]
+
+    # amp = mag[feff] * red factor and pha = real[2*phc] + phase[feff],
+    # in which the central atom terms cancel
+    cchi = achi * np.exp(1j * phchi)
+    reff_bohr = reff / BOHR
+    amp = (np.abs(cchi * xk) * reff_bohr ** 2 *
+      np.exp(2 * reff_bohr / xlam) * BOHR)
+    pha = np.angle(cchi)
+    pha[np.abs(cchi) < 1.0e-16] = 0.0
+    pha = np.unwrap(pha)
+
+    paths.append(FeffPath(index, nleg, degen, reff, iz[ipot[-1]], rat,
+      k, amp, pha, lam, rep))
+
+  paths.sort(key = lambda p: p.index)
+  return paths
+
 def get_paths(sim_dir):
-  try:
-    from larch.xafs import feffpath
-  except ImportError as e:
-    raise ImportError('Error loading xraylarch') from e
   subdirs = sorted(
     (s for s in os.listdir(sim_dir)
       if s.isdigit()
       and os.path.isdir(os.path.join(sim_dir, s))),
     key=int)
-  feffdat_files = [np.sort([s for s in os.listdir(
-    f'{sim_dir}/{sub_dir}') if s[:4] == 'feff' and s[-4:] == '.dat']
+  return [read_feff_bin(os.path.join(sim_dir, sub_dir)
     ) for sub_dir in subdirs]
-  feffpaths = [[feffpath(f'{sim_dir}/{subdirs[i]}/{feffdat_files[i][j]}'
-    ) for j in range(len(feffdat_files[i])
-    )] for i in range(len(feffdat_files))]
-  return feffpaths
 
 def _interp_paths(q, feffk, values):
   """
@@ -392,8 +536,7 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
   nabs = len(sim_data)
   sc_sf = np.sum(traj[0].get_atomic_numbers() == abs_Z) // nabs
   nprim = len(traj[0]) // sc_sf
-  nsegs = [np.array([len(
-    sim_data[i][j]._feffdat.geom) - 1 for j in range(
+  nsegs = [np.array([sim_data[i][j].nleg - 1 for j in range(
     len(sim_data[i]))]) for i in range(len(sim_data))]
   nsegsmax = np.max(np.concatenate(nsegs))
   abs_inds = np.where(traj[0].get_atomic_numbers() == abs_Z)[0][:nabs]
@@ -447,10 +590,10 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
       locations = []
 
       for fi, fp in enumerate(nsegs_is):
-        geom = sim_data[abs_i][fp]._feffdat.geometry
+        geom = sim_data[abs_i][fp].positions
 
         for leg_i in range(nseg):
-          disp = np.asarray(geom[leg_i][3:6], dtype=np.float64)
+          disp = geom[leg_i]
 
           for si in range(sc_sf):
             center_index = abs_ind + si * nprim
@@ -501,11 +644,10 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
     
     Reffs_abs = np.zeros(len(sim_data[abs_i]))
     for fi, fp in enumerate(sim_data[abs_i]):
-      geom = fp._feffdat.geometry
-      Reffs_abs[fi] = np.linalg.norm(np.array(geom[0][3:6]))
+      geom = fp.positions
+      Reffs_abs[fi] = np.linalg.norm(geom[0])
       for i in range(len(geom) - 1):
-        Reffs_abs[fi] += np.linalg.norm(np.array(
-          geom[i+1][3:6]) - np.array(geom[i][3:6]))
+        Reffs_abs[fi] += np.linalg.norm(geom[i+1] - geom[i])
       Reffs_abs[fi] /= 2
 
     npaths = len(sim_data[abs_i])
@@ -605,15 +747,15 @@ def get_aligned_sim(sim, exp_g, traj, kmin_fit = 3.0, kmax_fit = 12.0,
     from lmfit import Parameters, Minimizer
   except ImportError as e:
     raise ImportError('Error loading lmfit') from e
-  degens = [np.array([sim[i][j]._feffdat.degen for j in range(len(sim[i]))]
+  degens = [np.array([sim[i][j].degen for j in range(len(sim[i]))]
     ) for i in range(len(sim))]
-  feffk = sim[0][0]._feffdat.k
-  abs_Z = sim[0][0]._feffdat.geom[0][1]
+  feffk = sim[0][0].k
+  abs_Z = sim[0][0].abs_Z
   Reffs, deltar, sigma2, third, fourth = get_kstats_from_traj(traj, sim, abs_Z)
-  amp = [np.array([path._feffdat.amp for path in abs_data]) for abs_data in sim]
-  pha = [np.array([path._feffdat.pha for path in abs_data]) for abs_data in sim]
-  lam = [np.array([path._feffdat.lam for path in abs_data]) for abs_data in sim]
-  rep = [np.array([path._feffdat.rep for path in abs_data]) for abs_data in sim]
+  amp = [np.array([path.amp for path in abs_data]) for abs_data in sim]
+  pha = [np.array([path.pha for path in abs_data]) for abs_data in sim]
+  lam = [np.array([path.lam for path in abs_data]) for abs_data in sim]
+  rep = [np.array([path.rep for path in abs_data]) for abs_data in sim]
 
   kstart = index_of(exp_g.k, kmin_fit)
   kstop = index_of(exp_g.k, kmax_fit)
