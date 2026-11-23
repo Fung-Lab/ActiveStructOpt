@@ -12,7 +12,7 @@ class KFoldsDataset(BaseDataset):
   def __init__(self, simulations: list[BaseSimulation], sampler: BaseSampler, 
     initial_structure: IStructure, targets, config, N = 100, split = 0.85, 
     k = 5, seed = 0, progress_dict = None, max_sim_calls = 5, sim_time_limit = 60 * 180,
-    **kwargs) -> None:
+    garbage_collect = True, **kwargs) -> None:
     np.random.seed(seed)
     self.config = config
     self.targets = targets
@@ -23,6 +23,9 @@ class KFoldsDataset(BaseDataset):
     self.simfuncs = simulations
     # Seconds to wait for a simulation, or None to wait indefinitely
     self.sim_time_limit = sim_time_limit
+    # Whether to let simulations delete their files once they are no longer
+    # needed (e.g. failed or non-best EXAFS run folders)
+    self.garbage_collect = garbage_collect
 
     if progress_dict is None:
       self.structures = [initial_structure.copy(
@@ -58,9 +61,9 @@ class KFoldsDataset(BaseDataset):
                     if self.mismatches[j][i] <= np.nanmin(self.mismatches[j]):
                       for k in range(self.N):
                         if self.ys[j][k] is not None and i != k:
-                          y_promises[j][k].garbage_collect(False)
+                          self.gc_sim(y_promises[j][k], False)
                     else:
-                      y_promises[j][i].garbage_collect(False)
+                      self.gc_sim(y_promises[j][i], False)
                   elif self.time_limit_exceeded(sim_timers[i]):
                     raise ASOSimulationException('Simulation exceeded time limit')
             except ASOSimulationException as e:
@@ -72,7 +75,7 @@ class KFoldsDataset(BaseDataset):
                 for j in range(len(self.simfuncs)):
                   self.ys[j][i] = None
                   self.mismatches[j][i] = np.nan
-                  y_promises[j][i].garbage_collect(False)
+                  self.gc_sim(y_promises[j][i], False)
                   y_promises[j][i] = copy.deepcopy(self.simfuncs[j])
                   time.sleep(5)
                   y_promises[j][i].get(self.structures[i], group = True, 
@@ -105,6 +108,10 @@ class KFoldsDataset(BaseDataset):
       self.test_indices = np.array(progress_dict['test_indices'])
       self.mismatches = progress_dict['mismatches']
 
+  def gc_sim(self, y_promise, is_better):
+    if self.garbage_collect:
+      y_promise.garbage_collect(is_better)
+
   def time_limit_exceeded(self, sim_timer):
     return self.sim_time_limit is not None and sim_timer > self.sim_time_limit
 
@@ -127,12 +134,12 @@ class KFoldsDataset(BaseDataset):
             y = y_promises[j].resolve()
           except ASOSimulationException:
             for gc_j in range(len(self.simfuncs)):
-              y_promises[gc_j].garbage_collect(False)
+              self.gc_sim(y_promises[gc_j], False)
             raise ASOSimulationException
           new_ys[j] = y
           new_mismatch = self.simfuncs[j].get_mismatch(y, self.targets[j])
           new_mismatches[j] = new_mismatch
-          y_promises[j].garbage_collect(new_mismatch <= min(self.mismatches[j]))
+          self.gc_sim(y_promises[j], new_mismatch <= min(self.mismatches[j]))
           sims_done[j] = True
         elif self.time_limit_exceeded(sim_timer):
           raise ASOSimulationException('Simulation exceeded time limit')
