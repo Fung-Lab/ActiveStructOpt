@@ -200,49 +200,29 @@ def autobk_lmfit(energy, mu, ek0, edge_step, std_de = None,
 
 BOHR = 0.529177249  # Angstrom, as in FEFF's rdfbin.f90
 
-class FeffPaths:
+class FeffPath:
   """
-  All FEFF paths for one absorber. Quantities are in Angstrom units and
-  match those in feffNNNN.dat / larch's FeffDatFile.
+  The subset of a FEFF path (as in feffNNNN.dat) used in this module,
+  with all quantities in Angstrom units.
 
-  Paths are sorted by number of segments (scatterers, nleg - 1), then by
-  path index, so the paths with each number of segments are contiguous.
-
-  All paths, in that order:
-    index, nleg, degen, reff: (npaths,)
-    amp, pha: (npaths, nk)
-  Shared by all paths (FEFF computes these independent of the path):
-    k, lam, rep: (nk,)
-  Grouped by number of segments, for each unique nseg (ascending):
-    nsegs: (ngroups,) the unique numbers of segments
-    slices: slice of each group into the all-path arrays above
-    positions: (n paths in group, nseg + 1, 3) atom positions along each
-      path, with the absorber at the origin. Rows 0..nseg-1 are the
-      scatterers in order and the last row is the absorber (same ordering
-      as larch's FeffDatFile.geometry).
+  positions: (nleg, 3) atom positions along the path, absorber at the origin.
+    Rows 0..nleg-2 are the scatterers in order, and the last row is the
+    absorber (same ordering as larch's FeffDatFile.geometry).
+  k, amp, pha, lam, rep: same as larch's FeffDatFile attributes.
   """
-  def __init__(self, abs_Z, index, nleg, degen, reff, amp, pha,
-    k, lam, rep, nsegs, slices, positions):
-    self.abs_Z = abs_Z
+  def __init__(self, index, nleg, degen, reff, abs_Z, positions,
+    k, amp, pha, lam, rep):
     self.index = index
     self.nleg = nleg
     self.degen = degen
     self.reff = reff
+    self.abs_Z = abs_Z
+    self.positions = positions
+    self.k = k
     self.amp = amp
     self.pha = pha
-    self.k = k
     self.lam = lam
     self.rep = rep
-    self.nsegs = nsegs
-    self.slices = slices
-    self.positions = positions
-
-  def __len__(self):
-    return len(self.index)
-
-  def groups(self):
-    """Iterate over (nseg, slice into all-path arrays, positions)."""
-    return zip(self.nsegs, self.slices, self.positions)
 
 def _unpad(s, npack):
   """
@@ -336,9 +316,7 @@ def read_feff_bin(abs_dir, filename = 'feff.bin'):
   xlam[absorbing] = 1 / ck.imag[absorbing]
   lam = xlam * BOHR
 
-  indices, nlegs, degens, reffs, positions, amps, phas = (
-    [], [], [], [], [], [], [])
-  abs_Z = None
+  paths = []
   while not reader.done():
     line = reader.next_line()
     if not line.startswith('##'):
@@ -366,41 +344,11 @@ def read_feff_bin(abs_dir, filename = 'feff.bin'):
     # safe to interpolate. Like feffdt, start in (-pi, pi]
     pha = phchi - 2 * np.pi * np.round(phchi[0] / (2 * np.pi))
 
-    abs_Z = iz[ipot[-1]]
-    indices.append(index)
-    nlegs.append(nleg)
-    degens.append(degen)
-    reffs.append(reff)
-    positions.append(rat)
-    amps.append(amp)
-    phas.append(pha)
+    paths.append(FeffPath(index, nleg, degen, reff, iz[ipot[-1]], rat,
+      k, amp, pha, lam, rep))
 
-  if len(indices) == 0:
-    raise ASOSimulationException(f'No paths in {filename} in {abs_dir}')
-
-  # Sort by number of segments, then path index
-  order = np.lexsort((indices, nlegs))
-  nleg = np.array(nlegs, dtype = np.int64)[order]
-  nlegs_unique, starts, counts = np.unique(nleg, return_index = True,
-    return_counts = True)
-  slices = [slice(start, start + count)
-    for start, count in zip(starts, counts)]
-  grouped_positions = [np.stack([positions[j] for j in order[s]])
-    for s in slices]
-
-  return FeffPaths(abs_Z,
-    index = np.array(indices, dtype = np.int64)[order],
-    nleg = nleg,
-    degen = np.array(degens)[order],
-    reff = np.array(reffs)[order],
-    amp = np.stack(amps)[order],
-    pha = np.stack(phas)[order],
-    k = k,
-    lam = lam,
-    rep = rep,
-    nsegs = nlegs_unique - 1,
-    slices = slices,
-    positions = grouped_positions)
+  paths.sort(key = lambda p: p.index)
+  return paths
 
 def get_paths(sim_dir):
   subdirs = sorted(
@@ -411,13 +359,13 @@ def get_paths(sim_dir):
   return [read_feff_bin(os.path.join(sim_dir, sub_dir)
     ) for sub_dir in subdirs]
 
-def _interp_weights(q, feffk):
+def _interp_paths(q, feffk, values):
   """
-  Indices and weights so that _interp(values, ...) is equivalent to
-  np.interp(q, feffk, values) along the last axis of values.
+  Vectorized equivalent of: np.interp(q, feffk, values[i])
   ----------
   q : (n_k,) array
   feffk : (n_feff_k,) array
+  values : (n_paths, n_feff_k) array
   """
   q_clipped = np.clip(q, feffk[0], feffk[-1])
   inds = np.searchsorted(feffk, q_clipped, side='right')
@@ -425,20 +373,12 @@ def _interp_weights(q, feffk):
   left = inds - 1
   right = inds
   weight = ((q_clipped - feffk[left]) / (feffk[right] - feffk[left]))
-  return left, right, weight
-
-def _interp(values, left, right, weight):
-  """values : (..., n_feff_k) array -> (..., n_k) array"""
-  return values[..., left] * (1.0 - weight) + values[..., right] * weight
+  return values[:, left] * (1.0 - weight)[None, :] + values[:, right] * weight[None, :]
 
 
 def get_absorber_spectra(feffk, Reffs, degen, deltar, sigma2, third, 
   fourth, pha, amp, rep, lam, e0, ei, s02, k):
-  """
-  Calculate the summed chi(k) for all paths simultaneously.
-  pha, amp are (n_paths, n_feff_k); rep, lam are shared by all paths, so
-  can be (n_feff_k,) (or (n_paths, n_feff_k)).
-  """
+  """Calculate the summed chi(k) for all paths simultaneously."""
   try:
     from larch.xafs.xafsutils import ETOK
   except ImportError as e:
@@ -457,11 +397,10 @@ def get_absorber_spectra(feffk, Reffs, degen, deltar, sigma2, third,
   q = np.sign(en) * np.sqrt(np.abs(en))
 
   # Look up FEFF values for every path and k value.
-  interp_args = _interp_weights(q, feffk)
-  pha = _interp(pha, *interp_args)
-  amp = _interp(amp, *interp_args)
-  rep = _interp(rep, *interp_args)
-  lam = _interp(lam, *interp_args)
+  pha = _interp_paths(q, feffk, pha)
+  amp = _interp_paths(q, feffk, amp)
+  rep = _interp_paths(q, feffk, rep)
+  lam = _interp_paths(q, feffk, lam)
 
   # Complex wavenumber.
   pp = (rep + 1j / lam) ** 2 + 1j * ei * ETOK
@@ -596,6 +535,9 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
   nabs = len(sim_data)
   sc_sf = np.sum(traj[0].get_atomic_numbers() == abs_Z) // nabs
   nprim = len(traj[0]) // sc_sf
+  nsegs = [np.array([sim_data[i][j].nleg - 1 for j in range(
+    len(sim_data[i]))]) for i in range(len(sim_data))]
+  nsegsmax = np.max(np.concatenate(nsegs))
   abs_inds = np.where(traj[0].get_atomic_numbers() == abs_Z)[0][:nabs]
   lattice = starting_struct.lattice.matrix
 
@@ -632,23 +574,22 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
   for abs_i, abs_ind in enumerate(abs_inds):
     path_inds_abs = []
     path_shift_dists_abs = []
-    nseg_inds = []
-    Reffs_abs = np.zeros(len(sim_data[abs_i]))
-    for nseg, path_slice, group_positions in sim_data[abs_i].groups():
-      ngroup = len(group_positions)
-      path_inds_abs_nseg = np.ones((ngroup, sc_sf,
+    nseg_inds = [] 
+    for nseg in np.arange(1, nsegsmax + 1):
+      nsegs_is = np.where(nsegs[abs_i] == nseg)[0]
+      path_inds_abs_nseg = np.ones((len(nsegs_is), sc_sf, 
         nseg + 2), dtype = np.int64)
       for si in range(sc_sf):
         path_inds_abs_nseg[:, si, :] *= abs_ind + si * nprim
 
-      path_shifts_abs_nseg = np.zeros((ngroup, sc_sf,
+      path_shifts_abs_nseg = np.zeros((len(nsegs_is), sc_sf, 
         nseg + 2, 3))
 
       targets = []
       locations = []
 
-      for fi in range(ngroup):
-        geom = group_positions[fi]
+      for fi, fp in enumerate(nsegs_is):
+        geom = sim_data[abs_i][fp].positions
 
         for leg_i in range(nseg):
           disp = geom[leg_i]
@@ -698,13 +639,15 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
 
       path_inds_abs.append(path_inds_abs_nseg)
       path_shift_dists_abs.append(np.diff(path_shifts_abs_nseg, axis=-2))
-      nseg_inds.append(path_slice)
-
-      # Half the closed path length: absorber (origin) -> scatterers ->
-      # absorber (last row of positions)
-      Reffs_abs[path_slice] = (np.linalg.norm(group_positions[:, 0],
-        axis = -1) + np.linalg.norm(np.diff(group_positions, axis = 1),
-        axis = -1).sum(axis = 1)) / 2
+      nseg_inds.append(nsegs_is)
+    
+    Reffs_abs = np.zeros(len(sim_data[abs_i]))
+    for fi, fp in enumerate(sim_data[abs_i]):
+      geom = fp.positions
+      Reffs_abs[fi] = np.linalg.norm(geom[0])
+      for i in range(len(geom) - 1):
+        Reffs_abs[fi] += np.linalg.norm(geom[i+1] - geom[i])
+      Reffs_abs[fi] /= 2
 
     npaths = len(sim_data[abs_i])
     frame_batch_size = 250
@@ -723,14 +666,14 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
 
       positions = md_coords[(frame_start - first_frame):(frame_stop - first_frame)]
 
-      for group_i in range(len(path_inds_abs)):
-        path_coords = positions[:, path_inds_abs[group_i], :]
+      for nseg in np.arange(1, nsegsmax + 1):
+        path_coords = positions[:, path_inds_abs[nseg - 1], :]
         dR = np.diff(path_coords, axis=-2)
         del path_coords
-        dR += path_shift_dists_abs[group_i][None]
+        dR += path_shift_dists_abs[nseg - 1][None]
 
         # Shape: (nframes_batch, npaths, sc_sf)
-        path_lengths[:nframes_batch, nseg_inds[group_i], :] = (
+        path_lengths[:nframes_batch, nseg_inds[nseg - 1], :] = (
           np.sqrt(np.einsum("...i,...i->...", dR, dR))
           .sum(axis=-1)
           / 2
@@ -803,14 +746,15 @@ def get_aligned_sim(sim, exp_g, traj, kmin_fit = 3.0, kmax_fit = 12.0,
     from lmfit import Parameters, Minimizer
   except ImportError as e:
     raise ImportError('Error loading lmfit') from e
-  degens = [abs_data.degen for abs_data in sim]
-  feffk = sim[0].k
-  abs_Z = sim[0].abs_Z
+  degens = [np.array([sim[i][j].degen for j in range(len(sim[i]))]
+    ) for i in range(len(sim))]
+  feffk = sim[0][0].k
+  abs_Z = sim[0][0].abs_Z
   Reffs, deltar, sigma2, third, fourth = get_kstats_from_traj(traj, sim, abs_Z)
-  amp = [abs_data.amp for abs_data in sim]
-  pha = [abs_data.pha for abs_data in sim]
-  lam = [abs_data.lam for abs_data in sim]
-  rep = [abs_data.rep for abs_data in sim]
+  amp = [np.array([path.amp for path in abs_data]) for abs_data in sim]
+  pha = [np.array([path.pha for path in abs_data]) for abs_data in sim]
+  lam = [np.array([path.lam for path in abs_data]) for abs_data in sim]
+  rep = [np.array([path.rep for path in abs_data]) for abs_data in sim]
 
   kstart = index_of(exp_g.k, kmin_fit)
   kstop = index_of(exp_g.k, kmax_fit)
