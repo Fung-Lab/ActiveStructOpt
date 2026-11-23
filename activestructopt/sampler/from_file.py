@@ -75,6 +75,8 @@ def save_samples_to_file(config, initial_structure, N, filename):
     last_print[0] = time.time()
     _print_progress(len(structures), N, constraint_names, constraint_counts,
       start_time)
+    if hasattr(sampler, 'n_relax_rejected'):
+      print(f'  relaxation: rejected {sampler.n_relax_rejected}', flush = True)
     # Saved after every acceptance, so a job that hits its time limit keeps
     # the structures accepted so far
     out_dict = {'structures': [s.as_dict() for s in structures]}

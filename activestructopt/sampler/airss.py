@@ -17,7 +17,8 @@ class AIRSS(BaseSampler):
     constraints: list[BaseConstraint], sampling_dir = None,
     airss_bin = None,
     perturb_lattice = True, relax_fmax = 0.1, relax_steps = 500,
-    relax_cell = True, volume_range = 0.2) -> None:
+    relax_cell = True, require_relax_converged = True,
+    volume_range = 0.2) -> None:
     if not perturb_lattice:
       raise NotImplementedError
     self.airss_bin = airss_bin
@@ -36,6 +37,10 @@ class AIRSS(BaseSampler):
     self.relax_fmax = relax_fmax
     self.relax_steps = relax_steps
     self.relax_cell = relax_cell
+    # Reject structures whose relaxation does not reach relax_fmax within
+    # relax_steps, rather than passing on a structure that is not at a minimum
+    self.require_relax_converged = require_relax_converged
+    self.n_relax_rejected = 0
 
     build_cell_data = '%BLOCK POSITIONS_FRAC\n'
     comp_dict = initial_structure.composition.as_dict()
@@ -104,6 +109,7 @@ class AIRSS(BaseSampler):
       if self.relax_calculator is not None:
         new_structure = self.relax(new_structure)
         if new_structure is None:
+          self.n_relax_rejected += 1
           continue
 
       rejected = False
@@ -114,7 +120,8 @@ class AIRSS(BaseSampler):
 
   def relax(self, structure: IStructure):
     """Relaxes the positions (and the cell, if relax_cell) with FIRE. Returns
-    None if the relaxation produced a non-finite position or cell."""
+    None if the relaxation produced a non-finite position or cell, or, if
+    require_relax_converged, if it did not converge."""
     from ase.filters import FrechetCellFilter
     from ase.optimize import FIRE
 
@@ -126,5 +133,12 @@ class AIRSS(BaseSampler):
     if not (np.all(np.isfinite(atoms.positions)) and
       np.all(np.isfinite(atoms.cell.array))):
       return None
+    if self.require_relax_converged:
+      # Same criterion as FIRE's; with the cell filter, this includes the
+      # cell degrees of freedom
+      forces = target.get_forces()
+      if not (np.all(np.isfinite(forces)) and
+        np.max(np.linalg.norm(forces, axis = 1)) <= self.relax_fmax):
+        return None
     atoms.calc = None
     return AseAtomsAdaptor().get_structure(atoms)
