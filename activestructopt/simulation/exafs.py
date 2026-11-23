@@ -337,13 +337,12 @@ def read_feff_bin(abs_dir, filename = 'feff.bin'):
 
     # amp = mag[feff] * red factor and pha = real[2*phc] + phase[feff],
     # in which the central atom terms cancel
-    cchi = achi * np.exp(1j * phchi)
     reff_bohr = reff / BOHR
-    amp = (np.abs(cchi * xk) * reff_bohr ** 2 *
+    amp = (np.abs(achi * xk) * reff_bohr ** 2 *
       np.exp(2 * reff_bohr / xlam) * BOHR)
-    pha = np.angle(cchi)
-    pha[np.abs(cchi) < 1.0e-16] = 0.0
-    pha = np.unwrap(pha)
+    # genfmt already removed 2 pi jumps from phchi, so it is continuous and
+    # safe to interpolate. Like feffdt, start in (-pi, pi]
+    pha = phchi - 2 * np.pi * np.round(phchi[0] / (2 * np.pi))
 
     paths.append(FeffPath(index, nleg, degen, reff, iz[ipot[-1]], rat,
       k, amp, pha, lam, rep))
