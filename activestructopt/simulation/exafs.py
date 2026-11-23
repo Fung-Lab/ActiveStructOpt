@@ -376,9 +376,24 @@ def _interp_paths(q, feffk, values):
   return values[:, left] * (1.0 - weight)[None, :] + values[:, right] * weight[None, :]
 
 
-def get_absorber_spectra(feffk, Reffs, degen, deltar, sigma2, third, 
-  fourth, pha, amp, rep, lam, e0, ei, s02, k):
-  """Calculate the summed chi(k) for all paths simultaneously."""
+def get_absorber_spectra(feffk, Reffs, degen, deltar, avg_factor,
+  pha, amp, rep, lam, e0, ei, s02, k):
+  """
+  Calculate the summed chi(k) for all paths simultaneously, using the
+  configurational average over the MD frames rather than a cumulant
+  expansion. For each path,
+
+    chi(k) = Im[degen * s02 * amp / q
+      * exp(-2 * reff * Im(p) + i * (2 * q * reff + pha))
+      * <exp(2 i p (R - reff)) / R^2>]
+
+  where the average is over the MD distribution of the half path length R,
+  and is split as exp(2 i p deltar) * avg_factor, with deltar = <R> - reff
+  and avg_factor = <exp(2 i p (R - <R>)) / R^2> (from
+  get_path_averages_from_traj, tabulated on feffk). For a Gaussian
+  distribution this reduces to the usual cumulant expression, but unlike the
+  truncated cumulant expansion it is bounded for any distribution.
+  """
   try:
     from larch.xafs.xafsutils import ETOK
   except ImportError as e:
@@ -388,148 +403,56 @@ def get_absorber_spectra(feffk, Reffs, degen, deltar, sigma2, third,
   reff = Reffs[:, None]
   degen = degen[:, None]
   deltar = deltar[:, None]
-  sigma2 = sigma2[:, None]
-  third = third[:, None]
-  fourth =  fourth[:, None]
 
   # Create the E0-shifted energy and wavenumber.
   en = k * k - e0 * ETOK
   q = np.sign(en) * np.sqrt(np.abs(en))
 
-  # Look up FEFF values for every path and k value.
+  # Look up FEFF values (and the MD averages) for every path and k value.
   pha = _interp_paths(q, feffk, pha)
   amp = _interp_paths(q, feffk, amp)
   rep = _interp_paths(q, feffk, rep)
   lam = _interp_paths(q, feffk, lam)
+  avg_factor = _interp_paths(q, feffk, avg_factor)
 
   # Complex wavenumber.
   pp = (rep + 1j / lam) ** 2 + 1j * ei * ETOK
   p = np.sqrt(pp)
 
   # XAFS equation. Arrays have shape (n_paths, n_k).
-  cchi = np.exp(-2 * reff * p.imag - 2 * pp * (
-    sigma2 - pp * fourth / 3) + 1j * (2 * 
-    q[None, :] * reff + pha + 2 * p * (deltar - 
-    2 * sigma2 / reff - 2 * pp * third / 3)))
+  cchi = np.exp(-2 * reff * p.imag + 1j * (2 * q[None, :] * reff + pha
+    + 2 * p * deltar)) * avg_factor
 
-  cchi = (degen * s02 * amp * cchi /
-    (q[None, :] * (reff + deltar)**2))
+  cchi = degen * s02 * amp * cchi / q[None, :]
   cchi[:, 0] = 2 * cchi[:, 1] - cchi[:, 2]
 
   return np.sum(cchi.imag, axis=0)
 
-def get_spectra(feffk, Reffs, degen, deltar, sigma2, third, 
-  fourth, pha, amp, rep, lam, e0, ei, s02, k, avg_spec = True):
-  if avg_spec:
-    return np.mean(np.stack([get_absorber_spectra(feffk, Reffs[i], 
-      degen[i], deltar[i], sigma2[i], third[i], fourth[i], 
-      pha[i], amp[i], rep[i], lam[i], e0, ei, s02, k) for i in range(
-      len(Reffs))]), axis = 0)
-  else:
-    return np.stack([get_absorber_spectra(feffk, Reffs[i], 
-      degen[i], deltar[i], sigma2[i], third[i], fourth[i], 
-      pha[i], amp[i], rep[i], lam[i], e0, ei, s02, k) for i in range(
-      len(Reffs))])
+def get_spectra(feffk, Reffs, degen, deltar, avg_factor,
+  pha, amp, rep, lam, e0, ei, s02, k, avg_spec = True):
+  spectra = np.stack([get_absorber_spectra(feffk, Reffs[i],
+    degen[i], deltar[i], avg_factor[i],
+    pha[i], amp[i], rep[i], lam[i], e0, ei, s02, k) for i in range(
+    len(Reffs))])
+  return np.mean(spectra, axis = 0) if avg_spec else spectra
 
-def merge_moments(n_a, mean_a, M2_a, M3_a, M4_a,
-                n_b, mean_b, M2_b, M3_b, M4_b):
+def _iter_path_lengths(traj, sim_data, abs_Z, first_frame = 401,
+  frame_batch_size = 250):
   """
-  Merge two sets of per-column central moments.
-
-  Mj is the sum of the jth central power, not its mean:
-      M2 = sum((x - mean)**2)
-      M3 = sum((x - mean)**3)
-      M4 = sum((x - mean)**4)
+  Match each FEFF path of each absorber to atoms of the MD supercell, and
+  yield the half path lengths over the MD frames from first_frame on, in
+  batches, as (abs_i, Reffs_abs, path_lengths) with path_lengths of shape
+  (nframes_batch, npaths, sc_sf), one column per supercell replica of the
+  absorber. Batches are yielded absorber by absorber. path_lengths is a view
+  of a buffer that is reused, so it is only valid until the next batch.
   """
-  if n_a == 0:
-    return n_b, mean_b, M2_b, M3_b, M4_b
-
-  if n_b == 0:
-    return n_a, mean_a, M2_a, M3_a, M4_a
-
-  n = n_a + n_b
-  delta = mean_b - mean_a
-
-  n_a_f = float(n_a)
-  n_b_f = float(n_b)
-  n_f = float(n)
-
-  delta2 = delta * delta
-  delta3 = delta2 * delta
-  delta4 = delta2 * delta2
-
-  mean = mean_a + delta * (n_b_f / n_f)
-
-  M2 = (
-    M2_a
-    + M2_b
-    + delta2 * n_a_f * n_b_f / n_f
-  )
-
-  M3 = (
-    M3_a
-    + M3_b
-    + delta3
-    * n_a_f
-    * n_b_f
-    * (n_a_f - n_b_f)
-    / (n_f * n_f)
-    + 3.0
-    * delta
-    * (n_a_f * M2_b - n_b_f * M2_a)
-    / n_f
-  )
-
-  M4 = (
-    M4_a
-    + M4_b
-    + delta4
-    * n_a_f
-    * n_b_f
-    * (
-      n_a_f * n_a_f
-      - n_a_f * n_b_f
-      + n_b_f * n_b_f
-    )
-    / (n_f * n_f * n_f)
-    + 6.0
-    * delta2
-    * (
-      n_a_f * n_a_f * M2_b
-      + n_b_f * n_b_f * M2_a
-    )
-    / (n_f * n_f)
-    + 4.0
-    * delta
-    * (n_a_f * M3_b - n_b_f * M3_a)
-    / n_f
-  )
-
-  return n, mean, M2, M3, M4
-
-def batch_moments(path_lengths):
-  """
-  path_lengths shape:
-      (nframes_batch, npaths, nreplicas)
-  """
-  n = path_lengths.shape[0] * path_lengths.shape[2]
-
-  mean = path_lengths.mean(axis=(0, 2))
-
-  dx = path_lengths - mean[None, :, None]
-  dx2 = dx * dx
-
-  M2 = dx2.sum(axis=(0, 2))
-  M3 = (dx2 * dx).sum(axis=(0, 2))
-  M4 = (dx2 * dx2).sum(axis=(0, 2))
-
-  return n, mean, M2, M3, M4
-
-def get_kstats_from_traj(traj, sim_data, abs_Z):
   try:
     from scipy.spatial import cKDTree
   except ImportError as e:
       raise ImportError('Error loading scipy') from e
+  if len(traj) <= first_frame:
+    raise ASOSimulationException(
+      f'Trajectory has {len(traj)} frames, need more than {first_frame}')
   adaptor = AseAtomsAdaptor()
   starting_struct = adaptor.get_structure(traj[0])
   nabs = len(sim_data)
@@ -540,9 +463,6 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
   nsegsmax = np.max(np.concatenate(nsegs))
   abs_inds = np.where(traj[0].get_atomic_numbers() == abs_Z)[0][:nabs]
   lattice = starting_struct.lattice.matrix
-
-  Reffs = []
-  kstats = []
 
   site_coords = np.asarray(
     starting_struct.cart_coords,
@@ -569,15 +489,14 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
   periodic_shifts = np.repeat(image_shifts, natoms, axis = 0)
 
   periodic_tree = cKDTree(periodic_coords)
-  first_frame = 401
   md_coords = np.stack([traj[i].positions for i in range(first_frame, len(traj))])
   for abs_i, abs_ind in enumerate(abs_inds):
     path_inds_abs = []
     path_shift_dists_abs = []
-    nseg_inds = [] 
+    nseg_inds = []
     for nseg in np.arange(1, nsegsmax + 1):
       nsegs_is = np.where(nsegs[abs_i] == nseg)[0]
-      path_inds_abs_nseg = np.ones((len(nsegs_is), sc_sf, 
+      path_inds_abs_nseg = np.ones((len(nsegs_is), sc_sf,
         nseg + 2), dtype = np.int64)
       for si in range(sc_sf):
         path_inds_abs_nseg[:, si, :] *= abs_ind + si * nprim
@@ -648,7 +567,7 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
       path_inds_abs.append(path_inds_abs_nseg)
       path_shift_dists_abs.append(np.diff(path_shifts_abs_nseg, axis=-2))
       nseg_inds.append(nsegs_is)
-    
+
     Reffs_abs = np.zeros(len(sim_data[abs_i]))
     for fi, fp in enumerate(sim_data[abs_i]):
       geom = fp.positions
@@ -658,14 +577,6 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
       Reffs_abs[fi] /= 2
 
     npaths = len(sim_data[abs_i])
-    frame_batch_size = 250
-
-    count = 0
-    mean = np.zeros(npaths, dtype=np.float64)
-    M2 = np.zeros(npaths, dtype=np.float64)
-    M3 = np.zeros(npaths, dtype=np.float64)
-    M4 = np.zeros(npaths, dtype=np.float64)
-
     path_lengths = np.zeros((frame_batch_size, npaths, sc_sf))
 
     for frame_start in range(first_frame, len(traj), frame_batch_size):
@@ -689,37 +600,104 @@ def get_kstats_from_traj(traj, sim_data, abs_Z):
           / 2
         )
 
-      batch_stats = batch_moments(path_lengths[:nframes_batch, :, :])
+      yield abs_i, Reffs_abs, path_lengths[:nframes_batch]
 
-      count, mean, M2, M3, M4 = merge_moments(
-        count, mean, M2, M3, M4, 
-        *batch_stats)
+def _merge_hists(keys_a, counts_a, keys_b, counts_b):
+  """Merge two sparse histograms given as (sorted unique keys, counts)"""
+  keys, inverse = np.unique(np.concatenate([keys_a, keys_b]),
+    return_inverse = True)
+  counts = np.bincount(inverse.ravel(),
+    weights = np.concatenate([counts_a, counts_b]))
+  return keys, counts
 
-    kstats_abs = np.stack([
-        mean,
-        M2 / (count - 1),
-        count * M3 / ((count - 1) * (count - 2)),
-        (
-          count * (count + 1) * M4
-          - 3 * (count - 1) * M2**2
-        ) / (
-          (count - 1) * (count - 2) * (count - 3)
-        ),
-    ])
-    kstats_abs[0] -= Reffs_abs
-    kstats.append(kstats_abs)
-    Reffs.append(Reffs_abs)
+def get_path_averages_from_traj(traj, sim_data, abs_Z, bin_width = 0.005,
+  chunk_elements = 4_000_000):
+  """
+  Configurational averages over the MD for each path, used in place of the
+  cumulant expansion. Returns (Reffs, deltar, avg_factor), each a list over
+  absorbers:
+    Reffs: (npaths,) half path lengths of the FEFF geometry
+    deltar: (npaths,) <R> - Reffs
+    avg_factor: (npaths, n_feff_k) complex, <exp(2 i p (R - <R>)) / R^2>,
+      on the FEFF k grid of the paths, with p = rep + i / lam the complex
+      wavenumber at that k (ei = 0)
+  where R is the half path length, averaged over frames and supercell
+  replicas of the absorber. The mean phase exp(2 i p deltar) is left out of
+  avg_factor so that what is interpolated in k is smooth.
 
-  deltar = [kstats[i][0, :] for i in range(len(kstats))]
-  sigma2 = [kstats[i][1, :] for i in range(len(kstats))]
-  third  = [kstats[i][2, :] for i in range(len(kstats))]
-  fourth = [kstats[i][3, :] for i in range(len(kstats))]
-  return Reffs, deltar, sigma2, third, fourth
+  The half path lengths are binned into a histogram of width bin_width (Å)
+  per path, which is exact up to a relative error of about
+  (2 k bin_width)^2 / 24 (about 0.1% at k = 16 Å^-1 for 0.005 Å).
+  """
+  # Bins are keyed as path * key_stride + (bin + key_offset), so one sparse
+  # histogram holds all paths of an absorber without knowing their ranges.
+  # Only this running histogram (whose size is set by the number of occupied
+  # bins, not the number of frames) is kept between batches.
+  key_stride = np.int64(2 ** 32)
+  key_offset = np.int64(2 ** 31)
+  nabs = len(sim_data)
+  Reffs = [None] * nabs
+  deltar = [None] * nabs
+  avg_factor = [None] * nabs
 
-def get_sim_spec(params, g, kstart, kstop, feffk, 
-  Reffs, degens, deltar, sigma2, third, fourth, 
+  def finalize(abs_i, keys, hist_counts, sums, count):
+    """Average over the histogram of absorber abs_i"""
+    Reffs_abs = Reffs[abs_i]
+    npaths = len(Reffs_abs)
+    xbar = sums / count
+    weights = hist_counts / count
+    # Sorted by key, so the bins of each path are contiguous
+    path_ids = keys // key_stride
+    x = (keys % key_stride - key_offset + 0.5) * bin_width
+    R = Reffs_abs[path_ids] + x
+    if np.any(R <= 0):
+      raise ASOSimulationException('Non-positive path length in MD')
+
+    p = np.array([path.rep + 1j / path.lam for path in sim_data[abs_i]])
+    nk = p.shape[1]
+    avg_abs = np.zeros((npaths, nk), dtype = np.complex128)
+    chunk = max(1, chunk_elements // nk)
+    for start in range(0, len(keys), chunk):
+      stop = min(start + chunk, len(keys))
+      ids = path_ids[start:stop]
+      vals = (weights[start:stop] / R[start:stop] ** 2)[:, None] * np.exp(
+        2j * (x[start:stop] - xbar[ids])[:, None] * p[ids])
+      uniq, seg_starts = np.unique(ids, return_index = True)
+      avg_abs[uniq] += np.add.reduceat(vals, seg_starts, axis = 0)
+
+    deltar[abs_i] = xbar
+    avg_factor[abs_i] = avg_abs
+
+  # Batches come absorber by absorber, so each absorber is finalized as soon
+  # as its batches end
+  current = None
+  for abs_i, Reffs_abs, path_lengths in _iter_path_lengths(
+    traj, sim_data, abs_Z):
+    if current is None or current[0] != abs_i:
+      if current is not None:
+        finalize(*current)
+      npaths = len(Reffs_abs)
+      Reffs[abs_i] = Reffs_abs
+      current = [abs_i, np.zeros(0, dtype = np.int64), np.zeros(0),
+        np.zeros(npaths), 0]
+    x = path_lengths - Reffs_abs[None, :, None]
+    current[3] += x.sum(axis = (0, 2))
+    current[4] += x.shape[0] * x.shape[2]
+    bins = np.floor(x / bin_width).astype(np.int64)
+    keys = (np.arange(npaths, dtype = np.int64)[None, :, None] * key_stride
+      + bins + key_offset).ravel()
+    batch_keys, batch_counts = np.unique(keys, return_counts = True)
+    current[1], current[2] = _merge_hists(current[1], current[2],
+      batch_keys, batch_counts.astype(np.float64))
+  if current is not None:
+    finalize(*current)
+
+  return Reffs, deltar, avg_factor
+
+def get_sim_spec(params, g, kstart, kstop, feffk,
+  Reffs, degens, deltar, avg_factor,
   pha, amp, rep, lam, avg_spec = True):
-  chi = get_spectra(feffk, Reffs, degens, deltar, sigma2, third, fourth, 
+  chi = get_spectra(feffk, Reffs, degens, deltar, avg_factor,
     pha, amp, rep, lam, params['ΔE0'], 0.0, 1.0, g.k)
   
   scalar = np.linalg.norm(g.k[kstart:kstop] ** 3 * g.chi[kstart:kstop]
@@ -730,16 +708,16 @@ def get_sim_spec(params, g, kstart, kstop, feffk,
     std_de = None, k_std = g.k, chi_std = chi)
 
   if not avg_spec:
-    chi = get_spectra(feffk, Reffs, degens, deltar, sigma2, third, fourth, 
+    chi = get_spectra(feffk, Reffs, degens, deltar, avg_factor,
       pha, amp, rep, lam, params['ΔE0'], 0.0, 1.0, g.k, avg_spec = False)
     chi *= scalar
 
   return chi - fitchi + g.chi
 
 def res_fun_lmfit(params, g, kstart, kstop, kw, feffk, Reffs, degens, 
-  deltar, sigma2, third, fourth, pha, amp, rep, lam):
-  chi = get_sim_spec(params, g, kstart, kstop, 
-      feffk, Reffs, degens, deltar, sigma2, third, fourth, 
+  deltar, avg_factor, pha, amp, rep, lam):
+  chi = get_sim_spec(params, g, kstart, kstop,
+      feffk, Reffs, degens, deltar, avg_factor,
       pha, amp, rep, lam)
   expnorm = g.k[kstart:kstop] ** kw * g.chi[kstart:kstop]
   simnorm = g.k[kstart:kstop] ** kw * chi[kstart:kstop]
@@ -747,7 +725,7 @@ def res_fun_lmfit(params, g, kstart, kstop, kw, feffk, Reffs, degens,
   return dev
 
 def get_aligned_sim(sim, exp_g, traj, kmin_fit = 3.0, kmax_fit = 12.0, 
-  kwfit = 3, kwout = 3):
+  kwfit = 3, kwout = 3, bin_width = 0.005):
   try:
     from larch.math import index_of
   except ImportError as e:
@@ -760,7 +738,8 @@ def get_aligned_sim(sim, exp_g, traj, kmin_fit = 3.0, kmax_fit = 12.0,
     ) for i in range(len(sim))]
   feffk = sim[0][0].k
   abs_Z = sim[0][0].abs_Z
-  Reffs, deltar, sigma2, third, fourth = get_kstats_from_traj(traj, sim, abs_Z)
+  Reffs, deltar, avg_factor = get_path_averages_from_traj(traj, sim, abs_Z,
+    bin_width = bin_width)
   amp = [np.array([path.amp for path in abs_data]) for abs_data in sim]
   pha = [np.array([path.pha for path in abs_data]) for abs_data in sim]
   lam = [np.array([path.lam for path in abs_data]) for abs_data in sim]
@@ -779,18 +758,18 @@ def get_aligned_sim(sim, exp_g, traj, kmin_fit = 3.0, kmax_fit = 12.0,
     p = params.copy()
     p['ΔE0'].set(value=dE0)
     residual = res_fun_lmfit(p, exp_g, kstart, kstop, kwfit,
-      feffk, Reffs, degens, deltar, sigma2, third, fourth, 
+      feffk, Reffs, degens, deltar, avg_factor,
       pha, amp, rep, lam)
     chi2_grid[i] = np.dot(residual, residual)
 
   params['ΔE0'].set(value = dE0_grid[np.argmin(chi2_grid)])
   minner = Minimizer(res_fun_lmfit, params, fcn_args = [
     exp_g, kstart, kstop, kwfit, feffk, Reffs, degens, 
-    deltar, sigma2, third, fourth, pha, amp, rep, lam])
+    deltar, avg_factor, pha, amp, rep, lam])
   result = minner.minimize()
   
   sim_chi = get_sim_spec(result.params, exp_g, kstart, kstop, 
-    feffk, Reffs, degens, deltar, sigma2, third, fourth, 
+    feffk, Reffs, degens, deltar, avg_factor,
     pha, amp, rep, lam, avg_spec = False)
   return sim_chi[:, kstart:kstop] * exp_g.k[None, kstart:kstop] ** kwout
 
