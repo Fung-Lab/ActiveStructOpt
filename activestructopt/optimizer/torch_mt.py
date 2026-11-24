@@ -4,6 +4,7 @@ from activestructopt.objective.base import BaseObjective
 from activestructopt.optimizer.base import BaseOptimizer, select_distinct
 from activestructopt.sampler.base import BaseSampler
 from activestructopt.constraint.base import BaseConstraint
+from activestructopt.energy.base import BaseEnergy
 from activestructopt.common.registry import registry
 from pymatgen.core.structure import IStructure
 from pymatgen.core import Lattice
@@ -23,10 +24,15 @@ class TorchMT(BaseOptimizer):
     optimize_lattice = False, save_obj_values = False,
     pos_lr = 0.001, cell_lr = 0.001, random_starts = False,
     save_only_constrained_structures = False, min_distance = 0.25,
+    energy_model: BaseEnergy = None, energy_scale = 0.0,
     **kwargs) -> list[IStructure]:
     """Returns the best structure found by each start, sorted by objective,
     keeping only the first N that are at least min_distance (Å, see
-    optimizer.base.rms_distance) from each other and the dataset."""
+    optimizer.base.rms_distance) from each other and the dataset.
+
+    If energy_model is given and energy_scale is nonzero, energy_scale times
+    the energy (eV) of each structure is added to its objective."""
+    use_energy = energy_model is not None and energy_scale != 0.0
 
     starting_structures = [sampler.sample(
       ) for _ in range(starts)] if random_starts else [dataset.structures[
@@ -96,13 +102,19 @@ class TorchMT(BaseOptimizer):
             for constraint in constraints:
               constraint_vals += constraint.soft_constraint(batch_data, data_style = 'mt')
 
+            # Calculate Energies
+            energy_vals = energy_scale * energy_model.get(batch_data
+              ) if use_energy else torch.zeros(stopi - starti + 1,
+              device = device)
+
             for j in range(stopi - starti + 1):
               for m in range(len(models)):
-                objs[m][j] += constraint_vals[j] / len(models)
+                objs[m][j] += (constraint_vals[j] + energy_vals[j]
+                  ) / len(models)
                 objs[m][j] = objs[m][j].detach()
                 if save_obj_values:
                   obj_values[m, i, starti + j] = objs[m][j].detach().cpu()
-              obj_total += constraint_vals[j]
+              obj_total += constraint_vals[j] + energy_vals[j]
 
             objs_to_compare = torch.sum(torch.nan_to_num(objs, nan = torch.inf),
               dim = 0)
@@ -126,7 +138,7 @@ class TorchMT(BaseOptimizer):
               obj_total.backward()
               optimizer.step()
 
-            del predictions, objs, obj_total
+            del predictions, objs, obj_total, energy_vals
           predicted = True
         except torch.cuda.OutOfMemoryError:
           split -= 1

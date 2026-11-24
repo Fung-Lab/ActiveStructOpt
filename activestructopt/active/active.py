@@ -126,6 +126,14 @@ class ActiveLearning():
           **(self.configs[i]['aso_params']['model']['args'])) for i in range(
             len(self.simfuncs))]
 
+    # Optional energy model, added to the optimizer objective scaled by the
+    # optimizer's energy_scale
+    self.energy_model = None
+    energy_config = self.configs[0]['aso_params'].get('energy')
+    if energy_config is not None:
+      energy_cls = registry.get_energy_class(energy_config['name'])
+      self.energy_model = energy_cls(**(energy_config.get('args', {})))
+
     self.traceback = None
     self.error = None
     self.model_params_file = 'None'
@@ -304,7 +312,7 @@ class ActiveLearning():
 
     new_structures, obj_values = optimizer_cls().run(self.models,
       self.dataset, objective, self.sampler, self.opt_constraints,
-      N = n_structures,
+      N = n_structures, energy_model = self.energy_model,
       **(self.configs[0]['aso_params']['optimizer']['args']), **(opt_profile))
     self.opt_obj_values.append(obj_values)
 
