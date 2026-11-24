@@ -2,8 +2,7 @@ from activestructopt.common.dataloader import prepare_data_pmg, reprocess_data
 from activestructopt.model.base import BaseModel
 from activestructopt.dataset.base import BaseDataset
 from activestructopt.objective.base import BaseObjective
-from activestructopt.optimizer.base import BaseOptimizer, select_distinct
-from activestructopt.optimizer.torch_mt import to_structure
+from activestructopt.optimizer.base import BaseOptimizer, BestPerStart
 from activestructopt.sampler.base import BaseSampler
 from activestructopt.constraint.base import BaseConstraint
 from activestructopt.common.registry import registry
@@ -40,10 +39,12 @@ class Torch(BaseOptimizer):
     
     device = model.device
     nstarts = len(starting_structures)
-    # Best objective, positions and cell found so far by each start
-    best_objs = torch.full((nstarts,), float('inf'), device = device)
-    best_pos = [None for _ in range(nstarts)]
-    best_cells = [None for _ in range(nstarts)]
+    # Best structures found by each start. The unmodified starts taken from
+    # the dataset are not recorded, as they have already been simulated.
+    best = BestPerStart(nstarts, device,
+      save_only_constrained = save_only_constrained_structures,
+      skip_first = [(not random_starts) and j < dataset.N
+        for j in range(nstarts)])
     target = torch.tensor(dataset.target, device = device)
     
     data = [prepare_data_pmg(s, dataset.config, pos_grad = True, device = device, 
@@ -106,13 +107,9 @@ class Torch(BaseOptimizer):
                 objs_to_compare[j] = torch.inf
 
             # Save Best Value of each start
-            improved = objs_to_compare < best_objs[starti:(stopi+1)]
-            if save_only_constrained_structures:
-              improved = improved & (constraint_vals <= 0.0)
-            for j in torch.nonzero(improved).flatten().tolist():
-              best_objs[starti + j] = objs_to_compare[j].detach()
-              best_pos[starti + j] = data[starti + j].pos.clone().detach()
-              best_cells[starti + j] = data[starti + j].cell[0].clone().detach()
+            best.update(i, starti, objs_to_compare, constraint_vals,
+              [d.pos for d in data[starti:(stopi+1)]],
+              [d.cell[0] for d in data[starti:(stopi+1)]])
 
             if i != iters_per_start - 1:
               obj_total.backward()
@@ -125,11 +122,5 @@ class Torch(BaseOptimizer):
 
     del target, data
 
-    best_objs = best_objs.cpu()
-    order = [j for j in torch.argsort(best_objs).tolist() if
-      best_pos[j] is not None and torch.isfinite(best_objs[j])]
-    candidates = [to_structure(starting_structures[0], best_pos[j],
-      best_cells[j]) for j in order]
-
-    return select_distinct(candidates, dataset.structures, N,
+    return best.select(starting_structures[0], dataset.structures, N,
       min_distance = min_distance), obj_values

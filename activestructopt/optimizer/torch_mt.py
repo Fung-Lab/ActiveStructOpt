@@ -1,7 +1,7 @@
 from activestructopt.model.base import BaseModel
 from activestructopt.dataset.base import BaseDataset
 from activestructopt.objective.base import BaseObjective
-from activestructopt.optimizer.base import BaseOptimizer, select_distinct
+from activestructopt.optimizer.base import BaseOptimizer, BestPerStart
 from activestructopt.sampler.base import BaseSampler
 from activestructopt.constraint.base import BaseConstraint
 from activestructopt.energy.base import BaseEnergy
@@ -44,10 +44,12 @@ class TorchMT(BaseOptimizer):
 
     device = models[0].device
     nstarts = len(starting_structures)
-    # Best objective, positions and cell found so far by each start
-    best_objs = torch.full((nstarts,), float('inf'), device = device)
-    best_pos = [None for _ in range(nstarts)]
-    best_cells = [None for _ in range(nstarts)]
+    # Best structures found by each start. The unmodified starts taken from
+    # the dataset are not recorded, as they have already been simulated.
+    best = BestPerStart(nstarts, device,
+      save_only_constrained = save_only_constrained_structures,
+      skip_first = [(not random_starts) and j < dataset.N
+        for j in range(nstarts)])
     targets = [torch.tensor(target, device = device) for target in dataset.targets]
 
     data_pos = [torch.Tensor([site.coords.tolist() for site in struct.sites]
@@ -126,13 +128,8 @@ class TorchMT(BaseOptimizer):
                 objs_to_compare[j] = torch.inf
 
             # Save Best Value of each start
-            improved = objs_to_compare < best_objs[starti:(stopi+1)]
-            if save_only_constrained_structures:
-              improved = improved & (constraint_vals <= 0.0)
-            for j in torch.nonzero(improved).flatten().tolist():
-              best_objs[starti + j] = objs_to_compare[j].detach()
-              best_pos[starti + j] = data_pos[starti + j].clone().detach()
-              best_cells[starti + j] = data_cell[starti + j].clone().detach()
+            best.update(i, starti, objs_to_compare, constraint_vals,
+              data_pos[starti:(stopi+1)], data_cell[starti:(stopi+1)])
 
             if i != iters_per_start - 1:
               obj_total.backward()
@@ -152,26 +149,5 @@ class TorchMT(BaseOptimizer):
 
     del targets, data_pos, data_cell
 
-    best_objs = best_objs.cpu()
-    order = [j for j in torch.argsort(best_objs).tolist() if
-      best_pos[j] is not None and torch.isfinite(best_objs[j])]
-    candidates = [to_structure(starting_structures[0], best_pos[j],
-      best_cells[j]) for j in order]
-
-    return select_distinct(candidates, dataset.structures, N,
+    return best.select(starting_structures[0], dataset.structures, N,
       min_distance = min_distance), obj_values
-
-def to_structure(template: IStructure, pos, cell) -> IStructure:
-  """A copy of template with the given Cartesian positions and cell."""
-  new_structure = template.copy()
-  new_cell = cell.cpu().numpy()
-  new_x = pos.cpu().numpy().reshape(-1, 3)
-  new_structure.lattice = Lattice(new_cell)
-  for i in range(len(new_structure)):
-    try:
-      new_structure[i].coords = new_x[i]
-    except np.linalg.LinAlgError as e:
-      print(new_cell)
-      print(new_x)
-      raise e
-  return new_structure
