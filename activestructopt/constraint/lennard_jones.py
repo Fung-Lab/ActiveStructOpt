@@ -40,8 +40,10 @@ class LennardJonesRepulsion(BaseConstraint):
         import torch
       except ImportError as e:
         raise ImportError('Error loading torch') from e
+      # ORB's AtomGraphs has no .device attribute, so take it from a tensor
       if self.lj_rmins_t is None:
-        self.lj_rmins_t = torch.tensor(self.lj_rmins, device = data.device)
+        self.lj_rmins_t = torch.tensor(self.lj_rmins,
+          device = data.senders.device)
       edge_splitter = data.n_edge.to('cpu').detach().tolist()
       senders = torch.split(data.senders, edge_splitter)
       receivers = torch.split(data.receivers, edge_splitter)
