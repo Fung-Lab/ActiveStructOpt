@@ -12,8 +12,8 @@ def denormalize(self, x, batch):
   return torch.sum((x + self.reference(batch.atomic_numbers, n_nodes)).reshape((
     batch.n_node.shape[0], batch.n_node[0])), dim = 1)
 
-@registry.register_energy("MTEnergy")
-class MTEnergy(BaseEnergy):
+@registry.register_energy("ORBEnergy")
+class ORBEnergy(BaseEnergy):
   """Energy from the pretrained ORB v3 model, evaluated directly on the
   MatterTune ORB AtomGraphs batch."""
   def __init__(self, device = 'cuda:0', **kwargs):
