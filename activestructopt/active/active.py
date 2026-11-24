@@ -12,6 +12,15 @@ import os
 import gc
 import copy
 
+def load_structures(file):
+  """The suggested structures saved by ActiveLearning.opt_step (a single
+  'structure' in files written before multiple suggestions)."""
+  with open(file, 'rb') as f:
+    data = json.load(f)
+  if 'structures' in data:
+    return [Structure.from_dict(s) for s in data['structures']]
+  return [Structure.from_dict(data['structure'])]
+
 class ActiveLearning():
   def __init__(self, simfuncs, targets, initial_structure, index = -1, 
     config = None, target_structure = None, progress_file = None, 
@@ -147,35 +156,21 @@ class ActiveLearning():
         if self.model_params_file == 'None' or int(
           self.model_params_file.split('.')[0].split('_')[-1]) < len(
           self.dataset.structures):
+          # Up to max_sim_calls structures, simulated in order until one
+          # succeeds
           if sbatch_template is None:
-            new_structure = self.opt_step(predict_target = predict_target, 
-              save_file = None)
+            new_structures = self.opt_step(predict_target = predict_target,
+              save_file = None, n_structures = max_sim_calls)
           else:
-            new_structure = self.opt_step_sbatch(sbatch_template, i)
+            new_structures = self.opt_step_sbatch(sbatch_template, i,
+              n_structures = max_sim_calls)
           #print(new_structure)
           #for ensemble_i in range(len(metrics)):
           #  print(metrics[ensemble_i]['val_error'])
         else:
-          with open(self.model_params_file, 'rb') as f:
-            new_structure = Structure.from_dict(json.load(f)['structure'])
-        
-        sim_calculated = False
-        sim_calls = 0
+          new_structures = load_structures(self.model_params_file)
 
-        while not sim_calculated:
-          try:
-            sim_calls += 1
-            self.dataset.update(new_structure)
-            sim_calculated = True
-          except ASOSimulationException:
-            if sim_calls <= max_sim_calls:
-              if sbatch_template is None:
-                new_structure = self.opt_step(predict_target = predict_target, 
-                  save_file = None, retrain = False)
-              else:
-                new_structure = self.opt_step_sbatch(sbatch_template, i)
-            else:
-              raise ASOSimulationException("Max sim calls exceeded")
+        self.update_first_successful(new_structures)
 
         #if new_structure_predict:
           #with torch.inference_mode():
@@ -212,13 +207,24 @@ class ActiveLearning():
       print(self.traceback)
       print(self.error)
 
-  def read_opt_step_sbatch(self, file):
-    with open(file, 'rb') as f:
-      new_structure = Structure.from_dict(json.load(f)['structure'])
-    self.model_params_file = file
-    self.dataset.update(new_structure)
+  def update_first_successful(self, new_structures):
+    """Simulates the structures in order, adding the first one whose
+    simulation succeeds to the dataset."""
+    for j, new_structure in enumerate(new_structures):
+      try:
+        self.dataset.update(new_structure)
+        return
+      except ASOSimulationException:
+        print(f'Simulation of suggested structure {j + 1} of '
+          f'{len(new_structures)} failed')
+    raise ASOSimulationException("Max sim calls exceeded")
 
-  def opt_step_sbatch(self, sbatch_template, stepi):
+  def read_opt_step_sbatch(self, file):
+    new_structures = load_structures(file)
+    self.model_params_file = file
+    self.update_first_successful(new_structures)
+
+  def opt_step_sbatch(self, sbatch_template, stepi, n_structures = 1):
     # The GPU job always retrains because it starts without trained models
     with open(sbatch_template, 'r') as file:
       sbatch_data = file.read()
@@ -228,6 +234,7 @@ class ActiveLearning():
     sbatch_data = sbatch_data.replace('##MODEL_PARAMS_FILE##',
       self.model_params_file)
     sbatch_data = sbatch_data.replace('##JOB_NAME##', str(job_name))
+    sbatch_data = sbatch_data.replace('##N_STRUCTURES##', str(n_structures))
     new_job_file = f'gpu_job_{self.index}.sbatch'
     with open(new_job_file, 'w') as file:
       file.write(sbatch_data)
@@ -246,16 +253,18 @@ class ActiveLearning():
         os.remove(done_file)
 
     gpu_job_file = f"gpu_job_{self.index}_{stepi}.json"
-    with open(gpu_job_file, 'rb') as f:
-      new_structure = Structure.from_dict(json.load(f)['structure'])
-    
+    new_structures = load_structures(gpu_job_file)
+
     self.model_params_file = gpu_job_file
     prev_gpu_file = f"gpu_job_{self.index}_{stepi-1}.json"
     if os.path.exists(prev_gpu_file):
       os.remove(prev_gpu_file)
-    return new_structure
+    return new_structures
 
-  def opt_step(self, predict_target = False, save_file = None, retrain = True):
+  def opt_step(self, predict_target = False, save_file = None, retrain = True,
+    n_structures = 1):
+    """Returns a list of up to n_structures suggested structures, best
+    first."""
     stepi = len(self.dataset.structures)
 
     if retrain:
@@ -293,8 +302,9 @@ class ActiveLearning():
     optimizer_cls = registry.get_optimizer_class(
       self.configs[0]['aso_params']['optimizer']['name'])
 
-    new_structure, obj_values = optimizer_cls().run(self.models, 
-      self.dataset, objective, self.sampler, self.opt_constraints, 
+    new_structures, obj_values = optimizer_cls().run(self.models,
+      self.dataset, objective, self.sampler, self.opt_constraints,
+      N = n_structures,
       **(self.configs[0]['aso_params']['optimizer']['args']), **(opt_profile))
     self.opt_obj_values.append(obj_values)
 
@@ -314,15 +324,15 @@ class ActiveLearning():
           ind_model_params.append(model_dict)
         model_params.append(model_dict)
       res = {'index': self.index,
-            'structure': new_structure.as_dict(),
+            'structures': [s.as_dict() for s in new_structures],
             'model_params': model_params,
             'obj_values': [[] if x is None else x.tolist(
               ) for x in self.opt_obj_values],
       }
       with open(save_file, "w") as file: 
         json.dump(res, file)
-        
-    return new_structure
+
+    return new_structures
 
   def save(self, filename, additional_data = {}):
     if self.verbosity == 0:

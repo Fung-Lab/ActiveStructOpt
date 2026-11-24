@@ -27,8 +27,10 @@ class TorchBH(BaseOptimizer):
     σ = 0.0025, hop_sampler = 'SingleAtomPerturbation', 
     hop_sampler_args = {'perturbrmin': 0.2, 'perturbrmax': 0.2, 
       'perturblmax': 0, 'perturbθmax': 0, 'lattice_prob': 0},
-    alternate = False,
-    **kwargs) -> IStructure:
+    alternate = False, N = 1,
+    **kwargs) -> list[IStructure]:
+    if N != 1:
+      raise NotImplementedError('TorchBH optimizer only suggests N = 1 structure')
 
     accepted = 0
     device = model.device
@@ -185,4 +187,4 @@ class TorchBH(BaseOptimizer):
           raise e
 
     print('Acceptance rate: {}'.format(accepted / hops))
-    return best_structure, obj_vals
+    return [best_structure], obj_vals

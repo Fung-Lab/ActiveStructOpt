@@ -1,7 +1,7 @@
 from activestructopt.model.base import BaseModel
 from activestructopt.dataset.base import BaseDataset
 from activestructopt.objective.base import BaseObjective
-from activestructopt.optimizer.base import BaseOptimizer
+from activestructopt.optimizer.base import BaseOptimizer, select_distinct
 from activestructopt.sampler.base import BaseSampler
 from activestructopt.constraint.base import BaseConstraint
 from activestructopt.common.registry import registry
@@ -15,47 +15,48 @@ class TorchMT(BaseOptimizer):
   def __init__(self) -> None:
     pass
 
-  def run(self, models: list[BaseModel], dataset: BaseDataset, 
-    objective: BaseObjective, sampler: BaseSampler, 
-    constraints: list[BaseConstraint], starts = 128, 
+  def run(self, models: list[BaseModel], dataset: BaseDataset,
+    objective: BaseObjective, sampler: BaseSampler,
+    constraints: list[BaseConstraint], N = 1, starts = 128,
     iters_per_start = 100, optimizer = "Adam",
-    optimizer_args = {}, optimize_atoms = True, 
-    optimize_lattice = False, save_obj_values = False, 
-    pos_lr = 0.001, cell_lr = 0.001, random_starts = False, 
-    save_only_constrained_structures = False,
-    **kwargs) -> IStructure:
-    
+    optimizer_args = {}, optimize_atoms = True,
+    optimize_lattice = False, save_obj_values = False,
+    pos_lr = 0.001, cell_lr = 0.001, random_starts = False,
+    save_only_constrained_structures = False, min_distance = 0.25,
+    **kwargs) -> list[IStructure]:
+    """Returns the best structure found by each start, sorted by objective,
+    keeping only the first N that are at least min_distance (Å, see
+    optimizer.base.rms_distance) from each other and the dataset."""
+
     starting_structures = [sampler.sample(
       ) for _ in range(starts)] if random_starts else [dataset.structures[
       j].copy() if j < dataset.N else sampler.sample(
       ) for j in range(starts)]
 
-    obj_values = torch.zeros((len(models), iters_per_start, starts), 
+    obj_values = torch.zeros((len(models), iters_per_start, starts),
       device = 'cpu') if save_obj_values else None
-    
+
     device = models[0].device
     nstarts = len(starting_structures)
-    natoms = len(starting_structures[0])
-    best_obj = torch.tensor([float('inf')], device = device)
-    if optimize_atoms:
-      best_x = torch.zeros(3 * natoms, device = device)
-    if optimize_lattice:
-      best_cell = torch.zeros((3, 3), device = device)
+    # Best objective, positions and cell found so far by each start
+    best_objs = torch.full((nstarts,), float('inf'), device = device)
+    best_pos = [None for _ in range(nstarts)]
+    best_cells = [None for _ in range(nstarts)]
     targets = [torch.tensor(target, device = device) for target in dataset.targets]
 
     data_pos = [torch.Tensor([site.coords.tolist() for site in struct.sites]
       ).to(device) for struct in starting_structures]
     data_cell = [torch.Tensor(struct.lattice.matrix.tolist()).to(device
       ) for struct in starting_structures]
-    
+
     to_optimize = []
     if optimize_atoms:
       to_optimize += [{'params': p, 'lr': pos_lr} for p in data_pos]
     if optimize_lattice:
       to_optimize += [{'params': c, 'lr': cell_lr} for c in data_cell]
-    optimizer = getattr(torch.optim, optimizer)(to_optimize, 
+    optimizer = getattr(torch.optim, optimizer)(to_optimize,
       **(optimizer_args))
-    
+
     split = int(np.ceil(np.log2(nstarts)))
     orig_split = split
 
@@ -71,7 +72,7 @@ class TorchMT(BaseOptimizer):
             for j in range(nstarts):
               data_cell[j].requires_grad_(False)
               data_pos[j].requires_grad_(False)
-            
+
             for j in range(stopi - starti + 1):
               if optimize_atoms:
                 data_pos[starti + j].requires_grad_()
@@ -79,15 +80,15 @@ class TorchMT(BaseOptimizer):
                 data_cell[starti + j].requires_grad_()
 
             batch_data = models[0].batch_pos_cell(
-              data_pos[starti:(stopi+1)], data_cell[starti:(stopi+1)], 
+              data_pos[starti:(stopi+1)], data_cell[starti:(stopi+1)],
               starting_structures[0])
-            
+
             # Get Predictions
-            predictions = [models[m].predict(batch_data, prepared = True, 
+            predictions = [models[m].predict(batch_data, prepared = True,
               mask = dataset.simfuncs[m].mask) for m in range(len(models))]
 
             # Calculate Objectives
-            objs, obj_total = objective.get(predictions, targets, 
+            objs, obj_total = objective.get(predictions, targets,
               device = device, N = stopi - starti + 1, M = len(models))
 
             # Calculate Constraints
@@ -103,7 +104,7 @@ class TorchMT(BaseOptimizer):
                   obj_values[m, i, starti + j] = objs[m][j].detach().cpu()
               obj_total += constraint_vals[j]
 
-            objs_to_compare = torch.sum(torch.nan_to_num(objs, nan = torch.inf), 
+            objs_to_compare = torch.sum(torch.nan_to_num(objs, nan = torch.inf),
               dim = 0)
 
             for j in range(stopi - starti + 1):
@@ -112,20 +113,14 @@ class TorchMT(BaseOptimizer):
                 objs_to_compare[j].isnan().any()):
                 objs_to_compare[j] = torch.inf
 
-            # Save Best Value
-            min_obj_iter = torch.min(objs_to_compare)
-            if (min_obj_iter < best_obj).item():
-              best_obj = min_obj_iter.detach()
-              obj_arg = torch.argmin(objs_to_compare)
-              if (not save_only_constrained_structures) or (
-                constraint_vals[obj_arg.item()] <= torch.tensor(
-                [0.0], device = device)).item():
-                if optimize_atoms:
-                  best_x = data_pos[starti + obj_arg.item()].clone().detach(
-                    ).flatten()
-                if optimize_lattice:
-                  best_cell = data_cell[starti + obj_arg.item()].clone(
-                    ).detach()
+            # Save Best Value of each start
+            improved = objs_to_compare < best_objs[starti:(stopi+1)]
+            if save_only_constrained_structures:
+              improved = improved & (constraint_vals <= 0.0)
+            for j in torch.nonzero(improved).flatten().tolist():
+              best_objs[starti + j] = objs_to_compare[j].detach()
+              best_pos[starti + j] = data_pos[starti + j].clone().detach()
+              best_cells[starti + j] = data_cell[starti + j].clone().detach()
 
             if i != iters_per_start - 1:
               obj_total.backward()
@@ -143,27 +138,28 @@ class TorchMT(BaseOptimizer):
           else:
             raise e
 
-    if optimize_atoms:
-      new_x = best_x.detach().cpu().numpy()
-      del best_x
-    if optimize_lattice:
-      new_cell = best_cell.detach().cpu().numpy()
-      del best_cell
-
     del targets, data_pos, data_cell
-    new_structure = starting_structures[0].copy()
 
-    if optimize_lattice:
-      new_structure.lattice = Lattice(new_cell)
-    if optimize_atoms:
-      for i in range(len(new_structure)):
-        try:
-          new_structure[i].coords = new_x[(3 * i):(3 * (i + 1))]
-        except np.linalg.LinAlgError as e:
-          print(best_obj)
-          print(new_cell)
-          print(new_structure.lattice)
-          print(new_x)
-          raise e
+    best_objs = best_objs.cpu()
+    order = [j for j in torch.argsort(best_objs).tolist() if
+      best_pos[j] is not None and torch.isfinite(best_objs[j])]
+    candidates = [to_structure(starting_structures[0], best_pos[j],
+      best_cells[j]) for j in order]
 
-    return new_structure, obj_values
+    return select_distinct(candidates, dataset.structures, N,
+      min_distance = min_distance), obj_values
+
+def to_structure(template: IStructure, pos, cell) -> IStructure:
+  """A copy of template with the given Cartesian positions and cell."""
+  new_structure = template.copy()
+  new_cell = cell.cpu().numpy()
+  new_x = pos.cpu().numpy().reshape(-1, 3)
+  new_structure.lattice = Lattice(new_cell)
+  for i in range(len(new_structure)):
+    try:
+      new_structure[i].coords = new_x[i]
+    except np.linalg.LinAlgError as e:
+      print(new_cell)
+      print(new_x)
+      raise e
+  return new_structure

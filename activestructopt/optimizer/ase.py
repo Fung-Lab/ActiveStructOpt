@@ -79,9 +79,11 @@ class ASE(BaseOptimizer):
     objective: BaseObjective, sampler: BaseSampler, constraints: list[BaseConstraint], 
     starts = 128, iters_per_start = 100, optimizer = "FIRE",
     optimizer_args = {}, optimize_atoms = True, 
-    optimize_lattice = False,
-    **kwargs) -> IStructure:
-    
+    optimize_lattice = False, N = 1,
+    **kwargs) -> list[IStructure]:
+    if N != 1:
+      raise NotImplementedError('ASE optimizer only suggests N = 1 structure')
+
     starting_structures = [dataset.structures[j].copy(
       ) if j < dataset.N else sampler.sample(
       ) for j in range(starts)]
@@ -109,4 +111,4 @@ class ASE(BaseOptimizer):
         best_struct = traj.best_structure
         best_obj = traj.best_obj
     
-    return best_struct, None
+    return [best_struct], None

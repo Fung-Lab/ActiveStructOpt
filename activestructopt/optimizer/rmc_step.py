@@ -13,6 +13,9 @@ class RMCStep(BaseOptimizer):
     pass
 
   def run(self, models: list[BaseModel], dataset: RMCList, 
-    objective: BaseObjective, sampler: BaseSampler, **kwargs) -> IStructure:
+    objective: BaseObjective, sampler: BaseSampler, N = 1,
+    **kwargs) -> list[IStructure]:
+    if N != 1:
+      raise NotImplementedError('RMCStep optimizer only suggests N = 1 structure')
     sampler.initial_structure = dataset.curr_structure
-    return sampler.sample(), None
+    return [sampler.sample()], None

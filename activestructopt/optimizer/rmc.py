@@ -18,7 +18,9 @@ class RMC(BaseOptimizer):
     objective: BaseObjective, sampler: BaseSampler, 
     steps = 10000, σ = 0.0025, latticeprob = 0.5, 
     σr = 0.1, σl = 0.1, σθ = 0.1, 
-    save_obj_values = False, **kwargs) -> IStructure:
+    save_obj_values = False, N = 1, **kwargs) -> list[IStructure]:
+    if N != 1:
+      raise NotImplementedError('RMC optimizer only suggests N = 1 structure')
 
     device = model.device
     
@@ -68,4 +70,4 @@ class RMC(BaseOptimizer):
       rmc_sampler.initial_structure = prev_structure.copy()
       structure = rmc_sampler.sample()
 
-    return best_structure, None
+    return [best_structure], None

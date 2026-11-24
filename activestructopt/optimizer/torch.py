@@ -2,7 +2,8 @@ from activestructopt.common.dataloader import prepare_data_pmg, reprocess_data
 from activestructopt.model.base import BaseModel
 from activestructopt.dataset.base import BaseDataset
 from activestructopt.objective.base import BaseObjective
-from activestructopt.optimizer.base import BaseOptimizer
+from activestructopt.optimizer.base import BaseOptimizer, select_distinct
+from activestructopt.optimizer.torch_mt import to_structure
 from activestructopt.sampler.base import BaseSampler
 from activestructopt.constraint.base import BaseConstraint
 from activestructopt.common.registry import registry
@@ -17,14 +18,18 @@ class Torch(BaseOptimizer):
     pass
 
   def run(self, model: list[BaseModel], dataset: BaseDataset, 
-    objective: BaseObjective, sampler: BaseSampler, 
+    objective: BaseObjective, sampler: BaseSampler,
+    constraints: list[BaseConstraint], N = 1,
     starts = 128, iters_per_start = 100, optimizer = "Adam",
-    optimizer_args = {}, optimize_atoms = True, 
-    optimize_lattice = False, save_obj_values = False, 
-    pos_lr = 0.001, cell_lr = 0.001, random_starts = False, 
-    save_only_constrained_structures = False,
-    **kwargs) -> IStructure:
-    
+    optimizer_args = {}, optimize_atoms = True,
+    optimize_lattice = False, save_obj_values = False,
+    pos_lr = 0.001, cell_lr = 0.001, random_starts = False,
+    save_only_constrained_structures = False, min_distance = 0.25,
+    **kwargs) -> list[IStructure]:
+    """Returns the best structure found by each start, sorted by objective,
+    keeping only the first N that are at least min_distance (Å, see
+    optimizer.base.rms_distance) from each other and the dataset."""
+
     starting_structures = [sampler.sample(
       ) for j in range(starts)] if random_starts else [dataset.structures[j].copy(
       ) if j < dataset.N else sampler.sample(
@@ -35,12 +40,10 @@ class Torch(BaseOptimizer):
     
     device = model.device
     nstarts = len(starting_structures)
-    natoms = len(starting_structures[0])
-    best_obj = torch.tensor([float('inf')], device = device)
-    if optimize_atoms:
-      best_x = torch.zeros(3 * natoms, device = device)
-    if optimize_lattice:
-      best_cell = torch.zeros((3, 3), device = device)
+    # Best objective, positions and cell found so far by each start
+    best_objs = torch.full((nstarts,), float('inf'), device = device)
+    best_pos = [None for _ in range(nstarts)]
+    best_cells = [None for _ in range(nstarts)]
     target = torch.tensor(dataset.target, device = device)
     
     data = [prepare_data_pmg(s, dataset.config, pos_grad = True, device = device, 
@@ -102,17 +105,14 @@ class Torch(BaseOptimizer):
                 objs_to_compare[j].isnan().any()):
                 objs_to_compare[j] = torch.inf
 
-            min_obj_iter = torch.min(objs_to_compare)
-            if (min_obj_iter < best_obj).item():
-              best_obj = min_obj_iter.detach()
-              obj_arg = torch.argmin(objs_to_compare)
-              if (not save_only_constrained_structures) or (
-                constraint_vals[obj_arg.item()] <= torch.tensor(
-                [0.0], device = device)).item():
-                if optimize_atoms:
-                  best_x = data[starti + obj_arg.item()].pos.clone().detach().flatten()
-                if optimize_lattice:
-                  best_cell = data[starti + obj_arg.item()].cell[0].clone().detach()
+            # Save Best Value of each start
+            improved = objs_to_compare < best_objs[starti:(stopi+1)]
+            if save_only_constrained_structures:
+              improved = improved & (constraint_vals <= 0.0)
+            for j in torch.nonzero(improved).flatten().tolist():
+              best_objs[starti + j] = objs_to_compare[j].detach()
+              best_pos[starti + j] = data[starti + j].pos.clone().detach()
+              best_cells[starti + j] = data[starti + j].cell[0].clone().detach()
 
             if i != iters_per_start - 1:
               obj_total.backward()
@@ -123,27 +123,13 @@ class Torch(BaseOptimizer):
           split -= 1
           assert split >= 0, "Out of memory with only one structure"
 
-    if optimize_atoms:
-      new_x = best_x.detach().cpu().numpy()
-      del best_x
-    if optimize_lattice:
-      new_cell = best_cell.detach().cpu().numpy()
-      del best_cell
-
     del target, data
-    new_structure = starting_structures[0].copy()
 
-    if optimize_lattice:
-      new_structure.lattice = Lattice(new_cell)
-    if optimize_atoms:
-      for i in range(len(new_structure)):
-        try:
-          new_structure[i].coords = new_x[(3 * i):(3 * (i + 1))]
-        except np.linalg.LinAlgError as e:
-          print(best_obj)
-          print(new_cell)
-          print(new_structure.lattice)
-          print(new_x)
-          raise e
-    
-    return new_structure, obj_values
+    best_objs = best_objs.cpu()
+    order = [j for j in torch.argsort(best_objs).tolist() if
+      best_pos[j] is not None and torch.isfinite(best_objs[j])]
+    candidates = [to_structure(starting_structures[0], best_pos[j],
+      best_cells[j]) for j in order]
+
+    return select_distinct(candidates, dataset.structures, N,
+      min_distance = min_distance), obj_values

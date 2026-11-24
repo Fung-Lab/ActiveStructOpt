@@ -13,7 +13,10 @@ class BOTorch(BaseOptimizer):
     from botorch.optim import optimize_acqf
 
   def run(self, model: list[BaseModel], dataset: RMCList, 
-    objective: BaseObjective, sampler: BaseSampler, **kwargs) -> IStructure:
+    objective: BaseObjective, sampler: BaseSampler, N = 1,
+    **kwargs) -> list[IStructure]:
+    if N != 1:
+      raise NotImplementedError('BOTorch optimizer only suggests N = 1 structure')
     bounds = torch.stack([torch.zeros(dataset.num_atoms * 3), 
       torch.ones(dataset.num_atoms * 3)]).to(torch.double)
     candidate, _ = optimize_acqf(model.acqf, bounds = bounds, q = 1, 
@@ -22,4 +25,4 @@ class BOTorch(BaseOptimizer):
     new_structure = dataset.structures[0].copy()
     for i in range(dataset.num_atoms):
         new_structure.sites[i].frac_coords = candidate[0][(i * 3):((i + 1) * 3)]
-    return new_structure, None
+    return [new_structure], None

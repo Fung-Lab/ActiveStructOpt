@@ -13,7 +13,9 @@ class Random(BaseOptimizer):
 
   def run(self, model: list[BaseModel], dataset: BaseDataset, 
     objective: BaseObjective, sampler: BaseSampler, require_unique = False,
-    **kwargs) -> IStructure:
+    N = 1, **kwargs) -> list[IStructure]:
+    if N != 1:
+      raise NotImplementedError('Random optimizer only suggests N = 1 structure')
     new_structure = sampler.sample()
     not_unique = True
     while not_unique:
@@ -22,4 +24,4 @@ class Random(BaseOptimizer):
         if new_structure.matches(s):
           not_unique = True
           new_structure = sampler.sample()
-    return new_structure, None
+    return [new_structure], None
