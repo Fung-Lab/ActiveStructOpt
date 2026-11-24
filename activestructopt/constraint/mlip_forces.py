@@ -11,7 +11,7 @@ class MLIPForces(BaseConstraint):
   """Penalizes the largest MLIP force magnitude above force_cutoff (eV/Å):
   the soft constraint is max_i max(0, |F_i| - force_cutoff)^2, and the hard
   constraint rejects structures with any |F_i| > force_cutoff."""
-  def __init__(self, mlip = None, force_cutoff = 10.0, fd_step = 0.01,
+  def __init__(self, mlip = None, force_cutoff = 3.0, fd_step = 0.01,
     **kwargs):
     if mlip == "uma-s-1p2p1":
       try:
