@@ -11,8 +11,11 @@ _MLIPS = {}
 
 def get_mlip(mlip = 'uma-s-1p2p1', task_name = 'omat',
   inference_settings = 'nitro', device = 'cuda'):
-  """The MLIP with these settings, loaded on first use and then shared, so
-  the model is loaded and kept in GPU memory once per process."""
+  """The MLIP with these settings, shared so the model is loaded and kept in
+  GPU memory once per process. The model itself is only loaded when first
+  used (see MLIP.calculator), so a process that builds the constraints and
+  energy models but never evaluates them (e.g. the main process when the
+  optimization runs in sbatch GPU jobs) never touches the GPU."""
   key = (mlip, task_name, inference_settings, device)
   if key not in _MLIPS:
     _MLIPS[key] = MLIP(*key)
@@ -24,18 +27,29 @@ class MLIP:
   constraint in the same optimizer iteration) only compute it once."""
   def __init__(self, mlip, task_name, inference_settings, device,
     cache_size = 4096):
-    if mlip.startswith('uma'):
+    if not mlip.startswith('uma'):
+      raise NotImplementedError(f'MLIP {mlip} not implemented')
+    self.mlip = mlip
+    self.task_name = task_name
+    self.inference_settings = inference_settings
+    self.device = device
+    self._calculator = None
+    self.cache = OrderedDict()
+    self.cache_size = cache_size
+
+  @property
+  def calculator(self):
+    """The ASE calculator, loading the model on first access."""
+    if self._calculator is None:
       try:
         from fairchem.core import FAIRChemCalculator, pretrained_mlip
       except ImportError as e:
         raise ImportError("Error loading fairchem.core") from e
-      predictor = pretrained_mlip.get_predict_unit(mlip, device = device,
-        inference_settings = inference_settings)
-      self.calculator = FAIRChemCalculator(predictor, task_name = task_name)
-    else:
-      raise NotImplementedError(f'MLIP {mlip} not implemented')
-    self.cache = OrderedDict()
-    self.cache_size = cache_size
+      predictor = pretrained_mlip.get_predict_unit(self.mlip,
+        device = self.device, inference_settings = self.inference_settings)
+      self._calculator = FAIRChemCalculator(predictor,
+        task_name = self.task_name)
+    return self._calculator
 
   def calculate(self, atoms):
     """A dict of the energy (eV), forces (eV/Å, (natoms, 3)) and stress

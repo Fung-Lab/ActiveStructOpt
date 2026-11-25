@@ -29,10 +29,12 @@ class AIRSS(BaseSampler):
     # Random structures from buildcell are far from any minimum, so they almost
     # never pass the MLIP burn-in. As in AIRSS, they are relaxed first, with
     # the burn-in's own MLIP, whenever that constraint is used.
-    self.relax_calculator = None
+    # The burn-in constraint whose MLIP is used, whose model is only loaded
+    # when the first structure is relaxed
+    self.relax_constraint = None
     for constraint in constraints:
       if isinstance(constraint, MLIPBurnIn):
-        self.relax_calculator = constraint.calculator
+        self.relax_constraint = constraint
         break
     self.relax_fmax = relax_fmax
     self.relax_steps = relax_steps
@@ -106,7 +108,7 @@ class AIRSS(BaseSampler):
       os.remove(cell_path)
       os.remove(res_path)
 
-      if self.relax_calculator is not None:
+      if self.relax_constraint is not None:
         new_structure = self.relax(new_structure)
         if new_structure is None:
           self.n_relax_rejected += 1
@@ -126,7 +128,7 @@ class AIRSS(BaseSampler):
     from ase.optimize import FIRE
 
     atoms = AseAtomsAdaptor().get_atoms(structure)
-    atoms.calc = self.relax_calculator
+    atoms.calc = self.relax_constraint.calculator
     target = FrechetCellFilter(atoms) if self.relax_cell else atoms
     FIRE(target, logfile = None).run(fmax = self.relax_fmax,
       steps = self.relax_steps)

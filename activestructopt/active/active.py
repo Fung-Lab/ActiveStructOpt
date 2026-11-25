@@ -25,8 +25,12 @@ class ActiveLearning():
   def __init__(self, simfuncs, targets, initial_structure, index = -1, 
     config = None, target_structure = None, progress_file = None, 
     model_params_file = None, verbosity = 2, save_structures = True,
-    save_progress_dir = None, save_initialization = False, 
-    override_config = False):
+    save_progress_dir = None, save_initialization = False,
+    override_config = False, sbatch = False):
+    """sbatch: whether optimize will be run with an sbatch_template, so
+    opt_step runs in the GPU job. When resuming from a progress_file, the
+    sampler (and its constraints) are then only used in the GPU job, so they
+    are not built here."""
 
     setup_imports()
 
@@ -52,20 +56,23 @@ class ActiveLearning():
           self.configs = progress_dict['configs'] if not override_config else [
             simfunc.setup_config(config) for simfunc in simfuncs]
 
-          self.sampler_constraints = []
-          for constraint_config in self.configs[0]['aso_params']['sampler_constraints']:
-            constraint_cls = registry.get_constraint_class(constraint_config['name'])
-            self.sampler_constraints.append(constraint_cls(**(constraint_config['args'])))
-
           self.opt_constraints = []
           for constraint_config in self.configs[0]['aso_params']['opt_constraints']:
             constraint_cls = registry.get_constraint_class(constraint_config['name'])
             self.opt_constraints.append(constraint_cls(**(constraint_config['args'])))
-          
-          sampler_cls = registry.get_sampler_class(
-            self.configs[0]['aso_params']['sampler']['name'])
-          self.sampler = sampler_cls(initial_structure, self.sampler_constraints,
-            **(self.configs[0]['aso_params']['sampler']['args']))
+
+          # The resumed dataset does not sample, and in sbatch mode the
+          # optimizer (the other user of the sampler) runs in the GPU job
+          self.sampler_constraints = []
+          self.sampler = None
+          if not sbatch:
+            for constraint_config in self.configs[0]['aso_params']['sampler_constraints']:
+              constraint_cls = registry.get_constraint_class(constraint_config['name'])
+              self.sampler_constraints.append(constraint_cls(**(constraint_config['args'])))
+            sampler_cls = registry.get_sampler_class(
+              self.configs[0]['aso_params']['sampler']['name'])
+            self.sampler = sampler_cls(initial_structure, self.sampler_constraints,
+              **(self.configs[0]['aso_params']['sampler']['args']))
           dataset_cls = registry.get_dataset_class(
             self.configs[0]['aso_params']['dataset']['name'])
           self.dataset = dataset_cls(simfuncs, self.sampler, initial_structure, 
@@ -167,6 +174,9 @@ class ActiveLearning():
           # Up to max_sim_calls structures, simulated in order until one
           # succeeds
           if sbatch_template is None:
+            if self.sampler is None:
+              raise ValueError('No sampler: ActiveLearning was resumed with '
+                'sbatch = True, so optimize needs an sbatch_template')
             new_structures = self.opt_step(predict_target = predict_target,
               save_file = None, n_structures = max_sim_calls)
           else:

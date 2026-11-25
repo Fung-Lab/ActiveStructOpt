@@ -1,4 +1,5 @@
 from activestructopt.common.registry import registry
+from activestructopt.common.mlip import get_mlip
 from activestructopt.constraint.base import BaseConstraint
 from activestructopt.constraint.mlip_burn_in import make_md_supercell
 from pymatgen.core.structure import IStructure
@@ -24,16 +25,8 @@ class MLIPSupercellRelax(BaseConstraint):
     inference_settings = 'nitro', device = 'cuda', minimum_length = 8.4,
     rattle = 0.05, fmax = 0.08, steps = 300, require_converged = False,
     max_disp = 0.3, max_energy_drop = 2.0, seed = 0, **kwargs):
-    if mlip == 'uma-s-1p2p1':
-      try:
-        from fairchem.core import FAIRChemCalculator, pretrained_mlip
-      except ImportError as e:
-        raise ImportError("Error loading fairchem.core") from e
-      predictor = pretrained_mlip.get_predict_unit('uma-s-1p2p1',
-        device = device, inference_settings = inference_settings)
-      self.calculator = FAIRChemCalculator(predictor, task_name = task_name)
-    else:
-      raise NotImplementedError(f'MLIP {mlip} not implemented')
+    # Shared and only loaded when first used (see common/mlip.py)
+    self.mlip = get_mlip(mlip, task_name, inference_settings, device)
 
     self.minimum_length = minimum_length
     self.rattle = rattle
@@ -48,6 +41,10 @@ class MLIPSupercellRelax(BaseConstraint):
     self.last_max_disp = None
     self.last_energy_drop = None
     self.last_reason = None
+
+  @property
+  def calculator(self):
+    return self.mlip.calculator
 
   def soft_constraint(self, data, **kwargs):
     raise NotImplementedError(

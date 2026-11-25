@@ -1,4 +1,5 @@
 from activestructopt.common.registry import registry
+from activestructopt.common.mlip import get_mlip
 from activestructopt.constraint.base import BaseConstraint
 from pymatgen.core.structure import IStructure
 from pymatgen.io.ase import AseAtomsAdaptor
@@ -41,16 +42,8 @@ class MLIPBurnIn(BaseConstraint):
     max_rms_burnin = 0.5, max_atom_disp_burnin = None,
     max_epot_drop_burnin = None, epot_skip_steps = 400, epot_window = 50,
     minimum_length = 8.4, seed = 0, **kwargs):
-    if mlip == 'uma-s-1p2p1':
-      try:
-        from fairchem.core import FAIRChemCalculator, pretrained_mlip
-      except ImportError as e:
-        raise ImportError("Error loading fairchem.core") from e
-      predictor = pretrained_mlip.get_predict_unit('uma-s-1p2p1',
-        device = device, inference_settings = inference_settings)
-      self.calculator = FAIRChemCalculator(predictor, task_name = task_name)
-    else:
-      raise NotImplementedError(f'MLIP {mlip} not implemented')
+    # Shared and only loaded when first used (see common/mlip.py)
+    self.mlip = get_mlip(mlip, task_name, inference_settings, device)
 
     self.timestep = timestep
     self.temp = temp
@@ -70,6 +63,10 @@ class MLIPBurnIn(BaseConstraint):
     self.last_epot_excess = None
     self.last_step = None
     self.last_reason = None
+
+  @property
+  def calculator(self):
+    return self.mlip.calculator
 
   def soft_constraint(self, data, **kwargs):
     raise NotImplementedError('MLIPBurnIn only implements hard constraints')

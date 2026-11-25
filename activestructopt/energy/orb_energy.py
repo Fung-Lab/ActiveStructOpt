@@ -17,13 +17,24 @@ class ORBEnergy(BaseEnergy):
   """Energy from the pretrained ORB v3 model, evaluated directly on the
   MatterTune ORB AtomGraphs batch."""
   def __init__(self, device = 'cuda:0', **kwargs):
-    try:
-      import orb_models
-      from orb_models.forcefield.pretrained import orb_v3_direct_inf_omat
-    except ImportError as e:
-      raise ImportError('Error loading orb_models') from e
-    orb_models.forcefield.forcefield_heads.EnergyHead.denormalize = denormalize
-    self.model = orb_v3_direct_inf_omat(device = device)
+    self.device = device
+    self._model = None
+
+  @property
+  def model(self):
+    """The ORB model, loaded on first use, so a process that never evaluates
+    the energy (e.g. the main process when the optimization runs in sbatch
+    GPU jobs) never touches the GPU."""
+    if self._model is None:
+      try:
+        import orb_models
+        from orb_models.forcefield.pretrained import orb_v3_direct_inf_omat
+      except ImportError as e:
+        raise ImportError('Error loading orb_models') from e
+      orb_models.forcefield.forcefield_heads.EnergyHead.denormalize = (
+        denormalize)
+      self._model = orb_v3_direct_inf_omat(device = self.device)
+    return self._model
 
   def get(self, data):
     return self.model.forward(data)['energy']
