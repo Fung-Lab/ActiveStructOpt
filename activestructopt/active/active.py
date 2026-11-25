@@ -28,12 +28,15 @@ class ActiveLearning():
     save_progress_dir = None, save_initialization = False,
     override_config = False, sbatch = False):
     """sbatch: whether optimize will be run with an sbatch_template, so
-    opt_step runs in the GPU job. When resuming from a progress_file, the
-    sampler (and its constraints) are then only used in the GPU job, so they
-    are not built here."""
+    opt_step runs in the GPU job, and this process only submits the jobs and
+    runs the simulations. The models, optimizer constraints and energy model
+    are then only used in the GPU job, so they are not built here, and nor
+    are the sampler and its constraints when resuming from a progress_file
+    (on a fresh start they are needed to sample the initial dataset)."""
 
     setup_imports()
 
+    self.sbatch = sbatch
     self.simfuncs = simfuncs
     self.index = index
     self.verbosity = verbosity
@@ -55,11 +58,6 @@ class ActiveLearning():
           progress_dict = json.load(f)
           self.configs = progress_dict['configs'] if not override_config else [
             simfunc.setup_config(config) for simfunc in simfuncs]
-
-          self.opt_constraints = []
-          for constraint_config in self.configs[0]['aso_params']['opt_constraints']:
-            constraint_cls = registry.get_constraint_class(constraint_config['name'])
-            self.opt_constraints.append(constraint_cls(**(constraint_config['args'])))
 
           # The resumed dataset does not sample, and in sbatch mode the
           # optimizer (the other user of the sampler) runs in the GPU job
@@ -108,11 +106,6 @@ class ActiveLearning():
         constraint_cls = registry.get_constraint_class(constraint_config['name'])
         self.sampler_constraints.append(constraint_cls(**(constraint_config['args'])))
 
-      self.opt_constraints = []
-      for constraint_config in self.configs[0]['aso_params']['opt_constraints']:
-        constraint_cls = registry.get_constraint_class(constraint_config['name'])
-        self.opt_constraints.append(constraint_cls(**(constraint_config['args'])))
-
       sampler_cls = registry.get_sampler_class(
         self.configs[0]['aso_params']['sampler']['name'])
       self.sampler = sampler_cls(initial_structure, self.sampler_constraints,
@@ -123,23 +116,31 @@ class ActiveLearning():
         targets, self.configs[0]['dataset'], **(
         self.configs[0]['aso_params']['dataset']['args']))
 
-    model_cls = registry.get_model_class(
-      self.configs[0]['aso_params']['model']['name'])
-
-    self.models = [model_cls(self.configs[i], self.simfuncs[i],
-          **(self.configs[i]['aso_params']['model']['args'])
-          ) if self.configs[i]['aso_params']['model']['name'
-          ] == "GroundTruth" else model_cls(self.configs[i], 
-          **(self.configs[i]['aso_params']['model']['args'])) for i in range(
-            len(self.simfuncs))]
-
+    # Only used by opt_step, which runs in the GPU job in sbatch mode
+    self.models = None
+    self.opt_constraints = []
     # Optional energy model, added to the optimizer objective scaled by the
     # optimizer's energy_scale
     self.energy_model = None
-    energy_config = self.configs[0]['aso_params'].get('energy')
-    if energy_config is not None:
-      energy_cls = registry.get_energy_class(energy_config['name'])
-      self.energy_model = energy_cls(**(energy_config.get('args', {})))
+    if not sbatch:
+      model_cls = registry.get_model_class(
+        self.configs[0]['aso_params']['model']['name'])
+
+      self.models = [model_cls(self.configs[i], self.simfuncs[i],
+            **(self.configs[i]['aso_params']['model']['args'])
+            ) if self.configs[i]['aso_params']['model']['name'
+            ] == "GroundTruth" else model_cls(self.configs[i],
+            **(self.configs[i]['aso_params']['model']['args'])) for i in range(
+              len(self.simfuncs))]
+
+      for constraint_config in self.configs[0]['aso_params']['opt_constraints']:
+        constraint_cls = registry.get_constraint_class(constraint_config['name'])
+        self.opt_constraints.append(constraint_cls(**(constraint_config['args'])))
+
+      energy_config = self.configs[0]['aso_params'].get('energy')
+      if energy_config is not None:
+        energy_cls = registry.get_energy_class(energy_config['name'])
+        self.energy_model = energy_cls(**(energy_config.get('args', {})))
 
     self.traceback = None
     self.error = None
@@ -174,9 +175,9 @@ class ActiveLearning():
           # Up to max_sim_calls structures, simulated in order until one
           # succeeds
           if sbatch_template is None:
-            if self.sampler is None:
-              raise ValueError('No sampler: ActiveLearning was resumed with '
-                'sbatch = True, so optimize needs an sbatch_template')
+            if self.sbatch:
+              raise ValueError('ActiveLearning was created with sbatch = '
+                'True, so optimize needs an sbatch_template')
             new_structures = self.opt_step(predict_target = predict_target,
               save_file = None, n_structures = max_sim_calls)
           else:
