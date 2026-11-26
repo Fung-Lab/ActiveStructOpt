@@ -37,10 +37,124 @@ def read_group(filename):
       data[key] = np.array(data[key])
   return Group(**data)
 
-def run_md(structure, trajectory_path = 'md.traj', 
-  log_path = 'md.log', timestep = 1.25, temp = 300, 
+def _md_predictor(mlip, inference_settings, device):
+  try:
+    from fairchem.core import pretrained_mlip
+  except ImportError as e:
+    raise ImportError('Error loading fairchem.core') from e
+  return pretrained_mlip.get_predict_unit(mlip, device = device,
+    inference_settings = inference_settings)
+
+def _min_repetitions(cell_lengths, minimum_length):
+  """Repetitions along each lattice vector so that every supercell length is
+  at least minimum_length."""
+  return np.maximum(1, np.ceil(minimum_length / cell_lengths).astype(int))
+
+def _grow_repetitions(cell_lengths, repetitions):
+  """The next larger supercell: one more repetition along the currently
+  shortest supercell length, keeping the supercell as close to isotropic as
+  possible (the minimum length never decreases)."""
+  repetitions = repetitions.copy()
+  repetitions[np.argmin(cell_lengths * repetitions)] += 1
+  return repetitions
+
+def _probe_supercell(atoms_prim, repetitions, calc, device):
+  """Peak GPU memory (bytes) of a force evaluation of the supercell with the
+  calculator calc, which is reused (with its loaded model) across sizes.
+  Raises torch.cuda.OutOfMemoryError if the supercell does not fit."""
+  import torch
+  from ase.build.supercells import make_supercell
+  atoms = make_supercell(atoms_prim, np.diag(repetitions))
+  calc.reset()
+  torch.cuda.empty_cache()
+  torch.cuda.reset_peak_memory_stats(device)
+  try:
+    atoms.calc = calc
+    atoms.get_forces()
+    torch.cuda.synchronize(device)
+  finally:
+    # Don't keep the probe's results (or atoms) alive in the calculator
+    calc.reset()
+  return torch.cuda.max_memory_allocated(device)
+
+def _largest_md_supercell(atoms_prim, minimum_length, calc, device,
+  gpu_memory_fraction, max_atoms):
+  """The repetitions of the largest supercell (grown from the minimum length
+  supercell by _grow_repetitions) whose force evaluation with calc fits in
+  gpu_memory_fraction of the GPU memory (with at most max_atoms atoms, if not
+  None). The memory is modeled as linear in the number of atoms, from
+  evaluations of the minimum supercell and one about twice as large. The
+  chosen supercell is then evaluated, falling back to smaller supercells if
+  it does not fit."""
+  import torch
+  cell_lengths = np.linalg.norm(atoms_prim.cell.array, axis = 1)
+  nprim = len(atoms_prim)
+  min_reps = _min_repetitions(cell_lengths, minimum_length)
+
+  # Candidate supercells, in order of increasing size
+  candidates = [min_reps]
+  while len(candidates) < 10000:
+    reps = _grow_repetitions(cell_lengths, candidates[-1])
+    if max_atoms is not None and nprim * np.prod(reps) > max_atoms:
+      break
+    candidates.append(reps)
+  if len(candidates) == 1:
+    return min_reps
+  natoms = np.array([nprim * np.prod(reps) for reps in candidates])
+
+  # Linear memory model from two evaluations
+  budget = gpu_memory_fraction * torch.cuda.get_device_properties(
+    device).total_memory
+  mem_min = _probe_supercell(atoms_prim, min_reps, calc, device)
+  probe_i = min(int(np.searchsorted(natoms, 2 * natoms[0])),
+    len(candidates) - 1)
+  try:
+    mem_probe = _probe_supercell(atoms_prim, candidates[probe_i], calc,
+      device)
+  except torch.cuda.OutOfMemoryError:
+    torch.cuda.empty_cache()
+    return min_reps
+  per_atom = (mem_probe - mem_min) / (natoms[probe_i] - natoms[0])
+  if per_atom <= 0:
+    chosen_i = len(candidates) - 1
+  else:
+    predicted = mem_min + per_atom * (natoms - natoms[0])
+    chosen_i = max(0, int(np.searchsorted(predicted, budget,
+      side = 'right')) - 1)
+
+  # Check the chosen supercell, falling back to ~10% fewer atoms on OOM
+  while chosen_i > 0:
+    try:
+      _probe_supercell(atoms_prim, candidates[chosen_i], calc, device)
+      return candidates[chosen_i]
+    except torch.cuda.OutOfMemoryError:
+      torch.cuda.empty_cache()
+      chosen_i = min(chosen_i - 1, int(np.searchsorted(natoms,
+        0.9 * natoms[chosen_i], side = 'right')) - 1)
+  return min_reps
+
+def run_md(structure, trajectory_path = 'md.traj',
+  log_path = 'md.log', timestep = 1.25, temp = 300,
   friction = 0.002, loginterval = 4, nsteps = 41600,
-  burnin_steps = 1600, max_rms_burnin = 0.5):
+  burnin_steps = 1600, max_rms_burnin = 0.5, minimum_length = 8.4,
+  maximize_supercell = True, gpu_memory_fraction = 0.8, max_atoms = None,
+  min_production_steps = 4000, mlip = 'uma-s-1p2p1', task_name = 'omat',
+  inference_settings = 'nitro', device = 'cuda'):
+  """Langevin MD of a supercell of structure, writing every loginterval
+  steps to trajectory_path, and failing if the RMS displacement exceeds
+  max_rms_burnin during the first burnin_steps steps.
+
+  The minimum supercell has every length at least minimum_length (Å). If
+  maximize_supercell, the supercell is instead the largest (with that
+  minimum length preserved) whose force evaluation fits in
+  gpu_memory_fraction of the GPU memory, with at most max_atoms atoms if not
+  None. The cost per step is roughly flat in the number of atoms, while the
+  statistics of the configurational averages scale with atoms times frames,
+  so the production steps after the burn-in (nsteps - burnin_steps for the
+  minimum supercell) are divided by the number of minimum supercells in the
+  supercell, down to min_production_steps, and rounded up to a multiple of
+  loginterval. The burn-in is unchanged, so the burn-in frames of the
+  trajectory (first_frame in _iter_path_lengths) are too."""
   try:
     from ase import units
     from ase.build.supercells import make_supercell
@@ -49,21 +163,37 @@ def run_md(structure, trajectory_path = 'md.traj',
     from ase.md import MDLogger
     from ase.md.langevin import Langevin
     from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
-    from fairchem.core import FAIRChemCalculator, pretrained_mlip
+    from fairchem.core import FAIRChemCalculator
   except ImportError as e:
     raise ImportError('Error loading required packages for MD') from e
 
-  atoms = AseAtomsAdaptor().get_atoms(structure)
-  minimum_length = 8.4  # Angstrom
-  cell_lengths = np.linalg.norm(atoms.cell.array, axis = 1)
-  repetitions = np.maximum(1, np.ceil(minimum_length / cell_lengths).astype(int),)
-  M = np.diag(repetitions)
-  atoms = make_supercell(atoms, M)
-  atoms.set_constraint(FixCom())
+  atoms_prim = AseAtomsAdaptor().get_atoms(structure)
+  cell_lengths = np.linalg.norm(atoms_prim.cell.array, axis = 1)
+  min_reps = _min_repetitions(cell_lengths, minimum_length)
+  # The model is loaded once, and the calculator shared by the supercell
+  # probes and the MD
+  calc = FAIRChemCalculator(_md_predictor(mlip, inference_settings, device),
+    task_name = task_name)
+  repetitions = min_reps
+  if maximize_supercell:
+    repetitions = _largest_md_supercell(atoms_prim, minimum_length, calc,
+      device, gpu_memory_fraction, max_atoms)
 
-  predictor = pretrained_mlip.get_predict_unit('uma-s-1p2p1', 
-    device = 'cuda', inference_settings = 'nitro')
-  atoms.calc = FAIRChemCalculator(predictor, task_name = 'omat')
+  # Fewer production steps for a larger supercell
+  size_ratio = np.prod(repetitions) / np.prod(min_reps)
+  production_steps = max(min_production_steps,
+    (nsteps - burnin_steps) / size_ratio)
+  production_steps = int(loginterval * np.ceil(
+    production_steps / loginterval))
+  total_steps = burnin_steps + production_steps
+  natoms = len(atoms_prim) * int(np.prod(repetitions))
+  print(f'MD supercell {repetitions.tolist()}: {natoms} atoms '
+    f'({size_ratio:.2f}x the minimum), {burnin_steps} burn-in + '
+    f'{production_steps} production steps', flush = True)
+
+  atoms = make_supercell(atoms_prim, np.diag(repetitions))
+  atoms.set_constraint(FixCom())
+  atoms.calc = calc
   rng = np.random.RandomState(0)
   MaxwellBoltzmannDistribution(atoms, temperature_K = temp, rng=rng)
   initial_positions = atoms.get_scaled_positions().copy()
@@ -96,7 +226,7 @@ def run_md(structure, trajectory_path = 'md.traj',
   dyn.attach(logger, interval = loginterval)
   dyn.attach(check_initial_drift, interval = loginterval)
   try:
-    dyn.run(nsteps)
+    dyn.run(total_steps)
   finally:
     trajectory.close()
     logger.close()
