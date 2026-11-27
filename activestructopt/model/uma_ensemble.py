@@ -42,6 +42,10 @@ def _pretrained_backbone(model_name):
     _PRETRAINED_BACKBONES[model_name] = model.backbone.cpu()
   return copy.deepcopy(_PRETRAINED_BACKBONES[model_name])
 
+def _cpu_state_dict(module):
+  return {key: value.detach().to('cpu', copy = True)
+    for key, value in module.state_dict().items()}
+
 class NodeVectorHead(torch.nn.Module):
   """MLP from the invariant (l = 0) node embedding to a per-atom vector."""
   def __init__(self, in_channels, size, num_layers = 1, hidden_channels = 256):
@@ -97,8 +101,11 @@ class UMAEnsemble(BaseModel):
     backbone_weight_decay = 0.0, head_weight_decay = 0.1,
     head_layers = 1, head_hidden_channels = 256, grad_clip = 1.0,
     lr_patience = 5, lr_factor = 0.5, early_stopping_patience = 15,
-    seed = 0, epoch_callback = None, **kwargs):
-    """epoch_callback: optional function, for monitoring, called after each
+    seed = 0, merge_mole = True, epoch_callback = None, **kwargs):
+    """merge_mole: whether to merge the backbone's mixture of linear experts
+    into plain linear layers for the composition of the dataset before
+    fine-tuning (see _base_backbone).
+    epoch_callback: optional function, for monitoring, called after each
     epoch's validation as epoch_callback(i, epoch, backbone, head, val_loss)
     for ensemble member i, with the backbone and head in eval mode."""
     self.sim_index = sim_index
@@ -113,11 +120,11 @@ class UMAEnsemble(BaseModel):
     self.backbones = []
     self.heads = []
 
+    base_backbone = self._base_backbone(dataset, merge_mole)
+
     gen = torch.Generator().manual_seed(seed)
     for i in range(self.k):
-      backbone = _pretrained_backbone(self.model_name).to(self.device)
-      self.cutoff = backbone.cutoff
-      self.max_neighbors = backbone.max_neighbors
+      backbone = copy.deepcopy(base_backbone).to(self.device)
       head = NodeVectorHead(backbone.sphere_channels, out_dim,
         num_layers = head_layers,
         hidden_channels = head_hidden_channels).to(self.device)
@@ -171,8 +178,8 @@ class UMAEnsemble(BaseModel):
         if val_loss < best_val - 1e-8:
           best_val = val_loss
           epochs_since_best = 0
-          best_state = (copy.deepcopy(backbone.state_dict()),
-            copy.deepcopy(head.state_dict()))
+          # Kept on the CPU so that the GPU does not hold a second model
+          best_state = (_cpu_state_dict(backbone), _cpu_state_dict(head))
         else:
           epochs_since_best += 1
           if epochs_since_best >= early_stopping_patience:
@@ -184,15 +191,54 @@ class UMAEnsemble(BaseModel):
       head.eval()
       backbone.requires_grad_(False)
       head.requires_grad_(False)
-      self.backbones.append(backbone)
-      self.heads.append(head)
-      del optimizer, scheduler, best_state, train_batches, val_batches
+      # Kept on the CPU while the remaining members train
+      self.backbones.append(backbone.cpu())
+      self.heads.append(head.cpu())
+      del (backbone, head, param_groups, optimizer, scheduler, best_state,
+        train_batches, val_batches)
       if self.device == 'cuda':
         torch.cuda.empty_cache()
+
+    del base_backbone
+    self.backbones = [b.to(self.device) for b in self.backbones]
+    self.heads = [h.to(self.device) for h in self.heads]
 
     gnn_mae, _, _ = self.set_scalar_calibration(dataset)
 
     return gnn_mae, [], [{} for _ in range(self.k)]
+
+  def _base_backbone(self, dataset, merge_mole):
+    """The pretrained backbone, on the CPU, that each member is fine-tuned
+    from.
+
+    The mixture of linear experts (MoLE) layers blend their experts with
+    coefficients that depend only on the composition, charge, spin and task,
+    and they do so separately for each structure in a batch. Every structure
+    here has the same atoms (batch_pos_cell uses those of the starting
+    structure), so with merge_mole the experts are blended once into plain
+    linear layers. The predictions of the pretrained backbone are unchanged,
+    while the parameters, their gradients and optimizer state, and the
+    per-structure blended weights are reduced by about the number of experts.
+    Fine-tuning then updates the blended weights rather than each expert."""
+    base = _pretrained_backbone(self.model_name)
+    self.cutoff = base.cutoff
+    self.max_neighbors = base.max_neighbors
+    if not merge_mole or getattr(base, 'num_experts', 0) == 0:
+      return base
+
+    # The blend also depends on the number of atoms for some models (UMA-S-1.2
+    # includes a zero in its mean composition), so the atoms must match
+    atoms = {tuple(sorted(s.atomic_numbers)) for s in dataset.structures}
+    if len(atoms) > 1:
+      raise ValueError('merge_mole requires every structure to have the same '
+        'atoms, so train with merge_mole = False for this dataset')
+
+    base = base.to(self.device).eval()
+    data = self.batch_structures([dataset.structures[0]]).atomic_data
+    with torch.no_grad():
+      merged = base.merge_MOLE_model(data)
+    del base, data
+    return merged.cpu()
 
   def _dataset_batches(self, dataset, indices):
     """Positions, cells, atomic numbers and per-atom targets for the given
