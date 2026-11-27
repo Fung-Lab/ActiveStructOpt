@@ -101,13 +101,16 @@ class UMAEnsemble(BaseModel):
     self.max_neighbors = None
 
   def train(self, dataset: KFoldsDataset, sim_index, iterations = 250,
-    lr = 0.001, batch_size = 16, freeze_backbone = False,
+    lr = 0.001, batch_size = 16, freeze_backbone = False, backbone_lr = None,
     backbone_weight_decay = 0.0, head_weight_decay = 0.1,
     head_layers = 1, head_hidden_channels = 256, grad_clip = 1.0,
     lr_patience = 5, lr_factor = 0.5, early_stopping_patience = 15,
     seed = 0, merge_mole = True, subtract_mean = True, epoch_callback = None,
     **kwargs):
-    """subtract_mean: whether each member's head predicts the deviation from
+    """lr: learning rate of the head, and of the backbone unless backbone_lr
+    is given, so that the pretrained backbone can be fine-tuned more gently
+    than the new head. Both are reduced together on plateaus.
+    subtract_mean: whether each member's head predicts the deviation from
     the mean spectrum of the masked atoms of its training structures, rather
     than the spectrum itself, so that it starts from that mean.
     merge_mole: whether to merge the backbone's mixture of linear experts
@@ -145,7 +148,8 @@ class UMAEnsemble(BaseModel):
         # Weight decay pulls the weights toward zero rather than toward their
         # pretrained values, so it defaults to zero for the backbone
         param_groups.append({'params': backbone.parameters(),
-          'weight_decay': backbone_weight_decay})
+          'weight_decay': backbone_weight_decay,
+          'lr': lr if backbone_lr is None else backbone_lr})
       optimizer = torch.optim.AdamW(param_groups, lr = lr,
         betas = (0.9, 0.95), eps = 1e-8)
       scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,
