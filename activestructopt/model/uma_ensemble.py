@@ -97,7 +97,10 @@ class UMAEnsemble(BaseModel):
     backbone_weight_decay = 0.0, head_weight_decay = 0.1,
     head_layers = 1, head_hidden_channels = 256, grad_clip = 1.0,
     lr_patience = 5, lr_factor = 0.5, early_stopping_patience = 15,
-    seed = 0, **kwargs):
+    seed = 0, epoch_callback = None, **kwargs):
+    """epoch_callback: optional function, for monitoring, called after each
+    epoch's validation as epoch_callback(i, epoch, backbone, head, val_loss)
+    for ensemble member i, with the backbone and head in eval mode."""
     self.sim_index = sim_index
     out_dim = self.config['dataset']['preprocess_params']['output_dim']
     mask = torch.tensor(dataset.simfuncs[sim_index].mask, dtype = torch.bool,
@@ -142,7 +145,7 @@ class UMAEnsemble(BaseModel):
       best_val = float('inf')
       best_state = None
       epochs_since_best = 0
-      for _ in range(iterations):
+      for epoch in range(iterations):
         backbone.train(not freeze_backbone)
         head.train()
         order = torch.randperm(len(train_indices), generator = gen).tolist()
@@ -162,6 +165,8 @@ class UMAEnsemble(BaseModel):
           val_loss = self._loss(backbone, head, val_batches,
             list(range(len(val_indices))), mask).item()
         scheduler.step(val_loss)
+        if epoch_callback is not None:
+          epoch_callback(i, epoch, backbone, head, val_loss)
 
         if val_loss < best_val - 1e-8:
           best_val = val_loss
