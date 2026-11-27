@@ -47,7 +47,9 @@ def _cpu_state_dict(module):
     for key, value in module.state_dict().items()}
 
 class NodeVectorHead(torch.nn.Module):
-  """MLP from the invariant (l = 0) node embedding to a per-atom vector."""
+  """MLP from the invariant (l = 0) node embedding to a per-atom vector, added
+  to a fixed offset (e.g. the mean training target), so that the MLP only
+  learns the deviation from it."""
   def __init__(self, in_channels, size, num_layers = 1, hidden_channels = 256):
     super().__init__()
     layers = []
@@ -57,9 +59,11 @@ class NodeVectorHead(torch.nn.Module):
       channels = hidden_channels
     layers.append(torch.nn.Linear(channels, size))
     self.mlp = torch.nn.Sequential(*layers)
+    # A buffer, so it is saved with the state dict but not trained
+    self.register_buffer('offset', torch.zeros(size))
 
   def forward(self, emb):
-    return self.mlp(emb['node_embedding'][:, 0, :])
+    return self.mlp(emb['node_embedding'][:, 0, :]) + self.offset
 
 class UMABatch:
   """A batch of structures for the UMA backbone.
@@ -101,8 +105,12 @@ class UMAEnsemble(BaseModel):
     backbone_weight_decay = 0.0, head_weight_decay = 0.1,
     head_layers = 1, head_hidden_channels = 256, grad_clip = 1.0,
     lr_patience = 5, lr_factor = 0.5, early_stopping_patience = 15,
-    seed = 0, merge_mole = True, epoch_callback = None, **kwargs):
-    """merge_mole: whether to merge the backbone's mixture of linear experts
+    seed = 0, merge_mole = True, subtract_mean = True, epoch_callback = None,
+    **kwargs):
+    """subtract_mean: whether each member's head predicts the deviation from
+    the mean spectrum of the masked atoms of its training structures, rather
+    than the spectrum itself, so that it starts from that mean.
+    merge_mole: whether to merge the backbone's mixture of linear experts
     into plain linear layers for the composition of the dataset before
     fine-tuning (see _base_backbone).
     epoch_callback: optional function, for monitoring, called after each
@@ -148,6 +156,10 @@ class UMAEnsemble(BaseModel):
       val_indices = np.array(dataset.kfolds[i])
       train_batches = self._dataset_batches(dataset, train_indices)
       val_batches = self._dataset_batches(dataset, val_indices)
+      if subtract_mean:
+        # From this member's training structures only, not its validation fold
+        head.offset.copy_(torch.cat([target[mask] for _, _, _, target
+          in train_batches], dim = 0).mean(dim = 0))
 
       best_val = float('inf')
       best_state = None
