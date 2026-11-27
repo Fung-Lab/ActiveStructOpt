@@ -42,6 +42,51 @@ def _pretrained_backbone(model_name):
     _PRETRAINED_BACKBONES[model_name] = model.backbone.cpu()
   return copy.deepcopy(_PRETRAINED_BACKBONES[model_name])
 
+class RSpaceTransform:
+  """Differentiable |chi(R)| of k-weighted chi(k) spectra, following the
+  forward transform of larch.xafs.xafsft (xftf_prep and xftf_fast): the
+  spectra are placed on a uniform k grid starting at k = 0, multiplied by
+  larch's FT window, zero padded to nfft points and transformed with a
+  scale of kstep / sqrt(pi). Only the magnitude between rmin and rmax is
+  returned, which removes the phase, and so most of the effect of E0
+  shifts, and the low-R background.
+
+  The default k grid is that of the EXAFS simulation targets: the k
+  weighting is already applied (kwout = 3), and the 180 points run from
+  k = 3.0 in steps of 0.05 (larch's autobk grid, cut at fit_kmin and
+  fit_kmax)."""
+  def __init__(self, npts, k0 = 3.0, kstep = 0.05, kmin = 3.0, kmax = 12.0,
+    dk = 1.0, window = 'hanning', nfft = 2048, rmin = 1.0, rmax = 6.0,
+    device = 'cpu'):
+    try:
+      from larch.xafs import ftwindow
+    except ImportError as e:
+      raise ImportError('Error loading xraylarch') from e
+    self.kstep = kstep
+    self.nfft = nfft
+    self.i0 = int(round(k0 / kstep))
+    self.npts = npts
+    if self.i0 + npts > nfft:
+      raise ValueError('nfft is too small for the k grid')
+    k = kstep * np.arange(self.i0 + npts, dtype = np.float64)
+    win = ftwindow(k, xmin = kmin, xmax = kmax, dx = dk, window = window)
+    self.window = torch.tensor(win[self.i0:], dtype = torch.float32,
+      device = device)
+    rstep = np.pi / (kstep * nfft)
+    r = rstep * np.arange(nfft // 2)
+    self.r_index = torch.tensor(np.where((r >= rmin) & (r <= rmax))[0],
+      dtype = torch.long, device = device)
+    self.r = r[self.r_index.cpu().numpy()]
+
+  def __call__(self, spectra):
+    """|chi(R)| of spectra of shape (..., npts), of shape (..., nR)."""
+    x = torch.nn.functional.pad(spectra * self.window,
+      (self.i0, self.nfft - self.i0 - self.npts))
+    chir = torch.fft.rfft(x, dim = -1)[..., self.r_index] * (
+      self.kstep / np.sqrt(np.pi))
+    # The small constant keeps the gradient finite where |chi(R)| = 0
+    return torch.sqrt(chir.real ** 2 + chir.imag ** 2 + 1e-12)
+
 def _cpu_state_dict(module):
   return {key: value.detach().to('cpu', copy = True)
     for key, value in module.state_dict().items()}
@@ -99,15 +144,32 @@ class UMAEnsemble(BaseModel):
     self.heads = []
     self.cutoff = None
     self.max_neighbors = None
+    self._rspace = None
+    self.norm = None
 
   def train(self, dataset: KFoldsDataset, sim_index, iterations = 250,
     lr = 0.001, batch_size = 16, freeze_backbone = False, backbone_lr = None,
     backbone_weight_decay = 0.0, head_weight_decay = 0.1,
     head_layers = 1, head_hidden_channels = 256, grad_clip = 1.0,
     lr_patience = 5, lr_factor = 0.5, early_stopping_patience = 15,
-    seed = 0, merge_mole = True, subtract_mean = True, epoch_callback = None,
-    **kwargs):
-    """lr: learning rate of the head, and of the backbone unless backbone_lr
+    seed = 0, merge_mole = True, subtract_mean = False, normalize = True,
+    loss = 'kspace', rspace_args = None, epoch_callback = None, **kwargs):
+    """normalize: whether to scale the masked atoms' spectra of each
+    structure by a common factor so that their average has a fixed norm,
+    as the EXAFS simulation does when it scales the simulated spectra to
+    the norm of the experimental spectrum (get_sim_spec in exafs.py). This
+    is applied to the predictions (in training and in predict) and to the
+    training targets, so that the loss compares the shapes of the spectra
+    and the relative amplitudes of the atoms within a structure, but not
+    the overall scale, which is set by the experiment rather than by the
+    structure. The fixed norm is the median norm of the average target
+    spectra of the training and validation structures.
+    loss: 'kspace' for the MAE between the predicted and target spectra
+    of each masked atom, or 'rspace' for the MAE between their |chi(R)|
+    (see RSpaceTransform, whose arguments are given by rspace_args), which
+    is insensitive to E0 and to the low-R background, but not to phase.
+    The fold validation loss, used for early stopping, is the same.
+    lr: learning rate of the head, and of the backbone unless backbone_lr
     is given, so that the pretrained backbone can be fine-tuned more gently
     than the new head. Both are reduced together on plateaus.
     subtract_mean: whether each member's head predicts the deviation from
@@ -123,9 +185,23 @@ class UMAEnsemble(BaseModel):
     out_dim = self.config['dataset']['preprocess_params']['output_dim']
     mask = torch.tensor(dataset.simfuncs[sim_index].mask, dtype = torch.bool,
       device = self.device)
+    if loss == 'kspace':
+      self._rspace = None
+    elif loss == 'rspace':
+      self._rspace = RSpaceTransform(out_dim, device = self.device,
+        **(rspace_args or {}))
+    else:
+      raise ValueError(f"loss must be 'kspace' or 'rspace', not {loss}")
 
     trainval_indices = np.setxor1d(np.arange(len(dataset.structures)),
       dataset.test_indices)
+
+    self.norm = None
+    if normalize:
+      np_mask = mask.cpu().numpy()
+      self.norm = float(np.median([np.linalg.norm(np.mean(np.array(
+        dataset.ys[sim_index][j])[np_mask], axis = 0))
+        for j in trainval_indices]))
 
     # Free the previous ensemble before building the new one
     self.backbones = []
@@ -275,13 +351,40 @@ class UMAEnsemble(BaseModel):
     return data
 
   def _loss(self, backbone, head, data, idx, mask):
-    """MAE between the predicted and target spectra of the masked atoms."""
+    """MAE between the predicted and target spectra of the masked atoms, or
+    between their |chi(R)| for the 'rspace' loss."""
     batch = self._build_batch([data[i][0] for i in idx],
       [data[i][1] for i in idx], [data[i][2] for i in idx])
     prediction = head(backbone(batch.atomic_data))
     target = torch.cat([data[i][3] for i in idx], dim = 0)
     atom_mask = mask.repeat(len(idx))
-    return torch.mean(torch.abs(prediction[atom_mask] - target[atom_mask]))
+    prediction = prediction[atom_mask]
+    target = target[atom_mask]
+    if self.norm is not None:
+      prediction = self._normalize_atoms(prediction, len(idx))
+      target = self._normalize_atoms(target, len(idx))
+    if self._rspace is not None:
+      prediction = self._rspace(prediction)
+      target = self._rspace(target)
+    return torch.mean(torch.abs(prediction - target))
+
+  def normalize_average(self, average):
+    """Scales average spectra, of shape (..., output_dim), to the fixed
+    norm, if normalize was set in train."""
+    if self.norm is None:
+      return average
+    return average * (self.norm / torch.linalg.vector_norm(average,
+      dim = -1, keepdim = True))
+
+  def _normalize_atoms(self, spectra, nstructures):
+    """Scales the masked atoms' spectra, of shape (nstructures * natoms,
+    output_dim), by a factor per structure so that their average has the
+    fixed norm."""
+    spectra = spectra.view(nstructures, -1, spectra.shape[-1])
+    average = spectra.mean(dim = 1, keepdim = True)
+    scale = self.norm / torch.linalg.vector_norm(average, dim = -1,
+      keepdim = True)
+    return (spectra * scale).reshape(-1, spectra.shape[-1])
 
   def batch_structures(self, structures):
     pos = [torch.tensor(s.cart_coords, dtype = torch.float32,
@@ -392,7 +495,10 @@ class UMAEnsemble(BaseModel):
     for backbone, head in zip(self.backbones, self.heads):
       out = head(backbone(atomic_data))
       out = out.view(nstructures, -1, out.shape[-1])  # (nstructures, natoms, outdim)
-      prediction.append(torch.mean(out[:, mask, :], dim = 1)) # node level masking
+      # Node level masking, and each member's average scaled to the fixed
+      # norm (if normalize was set in train), as in training
+      prediction.append(self.normalize_average(
+        torch.mean(out[:, mask, :], dim = 1)))
     prediction = torch.stack(prediction)  # (k, nstructures, outdim)
 
     mean = torch.mean(prediction, dim = 0)
