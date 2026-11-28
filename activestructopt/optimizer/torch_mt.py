@@ -25,13 +25,21 @@ class TorchMT(BaseOptimizer):
     pos_lr = 0.001, cell_lr = 0.001, random_starts = False,
     save_only_constrained_structures = False, min_distance = 0.25,
     energy_model: BaseEnergy = None, energy_scale = 0.0,
-    **kwargs) -> list[IStructure]:
+    nuisance_lr = None, **kwargs) -> list[IStructure]:
     """Returns the best structure found by each start, sorted by objective,
     keeping only the first N that are at least min_distance (Å, see
     optimizer.base.rms_distance) from each other and the dataset.
 
     If energy_model is given and energy_scale is nonzero, energy_scale times
-    the energy (eV) of each structure is added to its objective."""
+    the energy (eV) of each structure is added to its objective.
+
+    If a simulation has structure-wide nuisance parameters (see
+    BaseSimulation.get_nuisance, e.g. ΔE0 of EXAFS), each start has its own,
+    initialized from the predictions for its starting structure (a grid
+    search for ΔE0) and optimized alongside the structure with learning rate
+    nuisance_lr (or the simulation's default). The model's predictions are
+    of the raw spectra, which the nuisance fit maps onto the target before
+    the objective."""
     use_energy = energy_model is not None and energy_scale != 0.0
 
     starting_structures = [sampler.sample(
@@ -57,11 +65,22 @@ class TorchMT(BaseOptimizer):
     data_cell = [torch.Tensor(struct.lattice.matrix.tolist()).to(device
       ) for struct in starting_structures]
 
+    # Nuisance parameters of each model's simulation, one tensor per start
+    nuisances = [getattr(dataset.simfuncs[m], 'get_nuisance',
+      lambda device: None)(device) for m in range(len(models))]
+    nuisance_params = [None if nu is None else [torch.zeros(nu.n_params,
+      device = device, requires_grad = True) for _ in range(nstarts)]
+      for nu in nuisances]
+
     to_optimize = []
     if optimize_atoms:
       to_optimize += [{'params': p, 'lr': pos_lr} for p in data_pos]
     if optimize_lattice:
       to_optimize += [{'params': c, 'lr': cell_lr} for c in data_cell]
+    for nu, params in zip(nuisances, nuisance_params):
+      if nu is not None:
+        to_optimize += [{'params': p, 'lr': nu.default_lr if (
+          nuisance_lr is None) else nuisance_lr} for p in params]
     optimizer = getattr(torch.optim, optimizer)(to_optimize,
       **(optimizer_args))
 
@@ -94,6 +113,20 @@ class TorchMT(BaseOptimizer):
             # Get Predictions
             predictions = [models[m].predict(batch_data, prepared = True,
               mask = dataset.simfuncs[m].mask) for m in range(len(models))]
+
+            # Fit of the nuisance parameters, initialized at the first
+            # iteration from the predictions for the starting structures
+            for m, nu in enumerate(nuisances):
+              if nu is None:
+                continue
+              batch_params = nuisance_params[m][starti:(stopi + 1)]
+              if i == 0:
+                init = nu.initial_params(predictions[m], targets[m])
+                with torch.no_grad():
+                  for j, p in enumerate(batch_params):
+                    p.copy_(init[j])
+              predictions[m] = nu.apply(predictions[m], targets[m],
+                torch.stack(batch_params))
 
             # Calculate Objectives
             objs, obj_total = objective.get(predictions, targets,
@@ -134,6 +167,10 @@ class TorchMT(BaseOptimizer):
             if i != iters_per_start - 1:
               obj_total.backward()
               optimizer.step()
+              for nu, params in zip(nuisances, nuisance_params):
+                if nu is not None:
+                  for p in params[starti:(stopi + 1)]:
+                    nu.project_(p)
 
             del predictions, objs, obj_total, energy_vals
           predicted = True
@@ -147,7 +184,7 @@ class TorchMT(BaseOptimizer):
           else:
             raise e
 
-    del targets, data_pos, data_cell
+    del targets, data_pos, data_cell, nuisance_params
 
     return best.select(starting_structures[0], dataset.structures, N,
       min_distance = min_distance), obj_values

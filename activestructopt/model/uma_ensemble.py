@@ -43,21 +43,22 @@ def _pretrained_backbone(model_name):
   return copy.deepcopy(_PRETRAINED_BACKBONES[model_name])
 
 class RSpaceTransform:
-  """Differentiable |chi(R)| of k-weighted chi(k) spectra, following the
-  forward transform of larch.xafs.xafsft (xftf_prep and xftf_fast): the
-  spectra are placed on a uniform k grid starting at k = 0, multiplied by
-  larch's FT window, zero padded to nfft points and transformed with a
+  """Differentiable |chi(R)| of chi(k) spectra, following the forward
+  transform of larch.xafs.xafsft (xftf_prep and xftf_fast): the spectra
+  are placed on a uniform k grid starting at k = 0, multiplied by k^kweight
+  and larch's FT window, zero padded to nfft points and transformed with a
   scale of kstep / sqrt(pi). Only the magnitude between rmin and rmax is
   returned, which removes the phase, and so most of the effect of E0
   shifts, and the low-R background.
 
-  The default k grid is that of the EXAFS simulation targets: the k
-  weighting is already applied (kwout = 3), and the 180 points run from
-  k = 3.0 in steps of 0.05 (larch's autobk grid, cut at fit_kmin and
-  fit_kmax)."""
+  The spectra are on a grid of npts points from k0 in steps of kstep
+  (larch's autobk grid). UMAEnsemble.train sets k0, kstep and kweight from
+  the simulation (EXAFS.raw_k, whose raw spectra are not k-weighted and
+  extend past the fit window so that ΔE0 can be fit afterwards, and
+  EXAFS.kweight); the window, [kmin, kmax], defaults to the fit window."""
   def __init__(self, npts, k0 = 3.0, kstep = 0.05, kmin = 3.0, kmax = 12.0,
     dk = 1.0, window = 'hanning', nfft = 2048, rmin = 1.0, rmax = 6.0,
-    device = 'cpu'):
+    kweight = 0, device = 'cpu'):
     try:
       from larch.xafs import ftwindow
     except ImportError as e:
@@ -69,7 +70,9 @@ class RSpaceTransform:
     if self.i0 + npts > nfft:
       raise ValueError('nfft is too small for the k grid')
     k = kstep * np.arange(self.i0 + npts, dtype = np.float64)
-    win = ftwindow(k, xmin = kmin, xmax = kmax, dx = dk, window = window)
+    # The k weighting is folded into the window
+    win = ftwindow(k, xmin = kmin, xmax = kmax, dx = dk,
+      window = window) * k ** kweight
     self.window = torch.tensor(win[self.i0:], dtype = torch.float32,
       device = device)
     rstep = np.pi / (kstep * nfft)
@@ -188,8 +191,16 @@ class UMAEnsemble(BaseModel):
     if loss == 'kspace':
       self._rspace = None
     elif loss == 'rspace':
+      # The k grid and weight of the spectra, from the simulation's raw grid
+      # if it has one (see EXAFS), unless given in rspace_args
+      simfunc = dataset.simfuncs[sim_index]
+      raw_k = getattr(simfunc, 'raw_k', None)
+      rspace_kwargs = {} if raw_k is None else {'k0': float(raw_k[0]),
+        'kstep': float(raw_k[1] - raw_k[0]),
+        'kweight': getattr(simfunc, 'kweight', 0)}
+      rspace_kwargs.update(rspace_args or {})
       self._rspace = RSpaceTransform(out_dim, device = self.device,
-        **(rspace_args or {}))
+        **rspace_kwargs)
     else:
       raise ValueError(f"loss must be 'kspace' or 'rspace', not {loss}")
 

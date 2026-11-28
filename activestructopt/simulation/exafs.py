@@ -6,6 +6,7 @@ from pymatgen.io import feff
 from pymatgen.io.feff.sets import MPEXAFSSet
 from itertools import product
 import numpy as np
+import torch
 import subprocess
 import shutil
 import stat
@@ -896,26 +897,358 @@ def get_aligned_sim(sim, exp_g, traj, kmin_fit = 3.0, kmax_fit = 12.0,
     deltar, avg_factor, pha, amp, rep, lam])
   result = minner.minimize()
   
-  sim_chi = get_sim_spec(result.params, exp_g, kstart, kstop, 
+  sim_chi = get_sim_spec(result.params, exp_g, kstart, kstop,
     feffk, Reffs, degens, deltar, avg_factor,
     pha, amp, rep, lam, avg_spec = False)
   return sim_chi[:, kstart:kstop] * exp_g.k[None, kstart:kstop] ** kwout
 
+# Structure-wide free parameters of the fit (ΔE0, amplitude and a smooth
+# background spline), fit between simulated (or predicted) raw spectra and
+# the experimental target.
+#
+# The simulation saves raw spectra: chi(k) of each absorber, not k-weighted,
+# with no E0 shift, amplitude scaling or background correction, on a k grid
+# (the raw grid) that extends past the fit window far enough for any ΔE0
+# within the bounds. The fitted spectrum on the fit window (the target's
+# grid) is
+#
+#   fit(k) = k^kw * (s * chi_raw(q) + sum_i c_i B_i(k)),
+#   q = sqrt(k^2 - ΔE0 * ETOK)
+#
+# with s >= 0 the amplitude, and B_i a cubic B-spline basis whose knot
+# spacing is set by rbkg, as in larch's autobk, so that the background can
+# only absorb the low-R (R < ~rbkg) part of the spectrum, and not the paths.
+# For a FEFF chi(k) (with ei = 0) the E0 shift is exactly this resampling,
+# since every term of the path sum is evaluated at q (see
+# get_absorber_spectra).
+#
+# For a given ΔE0, s and c are a linear least squares fit (with s >= 0), so
+# they are solved exactly. ΔE0 is found by a grid search over its bounds,
+# refined with a bounded scalar minimization for simulated spectra, or by
+# gradient descent alongside the structure in the optimizer.
+
+# larch.xafs.xafsutils.ETOK (Å^-2 / eV), which the larch import replaces if
+# available, so the shift matches the larch version that made the k grids
+try:
+  from larch.xafs.xafsutils import ETOK
+except ImportError:
+  ETOK = 0.2624684236075176
+
+def _index_of(array, value):
+  """larch.math.index_of: index of array at or below value"""
+  if value < np.min(array):
+    return 0
+  return int(np.max(np.where(array <= value)[0]))
+
+def exafs_k_grids(fit_kmin, fit_kmax, kstep = 0.05, max_dE0 = 30.0, pad = 2):
+  """Index ranges, on the grid k = kstep * arange(n) of larch's autobk, of
+  the fit window (out_start, out_stop) and of the raw grid
+  (raw_start, raw_stop). The fit window is [index_of(k, fit_kmin),
+  index_of(k, fit_kmax)), as the targets are cut. The raw grid covers
+  q = sqrt(k^2 - ΔE0 * ETOK) for every k in the fit window and
+  |ΔE0| <= max_dE0, with pad extra points on each side for the cubic
+  interpolation."""
+  k = kstep * np.arange(int(np.ceil((np.sqrt(fit_kmax ** 2 + max_dE0 * ETOK)
+    + 2 * kstep) / kstep)) + pad + 2)
+  out_start = _index_of(k, fit_kmin)
+  out_stop = _index_of(k, fit_kmax)
+  kmin_out = k[out_start]
+  kmax_out = k[out_stop - 1]
+  if kmin_out ** 2 <= max_dE0 * ETOK:
+    raise ValueError(f'max_dE0 = {max_dE0} eV shifts k = {kmin_out} below '
+      'zero, so use a smaller max_dE0 or a larger fit_kmin')
+  qmin = np.sqrt(kmin_out ** 2 - max_dE0 * ETOK)
+  qmax = np.sqrt(kmax_out ** 2 + max_dE0 * ETOK)
+  raw_start = int(np.floor(qmin / kstep)) - pad
+  raw_stop = int(np.ceil(qmax / kstep)) + pad + 1
+  if raw_start < 1:
+    raise ValueError(f'max_dE0 = {max_dE0} eV shifts the fit window too '
+      'close to k = 0, so use a smaller max_dE0 or a larger fit_kmin')
+  return (out_start, out_stop), (raw_start, raw_stop)
+
+def bkg_spline_basis(k, rbkg = 1.0):
+  """Cubic B-spline basis on the points k, shape (len(k), nspl), spanning
+  [k[0], k[-1]] with knots placed as by larch's autobk (splrep through nspl
+  evenly spaced points), and with nspl = 1 + int(2 * rbkg * (kmax - kmin)
+  / pi) as in autobk, so that the knot spacing (about pi / (2 rbkg)) only
+  allows the background to represent R < ~rbkg. Unlike autobk, nspl is not
+  raised to at least 5, only to the 4 that a cubic spline needs."""
+  try:
+    from scipy.interpolate import BSpline
+  except ImportError as e:
+    raise ImportError('Error loading scipy') from e
+  kmin, kmax = k[0], k[-1]
+  nspl = max(4, min(128, 1 + int(2 * rbkg * (kmax - kmin) / np.pi)))
+  spl_k = np.linspace(kmin, kmax, nspl)
+  # splrep's knots for interpolation through spl_k (not-a-knot ends)
+  knots = np.concatenate([[kmin] * 4, spl_k[2:-2], [kmax] * 4])
+  eye = np.eye(nspl)
+  return np.stack([BSpline(knots, eye[i], 3)(k) for i in range(nspl)],
+    axis = 1)
+
+class EXAFSNuisance:
+  """The fit of the structure-wide parameters, in torch so that the fitted
+  spectrum stays differentiable with respect to the raw spectrum and ΔE0.
+
+  The amplitude and background coefficients are solved exactly for the
+  current ΔE0 and then held constant (detached): they minimize the squared
+  error to the target, so by the envelope theorem the gradient of that error
+  with respect to the raw spectrum and ΔE0 is the same as if they were
+  differentiated through."""
+  n_params = 1
+  names = ['ΔE0']
+  default_lr = 0.1 # eV per Adam step
+
+  def __init__(self, kstep, raw_start, raw_stop, out_start, out_stop,
+    kweight = 3, rbkg = 1.0, max_dE0 = 30.0, grid_step = 0.5, ridge = 1e-10,
+    device = 'cpu'):
+    self.kstep = kstep
+    self.raw_start = raw_start
+    self.nraw = raw_stop - raw_start
+    self.nout = out_stop - out_start
+    self.kweight = kweight
+    self.max_dE0 = max_dE0
+    self.ridge = ridge
+    self.device = device
+
+    k_out = kstep * np.arange(out_start, out_stop)
+    basis = bkg_spline_basis(k_out, rbkg) * k_out[:, None] ** kweight
+    self.nspl = basis.shape[1]
+    self.k_out = torch.tensor(k_out, dtype = torch.float64, device = device)
+    # k-weighted background basis on the fit window, (nout, nspl)
+    self.basis = torch.tensor(basis, dtype = torch.float64, device = device)
+    self.basis_gram = self.basis.T @ self.basis
+    self.dE0_grid = torch.tensor(np.arange(-max_dE0, max_dE0 + grid_step / 2,
+      grid_step), dtype = torch.float64, device = device)
+    self.lower = -max_dE0
+    self.upper = max_dE0
+
+  def resample(self, chi, dE0):
+    """The raw spectra chi, of shape (..., nraw), shifted by dE0
+    (broadcastable to chi.shape[:-1]) and k-weighted on the fit window, of
+    shape (..., nout). Cubic convolution (Keys, a = -1/2) interpolation,
+    which is continuously differentiable in dE0."""
+    dtype = chi.dtype
+    dE0 = torch.as_tensor(dE0, dtype = torch.float64, device = chi.device)
+    k_out = self.k_out.to(chi.device)
+    chi = chi.to(torch.float64)
+    q = torch.sqrt(torch.clamp(k_out ** 2 - dE0.unsqueeze(-1) * ETOK,
+      min = 0.0))
+    t = q / self.kstep - self.raw_start
+    i = torch.clamp(torch.floor(t.detach()), 1, self.nraw - 3)
+    x = t - i
+    i = i.long()
+    x2 = x * x
+    x3 = x2 * x
+    weights = (
+      -0.5 * x3 + x2 - 0.5 * x,
+      1.5 * x3 - 2.5 * x2 + 1.0,
+      -1.5 * x3 + 2.0 * x2 + 0.5 * x,
+      0.5 * x3 - 0.5 * x2,
+    )
+    # take_along_dim broadcasts chi's leading dimensions against i's
+    chi_q = sum(w * torch.take_along_dim(chi, i + offset, dim = -1)
+      for w, offset in zip(weights, (-1, 0, 1, 2)))
+    return (chi_q * k_out ** self.kweight).to(dtype)
+
+  @torch.no_grad()
+  def solve_linear(self, shifted, target):
+    """Least squares amplitude s >= 0, of shape (...), and background
+    coefficients c, of shape (..., nspl), of s * shifted + basis @ c to
+    target, for shifted of shape (..., nout)."""
+    x = shifted.to(torch.float64)
+    target = target.to(torch.float64)
+    basis = self.basis.to(x.device)
+    basis_gram = self.basis_gram.to(x.device)
+    bx = x @ basis # (..., nspl)
+    gram = torch.zeros(*x.shape[:-1], self.nspl + 1, self.nspl + 1,
+      dtype = torch.float64, device = x.device)
+    gram[..., 0, 0] = (x * x).sum(-1)
+    gram[..., 0, 1:] = bx
+    gram[..., 1:, 0] = bx
+    gram[..., 1:, 1:] = basis_gram
+    rhs = torch.cat([(x * target).sum(-1, keepdim = True),
+      (target @ basis).expand(*x.shape[:-1], self.nspl)], dim = -1)
+    # Relative ridge, so a spectrum (nearly) in the span of the background
+    # basis does not make the solve singular
+    diag = torch.diagonal(gram, dim1 = -2, dim2 = -1)
+    gram = gram + torch.diag_embed(self.ridge * diag + 1e-300)
+    theta = torch.linalg.solve(gram, rhs.unsqueeze(-1)).squeeze(-1)
+    s = theta[..., 0]
+    c = theta[..., 1:]
+
+    # Background only where the amplitude would be negative (a spectrum
+    # flipped in sign is not physical) or the solve failed
+    c0 = torch.linalg.solve(basis_gram + torch.diag(self.ridge * torch.diagonal(
+      basis_gram)), target @ basis)
+    bad = ~(torch.isfinite(s) & (s > 0)) | ~torch.isfinite(c).all(-1)
+    s = torch.where(bad, torch.zeros_like(s), s)
+    c = torch.where(bad.unsqueeze(-1), c0.expand_as(c), c)
+    return s, c
+
+  def fitted(self, chi, target, dE0):
+    """The fitted spectra of the raw spectra chi, (..., nraw), at dE0, of
+    shape (..., nout), with the amplitude s (...) and background
+    coefficients c (..., nspl). Differentiable in chi and dE0."""
+    shifted = self.resample(chi, dE0)
+    s, c = self.solve_linear(shifted.detach(), target)
+    fit = s.unsqueeze(-1) * shifted.to(torch.float64) + c @ self.basis.to(
+      chi.device).T
+    return fit.to(chi.dtype), s, c
+
+  @torch.no_grad()
+  def grid_search(self, chi, target):
+    """The ΔE0 of the grid with the lowest squared error of the fitted
+    spectrum, for each spectrum in chi, of shape (..., nraw)."""
+    grid = self.dE0_grid.to(chi.device)
+    fit, _, _ = self.fitted(chi.unsqueeze(-2), target,
+      grid.expand(*chi.shape[:-1], len(grid)))
+    sse = ((fit.to(torch.float64) - target.to(torch.float64)) ** 2).sum(-1)
+    sse = torch.nan_to_num(sse, nan = float('inf'))
+    return grid[torch.argmin(sse, dim = -1)]
+
+  # Interface used by the optimizer, for predictions of shape (2, N, nraw)
+  # (mean and standard deviation over the ensemble) and per-structure
+  # parameters of shape (N, n_params)
+
+  @torch.no_grad()
+  def initial_params(self, prediction, target):
+    """ΔE0 of each structure from a grid search on the mean prediction,
+    shape (N, n_params)."""
+    return self.grid_search(prediction[0].detach(), target).to(
+      prediction.dtype).unsqueeze(-1)
+
+  def apply(self, prediction, target, params):
+    """The mean and standard deviation of the predictions, (2, N, nraw),
+    mapped to the fit window, (2, N, nout), with the structure-wide
+    parameters fit to the target. The parameters are shared across the
+    ensemble: ΔE0 is params[:, 0], and the amplitude and background are
+    solved on the mean. The background has no uncertainty, so the standard
+    deviation is only shifted, k-weighted and scaled by the amplitude."""
+    dE0 = params[:, 0]
+    mean, s, _ = self.fitted(prediction[0], target, dE0)
+    std = s.unsqueeze(-1).to(prediction.dtype) * torch.abs(self.resample(
+      prediction[1], dE0))
+    return torch.stack((mean, std))
+
+  @torch.no_grad()
+  def project_(self, params):
+    """Clamps params in place to the bounds of ΔE0."""
+    params[..., 0].clamp_(self.lower, self.upper)
+
+  # Fit of a simulated spectrum, used for the mismatch
+
+  def fit(self, chi, target, refine = True):
+    """Fit of the raw spectrum chi (numpy, (nraw,)) to target (numpy,
+    (nout,), k-weighted): a grid search over ΔE0, refined by a bounded
+    scalar minimization between the neighboring grid points. Returns a dict
+    with the fitted spectrum, ΔE0, amplitude, background coefficients and
+    the background on the fit window (k-weighted), and the mean squared
+    error to the target."""
+    chi_t = torch.as_tensor(np.asarray(chi), dtype = torch.float64,
+      device = self.device)
+    target_t = torch.as_tensor(np.asarray(target), dtype = torch.float64,
+      device = self.device)
+    if chi_t.shape[-1] != self.nraw:
+      raise ValueError(f'Raw spectrum has {chi_t.shape[-1]} points, expected '
+        f'{self.nraw} (see exafs_k_grids)')
+    if target_t.shape[-1] != self.nout:
+      raise ValueError(f'Target has {target_t.shape[-1]} points, expected '
+        f'{self.nout} on the fit window (see exafs_k_grids)')
+
+    def mse(dE0):
+      with torch.no_grad():
+        fit, _, _ = self.fitted(chi_t, target_t, torch.tensor(float(dE0),
+          dtype = torch.float64, device = self.device))
+      return torch.mean((fit - target_t) ** 2).item()
+
+    dE0 = self.grid_search(chi_t, target_t).item()
+    if refine:
+      try:
+        from scipy.optimize import minimize_scalar
+      except ImportError as e:
+        raise ImportError('Error loading scipy') from e
+      step = (self.dE0_grid[1] - self.dE0_grid[0]).item()
+      lo = max(self.lower, dE0 - step)
+      hi = min(self.upper, dE0 + step)
+      res = minimize_scalar(mse, bounds = (lo, hi), method = 'bounded',
+        options = {'xatol': 1e-4})
+      if res.fun <= mse(dE0):
+        dE0 = float(res.x)
+
+    with torch.no_grad():
+      fit, s, c = self.fitted(chi_t, target_t, torch.tensor(dE0,
+        dtype = torch.float64, device = self.device))
+    return {
+      'fitted': fit.cpu().numpy(),
+      'ΔE0': dE0,
+      'amplitude': s.item(),
+      'bkg_coefs': c.cpu().numpy(),
+      'bkg': (c @ self.basis.T).cpu().numpy(),
+      'mse': torch.mean((fit - target_t) ** 2).item(),
+    }
+
+def get_raw_sim(sim, traj, kmin_fit = 3.0, kmax_fit = 12.0, kstep = 0.05,
+  max_dE0 = 30.0, bin_width = 0.005):
+  """The raw spectra of each absorber, of shape (nabs, nraw): chi(k), not
+  k-weighted, with no E0 shift, amplitude scaling or background correction,
+  on the raw grid of exafs_k_grids (larch's autobk k grid with step kstep,
+  extended past [kmin_fit, kmax_fit) far enough for any |ΔE0| <= max_dE0).
+  The structure-wide parameters are fit afterwards (see EXAFSNuisance)."""
+  _, (raw_start, raw_stop) = exafs_k_grids(kmin_fit, kmax_fit,
+    kstep = kstep, max_dE0 = max_dE0)
+  degens = [np.array([sim[i][j].degen for j in range(len(sim[i]))]
+    ) for i in range(len(sim))]
+  feffk = sim[0][0].k
+  abs_Z = sim[0][0].abs_Z
+  Reffs, deltar, avg_factor = get_path_averages_from_traj(traj, sim, abs_Z,
+    bin_width = bin_width)
+  amp = [np.array([path.amp for path in abs_data]) for abs_data in sim]
+  pha = [np.array([path.pha for path in abs_data]) for abs_data in sim]
+  lam = [np.array([path.lam for path in abs_data]) for abs_data in sim]
+  rep = [np.array([path.rep for path in abs_data]) for abs_data in sim]
+
+  # Evaluated from k = 0, as get_absorber_spectra extrapolates the first
+  # point, and then cut to the raw grid
+  k = kstep * np.arange(raw_stop)
+  chi = get_spectra(feffk, Reffs, degens, deltar, avg_factor,
+    pha, amp, rep, lam, 0.0, 0.0, 1.0, k, avg_spec = False)
+  return chi[:, raw_start:]
+
 @registry.register_simulation("EXAFS")
 class EXAFS(BaseSimulation):
-  def __init__(self, initial_structure, exp_g_filename, outdim, feff_location = "", 
-    folder = "",  
-    absorber = 'Co', edge = 'K', radius = 10.0, fit_kmin = 3.0, 
+  """EXAFS from FEFF paths averaged over an MLIP MD trajectory.
+
+  resolve returns the raw spectra of each absorber (see get_raw_sim), on the
+  raw grid (not k-weighted), which the model is trained on. ΔE0 (within
+  +/- max_dE0 eV), the amplitude and a background spline (with knot spacing
+  set by rbkg) are structure-wide parameters, fit between the raw spectra
+  and the target (k^kweight chi(k) of the experiment on [fit_kmin,
+  fit_kmax), cut from its k grid, of step kstep, with larch's index_of) by
+  get_mismatch (see fit) for simulations, and alongside the structure by
+  the optimizer (see get_nuisance) for predictions. outdim, the number of
+  points of the raw grid, follows from fit_kmin, fit_kmax, kstep and
+  max_dE0."""
+  def __init__(self, initial_structure, feff_location = "",
+    folder = "",
+    absorber = 'Co', edge = 'K', radius = 10.0, fit_kmin = 3.0,
     fit_kmax = 12.0, time_limit = 240,
     additional_settings = {'EXAFS': 12.0, 'SCF': '4.5 0 30 .2 1'},
-    sh_template = None, 
-    sbatch_template = None, sbatch_group_template = None, 
+    sh_template = None,
+    sbatch_template = None, sbatch_group_template = None,
     sbatch_md_template = None, sbatch_md_group_template = None,
     sbatch_opt_template = None,
-    save_sim = True, kwfit = 3, kwout = 3,
-    **kwargs) -> None:
-    self.exp_g_filename = exp_g_filename
-    self.outdim = outdim
+    save_sim = True, kweight = 3, kstep = 0.05, max_dE0 = 30.0,
+    rbkg = 1.0, **kwargs) -> None:
+    self.kstep = kstep
+    self.max_dE0 = max_dE0
+    self.rbkg = rbkg
+    (self.out_start, self.out_stop), (self.raw_start, self.raw_stop) = (
+      exafs_k_grids(fit_kmin, fit_kmax, kstep = kstep, max_dE0 = max_dE0))
+    # The raw grid, whose points the model predicts
+    self.raw_k = kstep * np.arange(self.raw_start, self.raw_stop)
+    self.outdim = len(self.raw_k)
+    self._nuisances = {}
     self.feff_location = feff_location
     self.parent_folder = folder
     self.absorber = absorber
@@ -936,8 +1269,7 @@ class EXAFS(BaseSimulation):
     self.structure = None
     self.fit_kmin = fit_kmin
     self.fit_kmax = fit_kmax
-    self.kwfit = kwfit
-    self.kwout = kwout
+    self.kweight = kweight
 
   def setup_config(self, config):
     config['dataset']['preprocess_params']['prediction_level'] = 'node'
@@ -1109,12 +1441,12 @@ class EXAFS(BaseSimulation):
     job_name = int(time.time()) % 604800
     sbatch_opt_data = sbatch_opt_data.replace('##JOB_INDEX##', self.folder)
     sbatch_opt_data = sbatch_opt_data.replace('##DIRECTORY##', self.folder)
-    sbatch_opt_data = sbatch_opt_data.replace('##GROUP_FILE##', self.exp_g_filename)
     sbatch_opt_data = sbatch_opt_data.replace('##MD_FILE##', 'md.traj')
     sbatch_opt_data = sbatch_opt_data.replace('##KMIN_FIT##', str(self.fit_kmin))
     sbatch_opt_data = sbatch_opt_data.replace('##KMAX_FIT##', str(self.fit_kmax))
-    sbatch_opt_data = sbatch_opt_data.replace('##KWFIT##', str(self.kwfit))
-    sbatch_opt_data = sbatch_opt_data.replace('##KWOUT##', str(self.kwout))
+    sbatch_opt_data = sbatch_opt_data.replace('##KSTEP##', str(self.kstep))
+    sbatch_opt_data = sbatch_opt_data.replace('##MAX_DE0##',
+      str(self.max_dE0))
     sbatch_opt_data = sbatch_opt_data.replace('##JOB_NAME##', str(job_name))
     new_job_file = os.path.join(self.folder, 'opt_job.sbatch')
     with open(new_job_file, 'w') as file:
@@ -1144,6 +1476,11 @@ class EXAFS(BaseSimulation):
         shutil.rmtree(os.path.join(self.folder, str(i)))
     
     chi_ks = np.atleast_2d(np.genfromtxt(os.path.join(self.folder, 'chi_k.dat')))
+    if chi_ks.shape[1] != self.outdim:
+      raise ASOSimulationException(f'chi_k.dat has {chi_ks.shape[1]} points, '
+        f'expected the {self.outdim} of the raw grid, so the opt job should '
+        'write get_raw_sim (with the same fit_kmin, fit_kmax, kstep and '
+        'max_dE0)')
     spectra = np.zeros((len(self.mask), chi_ks.shape[1]))
     spectra[np.array(self.mask)] = chi_ks
 
@@ -1161,6 +1498,25 @@ class EXAFS(BaseSimulation):
       if os.path.isdir(self.folder):
         shutil.rmtree(self.folder)
 
+  def get_nuisance(self, device = 'cpu'):
+    """The fit of ΔE0, the amplitude and the background spline (see
+    EXAFSNuisance), on device."""
+    key = str(device)
+    if key not in self._nuisances:
+      self._nuisances[key] = EXAFSNuisance(self.kstep, self.raw_start,
+        self.raw_stop, self.out_start, self.out_stop, kweight = self.kweight,
+        rbkg = self.rbkg, max_dE0 = self.max_dE0, device = device)
+    return self._nuisances[key]
+
+  def fit(self, to_compare, target):
+    """The fit to target of the average raw spectrum of the absorbers in
+    to_compare (as returned by resolve): a dict with the fitted spectrum,
+    ΔE0, amplitude, background and mean squared error (see
+    EXAFSNuisance.fit)."""
+    return self.get_nuisance().fit(np.mean(to_compare[np.array(self.mask)],
+      axis = 0), target)
+
   def get_mismatch(self, to_compare, target):
-    return np.mean((
-      np.mean(to_compare[np.array(self.mask)], axis = 0) - target) ** 2) 
+    """Mean squared error of the fitted spectrum, the same quantity the
+    MSE objective of the optimizer computes for the predictions."""
+    return self.fit(to_compare, target)['mse']
