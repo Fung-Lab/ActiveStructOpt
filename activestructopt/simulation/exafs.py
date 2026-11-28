@@ -160,9 +160,12 @@ def run_md(structure, trajectory_path = 'md.traj',
   statistics of the configurational averages scale with atoms times frames,
   so the production steps after the burn-in (nsteps - burnin_steps for the
   minimum supercell) are divided by the number of minimum supercells in the
-  supercell, down to min_production_steps, and rounded up to a multiple of
-  loginterval. The burn-in is unchanged, so the burn-in frames of the
-  trajectory (first_frame in _iter_path_lengths) are too."""
+  supercell, and rounded up to a multiple of loginterval. The supercell is
+  capped at (nsteps - burnin_steps) / min_production_steps minimum
+  supercells, so the production steps never fall below min_production_steps
+  (the default 4000 steps, 5 ps, is ~10 thermostat relaxation times 1 /
+  friction and 10 D^2_min blocks). The burn-in is unchanged, so the burn-in
+  frames of the trajectory (first_frame in _iter_path_lengths) are too."""
   try:
     from ase import units
     from ase.build.supercells import make_supercell
@@ -184,10 +187,19 @@ def run_md(structure, trajectory_path = 'md.traj',
     task_name = task_name)
   repetitions = min_reps
   if maximize_supercell:
+    # A supercell more than max_ratio times the minimum would bring the
+    # production steps below min_production_steps, so cap it there
+    max_ratio = (nsteps - burnin_steps) / min_production_steps
+    floor_atoms = int(np.floor(max_ratio * len(atoms_prim) * np.prod(
+      min_reps)))
+    max_atoms = floor_atoms if max_atoms is None else min(max_atoms,
+      floor_atoms)
     repetitions = _largest_md_supercell(atoms_prim, minimum_length, calc,
       device, gpu_memory_fraction, max_atoms)
 
-  # Fewer production steps for a larger supercell
+  # Fewer production steps for a larger supercell (the cap above keeps this
+  # at or above min_production_steps; the max only applies when even the
+  # minimum supercell would fall below it)
   size_ratio = np.prod(repetitions) / np.prod(min_reps)
   production_steps = max(min_production_steps,
     (nsteps - burnin_steps) / size_ratio)
