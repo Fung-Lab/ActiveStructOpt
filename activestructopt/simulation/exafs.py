@@ -1,5 +1,6 @@
 from activestructopt.simulation.base import BaseSimulation, ASOSimulationException
 from activestructopt.common.registry import registry
+from activestructopt.common.d2min import D2minMonitor, block_frames
 from pymatgen.io.ase import AseAtomsAdaptor
 from pymatgen.io import feff
 from pymatgen.io.feff.sets import MPEXAFSSet
@@ -136,13 +137,19 @@ def _largest_md_supercell(atoms_prim, minimum_length, calc, device,
 def run_md(structure, trajectory_path = 'md.traj',
   log_path = 'md.log', timestep = 1.25, temp = 300,
   friction = 0.002, loginterval = 4, nsteps = 41600,
-  burnin_steps = 1600, max_rms_burnin = 0.5, minimum_length = 8.4,
+  burnin_steps = 1600, d2min_block_ps = 0.5, d2min_cutoff = 3.5,
+  d2min_level = 0.05, d2min_max_frac = 0.5, d2min_max_atom = 0.5,
+  minimum_length = 8.4,
   maximize_supercell = True, gpu_memory_fraction = 0.8, max_atoms = None,
   min_production_steps = 4000, mlip = 'uma-s-1p2p1', task_name = 'omat',
   inference_settings = 'nitro', device = 'cuda'):
   """Langevin MD of a supercell of structure, writing every loginterval
-  steps to trajectory_path, and failing if the RMS displacement exceeds
-  max_rms_burnin during the first burnin_steps steps.
+  steps to trajectory_path, and failing if the MD rearranges the structure at
+  any point of the run: if, in any block of d2min_block_ps, the D^2_min of
+  the block-averaged positions relative to the starting structure (see
+  common/d2min.py) is above d2min_level for more than d2min_max_frac of the
+  atoms, or above d2min_max_atom for any atom. The same check is applied to
+  the burn-in alone by the MLIPBurnIn constraint.
 
   The minimum supercell has every length at least minimum_length (Å). If
   maximize_supercell, the supercell is instead the largest (with that
@@ -196,24 +203,15 @@ def run_md(structure, trajectory_path = 'md.traj',
   atoms.calc = calc
   rng = np.random.RandomState(0)
   MaxwellBoltzmannDistribution(atoms, temperature_K = temp, rng=rng)
-  initial_positions = atoms.get_scaled_positions().copy()
+  monitor = D2minMonitor(atoms, block_frames(d2min_block_ps, timestep,
+    loginterval), cutoff = d2min_cutoff, level = d2min_level,
+    max_frac = d2min_max_frac, max_atom = d2min_max_atom)
 
-  def check_initial_drift():
-    if dyn.nsteps >= burnin_steps:
-      return
-
-    disp_frac = (atoms.get_scaled_positions() - 
-      initial_positions)
-    disp_frac -= np.round(disp_frac)
-    disp_cart = disp_frac @ atoms.cell.array
-    rms_displacement = np.sqrt(np.mean(np.sum(
-      disp_cart ** 2, axis = 1)))
-
-    if rms_displacement > max_rms_burnin:
+  def check_d2min():
+    reason = monitor.update(atoms)
+    if reason is not None:
       raise ASOSimulationException(
-        f"RMS displacement exceeded threshold: "
-        f"{rms_displacement} Å > {max_rms_burnin} Å "
-        f"at step {dyn.nsteps}")
+        f'Structure rearranged during the MD at step {dyn.nsteps}: {reason}')
 
   dyn = Langevin(atoms,
     timestep = timestep * units.fs,
@@ -224,7 +222,7 @@ def run_md(structure, trajectory_path = 'md.traj',
   logger = MDLogger(dyn, atoms, log_path, header = True, mode = 'w')
   dyn.attach(trajectory.write, interval = loginterval)
   dyn.attach(logger, interval = loginterval)
-  dyn.attach(check_initial_drift, interval = loginterval)
+  dyn.attach(check_d2min, interval = loginterval)
   try:
     dyn.run(total_steps)
   finally:

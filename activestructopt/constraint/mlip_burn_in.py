@@ -1,5 +1,6 @@
 from activestructopt.common.registry import registry
 from activestructopt.common.mlip import get_mlip
+from activestructopt.common.d2min import D2minMonitor, block_frames
 from activestructopt.constraint.base import BaseConstraint
 from pymatgen.core.structure import IStructure
 from pymatgen.io.ase import AseAtomsAdaptor
@@ -21,26 +22,21 @@ def make_md_supercell(structure: IStructure, minimum_length = 8.4):
 
 @registry.register_constraint("MLIPBurnIn")
 class MLIPBurnIn(BaseConstraint):
-  """Rejects structures that drift too far during the burn-in of the MLIP MD
-  run used by the EXAFS simulation (run_md in simulation/exafs.py). Only the
-  burn-in is run, and no trajectory or log files are written.
+  """Rejects structures that rearrange during the burn-in of the MLIP MD run
+  used by the EXAFS simulation (run_md in simulation/exafs.py), with the same
+  D^2_min check that run_md applies to the whole run (see common/d2min.py).
+  Only the burn-in is run, and no trajectory or log files are written.
 
-  A structure is rejected if, at any check during the burn-in:
-    - the RMS displacement from the starting positions exceeds max_rms_burnin
-    - any single atom's displacement exceeds max_atom_disp_burnin (if not None),
-      which catches local rearrangements that the RMS averages away
-    - after epot_skip_steps, the running mean (over the last epot_window
-      checks) of (Epot - Epot_0 - Ekin) / N, in meV/atom, is below
-      -max_epot_drop_burnin (if not None). Near a minimum, the average
-      potential energy above the minimum equals the average kinetic energy
-      (equipartition), so this goes clearly negative when the structure falls
-      into a lower energy basin, or was not at a minimum to begin with.
+  A structure is rejected if, in any block of d2min_block_ps of the burn-in,
+  the D^2_min of the block-averaged positions relative to the starting
+  structure is above d2min_level for more than d2min_max_frac of the atoms,
+  or above d2min_max_atom for any atom.
   """
   def __init__(self, mlip = 'uma-s-1p2p1', task_name = 'omat',
     inference_settings = 'nitro', device = 'cuda', timestep = 1.25,
     temp = 300, friction = 0.002, check_interval = 4, burnin_steps = 1600,
-    max_rms_burnin = 0.5, max_atom_disp_burnin = None,
-    max_epot_drop_burnin = None, epot_skip_steps = 400, epot_window = 50,
+    d2min_block_ps = 0.5, d2min_cutoff = 3.5, d2min_level = 0.05,
+    d2min_max_frac = 0.5, d2min_max_atom = 0.5,
     minimum_length = 8.4, seed = 0, **kwargs):
     # Shared and only loaded when first used (see common/mlip.py)
     self.mlip = get_mlip(mlip, task_name, inference_settings, device)
@@ -50,17 +46,18 @@ class MLIPBurnIn(BaseConstraint):
     self.friction = friction
     self.check_interval = check_interval
     self.burnin_steps = burnin_steps
-    self.max_rms_burnin = max_rms_burnin
-    self.max_atom_disp_burnin = max_atom_disp_burnin
-    self.max_epot_drop_burnin = max_epot_drop_burnin
-    self.epot_skip_steps = epot_skip_steps
-    self.epot_window = epot_window
+    self.d2min_block_ps = d2min_block_ps
+    self.d2min_cutoff = d2min_cutoff
+    self.d2min_level = d2min_level
+    self.d2min_max_frac = d2min_max_frac
+    self.d2min_max_atom = d2min_max_atom
     self.minimum_length = minimum_length
     self.seed = seed
-    # Diagnostics from the last call, for calibrating the thresholds
-    self.last_rms_displacement = None
-    self.last_max_atom_displacement = None
-    self.last_epot_excess = None
+    # Diagnostics from the last call, for calibrating the thresholds: the
+    # largest fraction of atoms above d2min_level and the largest atom
+    # D^2_min (Å^2) over the blocks checked
+    self.last_d2min_frac = None
+    self.last_d2min_max = None
     self.last_step = None
     self.last_reason = None
 
@@ -85,12 +82,13 @@ class MLIPBurnIn(BaseConstraint):
     atoms = make_md_supercell(structure, self.minimum_length)
     atoms.set_constraint(FixCom())
     atoms.calc = self.calculator
-    natoms = len(atoms)
 
     MaxwellBoltzmannDistribution(atoms, temperature_K = self.temp,
       rng = np.random.RandomState(self.seed))
-    initial_positions = atoms.get_scaled_positions().copy()
-    epot0 = atoms.get_potential_energy()
+    monitor = D2minMonitor(atoms,
+      block_frames(self.d2min_block_ps, self.timestep, self.check_interval),
+      cutoff = self.d2min_cutoff, level = self.d2min_level,
+      max_frac = self.d2min_max_frac, max_atom = self.d2min_max_atom)
 
     dyn = Langevin(atoms,
       timestep = self.timestep * units.fs,
@@ -98,44 +96,21 @@ class MLIPBurnIn(BaseConstraint):
       friction = self.friction / units.fs,
       fixcm = False)
 
-    self.last_rms_displacement = 0.0
-    self.last_max_atom_displacement = 0.0
-    self.last_epot_excess = None
+    self.last_d2min_frac = 0.0
+    self.last_d2min_max = 0.0
     self.last_step = 0
     self.last_reason = None
-    epot_excesses = []
 
-    def reject(reason):
-      self.last_reason = reason
-      raise _BurnInDriftExceeded
-
-    def check_drift():
-      if dyn.nsteps >= self.burnin_steps:
-        return
+    def check_d2min():
       self.last_step = dyn.nsteps
+      reason = monitor.update(atoms)
+      self.last_d2min_frac = monitor.max_frac_seen
+      self.last_d2min_max = monitor.max_atom_seen
+      if reason is not None:
+        self.last_reason = reason
+        raise _BurnInDriftExceeded
 
-      disp_frac = atoms.get_scaled_positions() - initial_positions
-      disp_frac -= np.round(disp_frac)
-      disp_cart = disp_frac @ atoms.cell.array
-      atom_disps = np.linalg.norm(disp_cart, axis = 1)
-      rms_displacement = np.sqrt(np.mean(atom_disps ** 2))
-      self.last_rms_displacement = rms_displacement
-      self.last_max_atom_displacement = np.max(atom_disps)
-      if rms_displacement > self.max_rms_burnin:
-        reject(f'RMS displacement {rms_displacement:.3f} Å')
-      if (self.max_atom_disp_burnin is not None and
-        self.last_max_atom_displacement > self.max_atom_disp_burnin):
-        reject(f'Max atom displacement {self.last_max_atom_displacement:.3f} Å')
-
-      if self.max_epot_drop_burnin is not None:
-        epot_excesses.append(1000 * (atoms.get_potential_energy() - epot0 -
-          atoms.get_kinetic_energy()) / natoms)
-        if dyn.nsteps >= self.epot_skip_steps:
-          self.last_epot_excess = np.mean(epot_excesses[-self.epot_window:])
-          if self.last_epot_excess < -self.max_epot_drop_burnin:
-            reject(f'Epot excess {self.last_epot_excess:.2f} meV/atom')
-
-    dyn.attach(check_drift, interval = self.check_interval)
+    dyn.attach(check_d2min, interval = self.check_interval)
     try:
       dyn.run(self.burnin_steps)
     except _BurnInDriftExceeded:
